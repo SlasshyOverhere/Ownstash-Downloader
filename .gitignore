@@ -1,0 +1,100 @@
+# Node.js
+node_modules/
+dist/
+dist-ssr/
+*.local
+.npm
+.env
+.env.*
+!.env.example
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Rust
+target/
+src-tauri/target/
+**/*.rs.bk
+Cargo.lock
+
+# Tauri
+src-tauri/gen/schemas
+src-tauri/gen/artifacts
+src-tauri/binaries/
+src-tauri/*.exe
+src-tauri/*.msi
+src-tauri/*.deb
+src-tauri/*.app
+src-tauri/*.dmg
+src-tauri/*.AppImage
+src-tauri/*.tar.gz
+
+# Chrome Extension
+chrome-extension/packed/
+chrome-extension/dist/
+
+# Logs and databases
+*.log
+*.sqlite
+*.db
+*.tmp
+*.temp
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+*.bak
+
+# IDE
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# Signing Keys (NEVER COMMIT PRIVATE KEYS!)
+tauri-signing-key.key
+tauri-signing-key.key.pub
+*.key
+*.pem
+
+# Release Manager Config (contains GitHub token)
+.release_config.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.egg-info/
+.eggs/
+*.egg
+.pytest_cache/
+.mypy_cache/
+venv/
+.venv/
+
+# Firebase
+.firebase/
+firebase-debug.log
+.firebaserc
+
+# Temporary folders
+public/New folder/
+
+# Build artifacts
+*.zip
+*.nupkg
+
+# Documentation (except README)
+*.md
+!README.md
+
+# Scripts (dev/setup tools)
+**/*.ps1
+**/*.py
+

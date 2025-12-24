@@ -1,0 +1,23 @@
+{
+    "$schema": "../gen/schemas/desktop-schema.json",
+    "identifier": "default",
+    "description": "Default capabilities for Slasshy OmniDownloader",
+    "windows": [
+        "main"
+    ],
+    "permissions": [
+        "core:default",
+        "shell:allow-open",
+        "dialog:default",
+        "dialog:allow-open",
+        "dialog:allow-save",
+        "dialog:allow-message",
+        "dialog:allow-ask",
+        "dialog:allow-confirm",
+        "updater:default",
+        "updater:allow-check",
+        "updater:allow-download-and-install",
+        "core:event:default",
+        "deep-link:default"
+    ]
+}

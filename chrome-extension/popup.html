@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Slasshy OmniDownloader</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+
+<body>
+  <div class="popup-container">
+    <!-- Header with gradient -->
+    <header class="popup-header">
+      <div class="logo-container">
+        <div class="logo-glow"></div>
+        <img src="icons/icon48.png" alt="Slasshy" class="logo">
+      </div>
+      <div class="header-text">
+        <h1>Slasshy</h1>
+        <span class="tagline">OmniDownloader</span>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="popup-main">
+      <!-- Current Site Card -->
+      <div class="site-card" id="siteCard">
+        <div class="site-info">
+          <div class="site-favicon" id="siteFavicon">
+            <img id="faviconImg" src="" alt="">
+            <div class="favicon-fallback" id="faviconFallback"></div>
+          </div>
+          <div class="site-details">
+            <span class="site-name" id="siteName">Current Website</span>
+            <span class="site-url" id="siteUrl">loading...</span>
+          </div>
+        </div>
+        <div class="site-status" id="siteStatus">
+          <span class="status-badge status-checking">Checking...</span>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="action-buttons">
+        <button class="btn btn-primary" id="btnToggleSite" disabled>
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+          </svg>
+          <span id="btnToggleText">Add This Site</span>
+        </button>
+
+        <button class="btn btn-secondary" id="btnDownload" style="display: none;">
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 5v14M19 12l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <span>Send to App</span>
+        </button>
+      </div>
+
+      <!-- Divider -->
+      <div class="divider">
+        <span>Enabled Sites</span>
+      </div>
+
+      <!-- Enabled Sites List -->
+      <div class="sites-list" id="sitesList">
+        <div class="sites-empty" id="sitesEmpty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 6v6l4 2" stroke-linecap="round" />
+          </svg>
+          <p>No sites added yet</p>
+          <span>Visit a website and click "Add This Site"</span>
+        </div>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="popup-footer">
+      <button class="footer-btn" id="btnSettings" title="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3" />
+          <path
+            d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83" />
+        </svg>
+      </button>
+      <span class="footer-text">Ready to download</span>
+      <button class="footer-btn" id="btnOpenApp" title="Open App">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" stroke-linecap="round"
+            stroke-linejoin="round" />
+        </svg>
+      </button>
+    </footer>
+  </div>
+
+  <!-- Settings Panel (hidden by default) -->
+  <div class="settings-panel" id="settingsPanel">
+    <div class="settings-header">
+      <button class="back-btn" id="btnBackFromSettings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M19 12H5M12 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+      <h2>Settings</h2>
+    </div>
+    <div class="settings-content">
+      <div class="setting-item">
+        <label>
+          <span class="setting-label">Show floating button</span>
+          <span class="setting-desc">Display download button on enabled sites</span>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="settingFloatingBtn" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="setting-item">
+        <label>
+          <span class="setting-label">Button position</span>
+          <span class="setting-desc">Drag the button to move it anywhere</span>
+        </label>
+        <button class="btn btn-small" id="btnResetPosition">
+          <span>Reset</span>
+        </button>
+      </div>
+      <div class="setting-item">
+        <label>
+          <span class="setting-label">Auto-detect media</span>
+          <span class="setting-desc">Automatically detect video/audio on page</span>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="settingAutoDetect" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="setting-divider"></div>
+      <button class="btn btn-danger" id="btnClearAllSites">
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"
+            stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <span>Clear All Sites</span>
+      </button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+
+</html>

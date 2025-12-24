@@ -1,0 +1,78 @@
+{
+    "$schema": "https://schema.tauri.app/config/2",
+    "productName": "Slasshy OmniDownloader",
+    "version": "0.1.0",
+    "identifier": "com.slasshy.omnidownloader",
+    "build": {
+        "beforeDevCommand": "npm run dev",
+        "devUrl": "http://localhost:1420",
+        "beforeBuildCommand": "npm run build",
+        "frontendDist": "../dist"
+    },
+    "app": {
+        "withGlobalTauri": true,
+        "security": {
+            "csp": null,
+            "capabilities": [
+                "default"
+            ]
+        },
+        "windows": [
+            {
+                "title": "Slasshy OmniDownloader",
+                "width": 1280,
+                "height": 800,
+                "minWidth": 900,
+                "minHeight": 600,
+                "resizable": true,
+                "fullscreen": false,
+                "decorations": true,
+                "transparent": false,
+                "center": true
+            }
+        ]
+    },
+    "bundle": {
+        "active": true,
+        "targets": "all",
+        "icon": [
+            "icons/32x32.png",
+            "icons/128x128.png",
+            "icons/128x128@2x.png",
+            "icons/icon.ico"
+        ],
+        "resources": [
+            "binaries/yt-dlp.exe",
+            "binaries/spotdl.exe",
+            "binaries/ffmpeg.exe",
+            "binaries/ffprobe.exe"
+        ],
+        "category": "Utility",
+        "shortDescription": "Media downloader supporting 1000+ platforms",
+        "longDescription": "Slasshy OmniDownloader is a cross-platform media downloader, organizer, and converter.",
+        "windows": {
+            "certificateThumbprint": null,
+            "digestAlgorithm": "sha256",
+            "timestampUrl": ""
+        }
+    },
+    "plugins": {
+        "shell": {
+            "open": true
+        },
+        "updater": {
+            "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU0NzZBMTkzNzYzQzlCQTQKUldTa216eDJrNkYyVkFqdGMzVGZLd0NtdXRRVG53ZXpVREx4ZkJOT0ROMXo2Ly9maGF0cUpMWmUK",
+            "endpoints": [
+                "https://github.com/SlasshyOverhere/slasshy-omnidownloader/releases/latest/download/latest.json"
+            ]
+        },
+        "deep-link": {
+            "mobile": [],
+            "desktop": {
+                "schemes": [
+                    "slasshy"
+                ]
+            }
+        }
+    }
+}

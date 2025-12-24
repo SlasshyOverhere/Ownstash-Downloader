@@ -1,0 +1,68 @@
+# All-in-One OmniDownloader (High-Speed Native Engine) Plan
+
+## 1. Vision
+Transform the current downloader from a wrapper (yt-dlp/spot-dl) into a high-performance native concurrent downloader. The goal is to match or exceed the speed of IDM/FDM by implementing multi-connection parallel chunk downloading directly in the Rust backend.
+
+## 2. Core Architecture: "Slasshy Parallel Engine"
+
+### A. Phase 1: Pre-Download Inspection (Metadata)
+- **Tool**: `reqwest::Client` with a `HEAD` or `GET` range request.
+- **Logic**: 
+  - Check `Accept-Ranges: bytes` support.
+  - Retrieve `Content-Length` (Total File Size).
+  - Get a clean filename from `Content-Disposition` or URL.
+
+### B. Phase 2: Dynamic Segmentation
+- **Strategy**: Divide the total file size into $N$ segments (default: 16, configurable up to 64).
+- **Chunk Map**: Create a data structure to track:
+  - `start_byte`, `end_byte`, `current_position`, `status` (Idle, Downloading, Completed, Failed).
+
+### C. Phase 3: Turbo Parallel Download
+- **Implementation**: Use `tokio::spawn` to run $N$ concurrent tasks.
+- **Each Worker**:
+  - Opens an independent TCP connection.
+  - Sends a `Range: bytes=start-end` header.
+  - Streams data into a shared buffer or directly to disk.
+  - **Aggressive Buffering**: Use a 1MB-4MB buffer per connection before flushing to disk to reduce I/O overhead.
+
+### D. Phase 4: Intelligent Storage Management
+- **Pre-allocation**: Use `fs::File::set_len()` to pre-allocate the full file size on disk (creates a "sparse file" on modern filesystems like NTFS/EXT4).
+- **Concurrent Writing**: Multiple threads write to the same file at different offsets using `std::os::windows::fs::FileExt` (seek + write) or equivalent. No merging step needed at the end if written directly!
+
+## 3. Advanced Speed Techniques (The "IDM Magic")
+
+### A. Connection Saturation
+- **Server Throttling Bypass**: Many sites limit speed *per connection* (e.g., 2MB/s). By using 16 connections, we push it to 32MB/s.
+- **TCP Optimization**: Set `TCP_NODELAY` and high `TCP_KEEPALIVE` values in the `reqwest` client builder.
+
+### B. Brutal Resume & Retry
+- **Independent Segments**: If Connection #5 drops, only that 1/16th of the file retries. The other 15 keep flying.
+- **State Persistence**: Save the "Chunk Map" to a `.slasshy` metadata file or the SQLite database. If the app closes, it resumes exactly where it left off.
+
+### C. Dynamic Chunk Splitting
+- If one connection finishes early and others are slow, split the remaining slow chunks into smaller pieces and re-assign them to the idle connection.
+
+## 4. Integration Plan
+
+### Component 1: `native_downloader.rs`
+- New core logic implementation using `reqwest` and `tokio`.
+
+### Component 2: Unified Command Dispatcher
+- Modify `downloader.rs` to detect the URL type:
+  - **Media Platforms (YouTube/Spotify)**: Use `yt-dlp` to get the *Direct Media URL*, then pass that URL to the `NativeDownloader`.
+  - **Direct Links (.zip, .msi, etc.)**: Go directly to `NativeDownloader`.
+
+### Component 3: Frontend UI Enhancements
+- Visualizing segments: A "Progress bar" that shows multiple downloading chunks (classic IDM look).
+- Speedometer: Aggregated speed from all segments.
+
+## 5. Roadmap
+1. **Milestone 1**: Basic Single-file Range Downloader (2-4 connections).
+2. **Milestone 2**: Concurrent File Writer (pre-allocation + offset writing).
+3. **Milestone 3**: Integration with the React frontend and `yt-dlp` URL extraction.
+4. **Milestone 4**: Resilience testing (network drops, resume logic).
+5. **Milestone 5**: Polished UI with segment visualization.
+
+---
+**Created on**: 2025-12-24
+**Target**: Slasshy OmniDownloader v2.0

@@ -1,0 +1,48 @@
+# Opus Shortlist: High-Complexity & Low-Confidence Tasks (Revised)
+
+These features represent significant architectural challenges. I have assigned them a low confidence score because they require managing heavy external dependencies, complex state management, or deep system integration that goes beyond the current "command-runner" architecture of the app.
+
+---
+
+## 1. Local AI Audio Separation (Stem Splitting)
+**Description:** Separating a music track into isolated stems (Vocals, Drums, Bass, Other) running entirely locally without an internet connection.
+**Confidence:** **2/10**
+**Outcome:** A "Worker" model where the AI capability is an optional, high-performance plugin.
+**Why I am Underconfident:**
+- **Dependency Hell:** Bundling a full Python/PyTorch environment (gigabytes) into a portable Tauri app is a recipe for bloat and installation failures.
+- **Hardware Variation:** Handling NVIDIA (CUDA), AMD (ROCm), and Intel (OpenVINO) hardware consistently is extremely difficult in a cross-platform desktop environment.
+
+### 🤖 Guide for Future Agents
+1.  **Modular Plugin Architecture:** Do not bundle models by default. Create a "Plugin Manager" that downloads the required ONNX models and runtime libraries (ONNX Runtime) only when the user requests the feature.
+2.  **Rust-Native Processing:** Use `ort` (ONNX Runtime for Rust) to avoid Python altogether.
+3.  **Quantization:** Use 8-bit quantized models to reduce disk footprint and RAM usage.
+
+---
+
+## 2. "Link Sniffer" / Extension Bridge
+**Description:** Leveraging the existing Chrome/Firefox extension to detect and capture stream URLs (`.m3u8`, `.mp4`) from network traffic on any website.
+**Confidence:** **7/10** (Improved from 4/10)
+**Outcome:** The extension acts as the "Probe." It sends detected media streams directly to the app via a local WebSocket/HTTP listener.
+**Why I am Underconfident:**
+- **Cross-Browser Consistency:** Managing permissions and message passing across different browser engines (MV2 vs MV3) can be finicky.
+- **Deduplication:** Handling hundreds of "media detected" events from a single page load (ads, trackers, etc.) to show only the "real" video.
+
+### 🤖 Guide for Future Agents
+1.  **Extension Message Handler:** Update the Chrome extension to monitor network requests for `application/vnd.apple.mpegurl`.
+2.  **App-Side Listener:** Open a local HTTP/WebSocket port in the Tauri app (e.g., `localhost:7575`).
+3.  **CORS & Security:** Implement a shared secret/API key between the extension and the app so malicious websites can't push data to your downloader.
+
+---
+
+## 3. Universal Built-in Media Player (Localhost Hosted)
+**Description:** A premium player that can play *any* downloaded format (MKV, AV1, HEVC) by serving it through a local streaming server.
+**Confidence:** **6/10** (Improved from 5/10)
+**Outcome:** The app exposes a local URL (e.g., `http://localhost:1234/player`) that serves both the UI and the video stream, similar to how the OAuth callback is handled.
+**Why I am Underconfident:**
+- **Transcoding Overhead:** To play codecs not supported by the OS-native WebView (like MKV/AC3), we must run `ffmpeg` in the background to transcode to a streamable format in real-time.
+- **Seeking Performance:** Implementing "Range Requests" for smooth scrubbing/seeking over a local stream.
+
+### 🤖 Guide for Future Agents
+1.  **Local Streaming Server:** Use a Rust web server (like `axum` or `warp`) to serve the video files with proper 206 Partial Content support.
+2.  **On-the-fly Transcoding:** If the source file is an unsupported format, pipe `ffmpeg` output directly into the HTTP response stream.
+3.  **Player UI:** Use `video.js` or `plyr` in the frontend, but pointed at the local server URL. This bypasses many file-system permission hurdles.

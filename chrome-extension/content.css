@@ -1,0 +1,265 @@
+/*
+ * Slasshy OmniDownloader - Content Script Styles
+ * Floating button styling for enabled sites - Subtle and draggable
+ */
+
+/* ================================
+   Floating Button Container
+   ================================ */
+#slasshy-floating-btn {
+    position: fixed;
+    z-index: 2147483647;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    opacity: 0;
+    transform: scale(0.9);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    pointer-events: none;
+    cursor: grab;
+    user-select: none;
+}
+
+#slasshy-floating-btn.slasshy-visible {
+    opacity: 1;
+    transform: scale(1);
+    pointer-events: auto;
+}
+
+#slasshy-floating-btn.slasshy-dragging {
+    cursor: grabbing;
+    transition: none;
+}
+
+#slasshy-floating-btn.slasshy-dragging .slasshy-btn-inner {
+    transform: scale(1.05);
+    box-shadow:
+        0 8px 24px rgba(0, 0, 0, 0.3),
+        0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* ================================
+   Button Inner Content - Subtle Design
+   ================================ */
+#slasshy-floating-btn .slasshy-btn-inner {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: rgba(30, 30, 35, 0.85);
+    color: rgba(255, 255, 255, 0.9);
+    border-radius: 20px;
+    cursor: pointer;
+    box-shadow:
+        0 2px 8px rgba(0, 0, 0, 0.25),
+        0 1px 3px rgba(0, 0, 0, 0.15);
+    transition: all 0.2s ease;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#slasshy-floating-btn .slasshy-btn-inner:hover {
+    background: rgba(40, 40, 48, 0.95);
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.3),
+        0 2px 6px rgba(0, 0, 0, 0.2);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+#slasshy-floating-btn .slasshy-btn-inner:active {
+    transform: scale(0.97);
+}
+
+/* Success State */
+#slasshy-floating-btn.slasshy-success .slasshy-btn-inner {
+    background: rgba(16, 185, 129, 0.9);
+    border-color: rgba(16, 185, 129, 0.3);
+}
+
+/* Error State */
+#slasshy-floating-btn.slasshy-error .slasshy-btn-inner {
+    background: rgba(239, 68, 68, 0.9);
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+/* Icon */
+#slasshy-floating-btn svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    opacity: 0.9;
+}
+
+/* Text */
+#slasshy-floating-btn .slasshy-btn-text {
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0;
+    white-space: nowrap;
+}
+
+/* ================================
+   Tooltip
+   ================================ */
+#slasshy-floating-btn .slasshy-btn-tooltip {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-bottom: 8px;
+    padding: 6px 10px;
+    background: rgba(0, 0, 0, 0.85);
+    color: #f1f5f9;
+    font-size: 11px;
+    font-weight: 500;
+    border-radius: 6px;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.15s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    pointer-events: none;
+}
+
+#slasshy-floating-btn .slasshy-btn-tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: rgba(0, 0, 0, 0.85);
+}
+
+#slasshy-floating-btn:hover .slasshy-btn-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(-3px);
+}
+
+/* ================================
+   Drag Handle Icon (optional visual cue)
+   ================================ */
+#slasshy-floating-btn .slasshy-drag-hint {
+    position: absolute;
+    top: -20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.5);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+#slasshy-floating-btn:hover .slasshy-drag-hint {
+    opacity: 1;
+}
+
+/* ================================
+   Responsive Adjustments
+   ================================ */
+@media (max-width: 768px) {
+    #slasshy-floating-btn .slasshy-btn-inner {
+        padding: 7px 12px;
+    }
+
+    #slasshy-floating-btn svg {
+        width: 13px;
+        height: 13px;
+    }
+
+    #slasshy-floating-btn .slasshy-btn-text {
+        font-size: 11px;
+    }
+}
+
+/* ================================
+   High contrast / Accessibility
+   ================================ */
+@media (prefers-contrast: high) {
+    #slasshy-floating-btn .slasshy-btn-inner {
+        background: rgba(0, 0, 0, 0.95);
+        border: 2px solid rgba(255, 255, 255, 0.3);
+    }
+}
+
+/* ================================
+   Dropdown Menu for Track/Playlist Selection
+   ================================ */
+#slasshy-floating-btn .slasshy-dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-top: 8px;
+    background: rgba(30, 30, 35, 0.95);
+    border-radius: 12px;
+    padding: 6px;
+    box-shadow:
+        0 8px 32px rgba(0, 0, 0, 0.4),
+        0 4px 16px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    min-width: 180px;
+    z-index: 999;
+}
+
+#slasshy-floating-btn .slasshy-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 14px;
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 13px;
+    font-weight: 500;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.15s ease;
+}
+
+#slasshy-floating-btn .slasshy-dropdown-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+#slasshy-floating-btn .slasshy-dropdown-item:first-child:hover {
+    background: rgba(29, 185, 84, 0.2);
+    color: #1db954;
+}
+
+#slasshy-floating-btn .slasshy-dropdown-item:last-child:hover {
+    background: rgba(139, 92, 246, 0.2);
+    color: #a78bfa;
+}
+
+#slasshy-floating-btn .slasshy-dropdown-item svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+
+#slasshy-floating-btn .slasshy-dropdown-item span {
+    white-space: nowrap;
+}
+
+/* Dropdown arrow in main button */
+#slasshy-floating-btn .slasshy-dropdown-arrow {
+    transition: transform 0.2s ease;
+}
+
+/* YouTube Music themed button state */
+#slasshy-floating-btn.slasshy-ytmusic .slasshy-btn-inner {
+    background: linear-gradient(135deg, rgba(255, 0, 0, 0.9) 0%, rgba(200, 0, 0, 0.9) 100%);
+    border-color: rgba(255, 0, 0, 0.3);
+}
+
+/* Arrow pointing up when dropdown is open */
+#slasshy-floating-btn .slasshy-dropdown-menu:not([style*="display: none"])~.slasshy-btn-inner .slasshy-dropdown-arrow {
+    transform: rotate(180deg);
+}

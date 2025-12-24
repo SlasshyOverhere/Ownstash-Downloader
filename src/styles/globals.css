@@ -1,0 +1,225 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Polished Monochrome Theme - Sophisticated Black & White */
+    --background: 0 0% 4%;
+    --foreground: 0 0% 98%;
+
+    --primary: 0 0% 100%;
+    --primary-foreground: 0 0% 4%;
+
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 98%;
+
+    --accent: 0 0% 85%;
+    --accent-foreground: 0 0% 4%;
+
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 55%;
+
+    --card: 0 0% 7%;
+    --card-foreground: 0 0% 98%;
+
+    --border: 0 0% 18%;
+    --input: 0 0% 12%;
+    --ring: 0 0% 60%;
+    --ring-offset-background: 0 0% 4%;
+
+    --success: 142 76% 45%;
+    --warning: 38 92% 50%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --radius: 0.75rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    overflow: hidden;
+  }
+
+  /* Custom scrollbar - refined monochrome style */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-white/20 rounded-full transition-colors;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-white/40;
+  }
+}
+
+@layer components {
+
+  /* Refined Glassmorphism */
+  .glass {
+    @apply bg-card/80 backdrop-blur-xl border border-white/5 shadow-glass;
+  }
+
+  .glass-hover {
+    @apply glass hover:bg-card hover:border-white/10 transition-all duration-300;
+  }
+
+  /* Subtle text effects */
+  .text-glow {
+    text-shadow:
+      0 0 20px rgba(255, 255, 255, 0.3),
+      0 0 40px rgba(255, 255, 255, 0.1);
+  }
+
+  .text-glow-sm {
+    text-shadow:
+      0 0 10px rgba(255, 255, 255, 0.2);
+  }
+
+  /* Elegant gradient text */
+  .gradient-text {
+    @apply bg-gradient-to-r from-white via-white/80 to-white/60 bg-clip-text text-transparent;
+  }
+
+  /* 3D Card effect - refined */
+  .card-3d {
+    transform-style: preserve-3d;
+    perspective: 1000px;
+  }
+
+  .card-3d-content {
+    transform-style: preserve-3d;
+    transition: transform 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .card-3d:hover .card-3d-content {
+    transform: translateZ(10px);
+  }
+
+  /* Subtle border highlight */
+  .border-glow {
+    @apply relative;
+  }
+
+  .border-glow::before {
+    content: '';
+    @apply absolute inset-0 rounded-[inherit] opacity-0 transition-opacity duration-500;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), transparent);
+    z-index: -1;
+  }
+
+  .border-glow:hover::before {
+    @apply opacity-100;
+  }
+
+  /* Polished button style */
+  .btn-neon {
+    @apply relative overflow-hidden px-6 py-3 rounded-xl font-semibold;
+    @apply bg-white text-black;
+    @apply shadow-elegant;
+    @apply transition-all duration-300 ease-out;
+    @apply hover:shadow-elegant-hover hover:scale-[1.02];
+  }
+
+  .btn-neon::before {
+    content: '';
+    @apply absolute inset-0 bg-gradient-to-r from-transparent via-black/5 to-transparent translate-x-[-100%];
+    @apply transition-transform duration-700;
+  }
+
+  .btn-neon:hover::before {
+    @apply translate-x-[100%];
+  }
+
+  /* Secondary button style */
+  .btn-outline {
+    @apply relative overflow-hidden px-6 py-3 rounded-xl font-semibold;
+    @apply bg-transparent text-white border border-white/20;
+    @apply transition-all duration-300 ease-out;
+    @apply hover:bg-white/5 hover:border-white/40;
+  }
+
+  /* Progress bar shimmer - refined */
+  .progress-shimmer {
+    @apply relative overflow-hidden;
+  }
+
+  .progress-shimmer::after {
+    content: '';
+    @apply absolute inset-0;
+    background: linear-gradient(90deg,
+        transparent,
+        rgba(255, 255, 255, 0.15),
+        transparent);
+    animation: shimmer 2.5s ease-in-out infinite;
+  }
+
+  /* Floating animation - more subtle */
+  .float {
+    animation: float 8s ease-in-out infinite;
+  }
+
+  .float-delayed {
+    animation: float 8s ease-in-out infinite;
+    animation-delay: -4s;
+  }
+
+  /* Pulse effect - refined */
+  .pulse-glow {
+    animation: glow-pulse 3s ease-in-out infinite;
+  }
+
+  /* New: Premium card style */
+  .card-premium {
+    @apply bg-gradient-to-br from-white/5 to-transparent border border-white/10;
+    @apply backdrop-blur-sm rounded-2xl;
+    @apply transition-all duration-500 ease-out;
+  }
+
+  .card-premium:hover {
+    @apply border-white/20 shadow-lg;
+    @apply from-white/8 to-white/2;
+  }
+
+  /* New: Subtle divider */
+  .divider {
+    @apply h-px bg-gradient-to-r from-transparent via-white/20 to-transparent;
+  }
+}
+
+@layer utilities {
+
+  /* Perspective utilities */
+  .perspective-1000 {
+    perspective: 1000px;
+  }
+
+  .perspective-2000 {
+    perspective: 2000px;
+  }
+
+  .transform-3d {
+    transform-style: preserve-3d;
+  }
+
+  /* Backdrop utilities */
+  .backdrop-blur-xs {
+    backdrop-filter: blur(2px);
+  }
+
+  /* Safe area padding for desktop window controls */
+  .pt-safe {
+    padding-top: env(titlebar-area-height, 32px);
+  }
+}
