@@ -66,6 +66,7 @@ export interface DownloadProgress {
     downloaded_bytes?: number;
     total_bytes?: number;
     filename?: string;
+    engine_badge?: string;  // "SNDE ACCELERATED", "SNDE SAFE", or "MEDIA ENGINE"
 }
 
 export interface DownloadRequest {
@@ -95,6 +96,23 @@ export interface UpdateInfo {
     date?: string;
     body?: string;
     available: boolean;
+}
+
+export interface DirectFileInfo {
+    file_size: number;
+    filename: string | null;
+    content_type: string | null;
+    is_media: boolean;
+}
+
+export interface MediaFileInfo {
+    file_path: string;
+    is_audio: boolean;
+}
+
+export interface TranscodeResult {
+    output_path: string;
+    was_transcoded: boolean;
 }
 
 // Spotify/SpotDL types
@@ -221,6 +239,22 @@ export const api = {
         return invoke('open_folder', { path, fileName });
     },
 
+    async playFile(path: string, title: string): Promise<void> {
+        return invoke('play_file', { path, title });
+    },
+
+    async findMediaFile(path: string, title: string): Promise<MediaFileInfo> {
+        return invoke('find_best_media_match', { path, title });
+    },
+
+    async transcodeForPlayback(inputPath: string): Promise<TranscodeResult> {
+        return invoke('transcode_for_playback', { inputPath });
+    },
+
+    async getMediaStreamUrl(filePath: string): Promise<string> {
+        return invoke('get_media_stream_url', { filePath });
+    },
+
     // yt-dlp Management - Rust backend
     async checkYtDlp(): Promise<YtDlpInfo> {
         return invoke('check_yt_dlp');
@@ -241,6 +275,10 @@ export const api = {
     // Media Info & Downloading - Rust backend
     async getMediaInfo(url: string): Promise<MediaInfo> {
         return invoke('get_media_info', { url });
+    },
+
+    async probeDirectFile(url: string): Promise<DirectFileInfo> {
+        return invoke('probe_direct_file', { url });
     },
 
     async startDownload(request: DownloadRequest): Promise<void> {

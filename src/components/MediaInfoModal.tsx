@@ -118,6 +118,29 @@ export function MediaInfoModal({
     // Calculate max available video resolution
     const maxVideoHeight = getMaxVideoHeight(mediaInfo.formats);
 
+    // Detect if this is a direct file download (not a media stream)
+    // Direct files: Google Drive, OneDrive, Dropbox, or any URL with file extension
+    const isDirectFile = (() => {
+        const platform = mediaInfo.platform.toLowerCase();
+        const directFilePlatforms = ['googledrive', 'generic', 'onedrive', 'dropbox', 'mega', 'mediafire'];
+
+        // Check if it's a known file hosting service
+        if (directFilePlatforms.some(p => platform.includes(p))) {
+            return true;
+        }
+
+        // Check if there are no video codecs in any format (likely a direct file)
+        const hasVideoFormats = mediaInfo.formats.some(f => f.vcodec && f.vcodec !== 'none');
+        const hasMultipleFormats = mediaInfo.formats.length > 1;
+
+        // If there's only one format and no video codec, it's likely a direct file
+        if (!hasVideoFormats && !hasMultipleFormats) {
+            return true;
+        }
+
+        return false;
+    })();
+
     // Auto-select the highest available quality
     useEffect(() => {
         if (maxVideoHeight > 0) {
@@ -276,36 +299,56 @@ export function MediaInfoModal({
                                     </button>
                                 </div>
 
-                                {/* Download Mode Toggle */}
-                                <div className="flex gap-2 p-1 rounded-xl bg-muted/50 mb-4">
-                                    <button
-                                        onClick={() => setDownloadMode('video')}
-                                        className={cn(
-                                            'flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg transition-all text-sm',
-                                            downloadMode === 'video'
-                                                ? 'bg-white text-black font-semibold'
-                                                : 'text-muted-foreground hover:bg-white/5'
-                                        )}
-                                    >
-                                        <Video className="w-4 h-4" />
-                                        <span className="font-medium">Video</span>
-                                    </button>
-                                    <button
-                                        onClick={() => setDownloadMode('audio')}
-                                        className={cn(
-                                            'flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg transition-all text-sm',
-                                            downloadMode === 'audio'
-                                                ? 'bg-white text-black font-semibold'
-                                                : 'text-muted-foreground hover:bg-white/5'
-                                        )}
-                                    >
-                                        <Music className="w-4 h-4" />
-                                        <span className="font-medium">Audio Only</span>
-                                    </button>
-                                </div>
+                                {/* Direct File Download Banner */}
+                                {isDirectFile && (
+                                    <div className="flex items-center gap-3 p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 mb-4">
+                                        <Download className="w-5 h-5 text-cyan-400 shrink-0" />
+                                        <div>
+                                            <p className="text-sm font-medium text-cyan-400">Direct File Download</p>
+                                            <p className="text-xs text-muted-foreground">
+                                                This is a direct file. Click download to save it.
+                                                {mediaInfo.formats[0]?.filesize && (
+                                                    <span className="ml-1">
+                                                        Size: {formatBytes(mediaInfo.formats[0].filesize)}
+                                                    </span>
+                                                )}
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Download Mode Toggle - Only for media streams */}
+                                {!isDirectFile && (
+                                    <div className="flex gap-2 p-1 rounded-xl bg-muted/50 mb-4">
+                                        <button
+                                            onClick={() => setDownloadMode('video')}
+                                            className={cn(
+                                                'flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg transition-all text-sm',
+                                                downloadMode === 'video'
+                                                    ? 'bg-white text-black font-semibold'
+                                                    : 'text-muted-foreground hover:bg-white/5'
+                                            )}
+                                        >
+                                            <Video className="w-4 h-4" />
+                                            <span className="font-medium">Video</span>
+                                        </button>
+                                        <button
+                                            onClick={() => setDownloadMode('audio')}
+                                            className={cn(
+                                                'flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg transition-all text-sm',
+                                                downloadMode === 'audio'
+                                                    ? 'bg-white text-black font-semibold'
+                                                    : 'text-muted-foreground hover:bg-white/5'
+                                            )}
+                                        >
+                                            <Music className="w-4 h-4" />
+                                            <span className="font-medium">Audio Only</span>
+                                        </button>
+                                    </div>
+                                )}
 
                                 {/* Quality Selection */}
-                                {downloadMode === 'video' && (
+                                {!isDirectFile && downloadMode === 'video' && (
                                     <div className="mb-4">
                                         <div className="flex items-center justify-between mb-2">
                                             <h3 className="text-xs font-medium text-muted-foreground">Quality</h3>
@@ -351,7 +394,7 @@ export function MediaInfoModal({
                                 )}
 
                                 {/* Video Format Selection */}
-                                {downloadMode === 'video' && (
+                                {!isDirectFile && downloadMode === 'video' && (
                                     <div className="mb-4">
                                         <h3 className="text-xs font-medium text-muted-foreground mb-2">Output Format</h3>
                                         <div className="grid grid-cols-3 gap-2">
@@ -380,7 +423,7 @@ export function MediaInfoModal({
                                 )}
 
                                 {/* Audio Quality Selection */}
-                                {downloadMode === 'audio' && (
+                                {!isDirectFile && downloadMode === 'audio' && (
                                     <div className="mb-4">
                                         <h3 className="text-xs font-medium text-muted-foreground mb-2">Audio Quality</h3>
                                         <div className="grid grid-cols-4 gap-2">
@@ -409,7 +452,7 @@ export function MediaInfoModal({
                                 )}
 
                                 {/* Audio Format Selection */}
-                                {downloadMode === 'audio' && (
+                                {!isDirectFile && downloadMode === 'audio' && (
                                     <div className="mb-4">
                                         <h3 className="text-xs font-medium text-muted-foreground mb-2">Audio Format</h3>
                                         <div className="grid grid-cols-5 gap-2">
@@ -434,100 +477,104 @@ export function MediaInfoModal({
                                     </div>
                                 )}
 
-                                {/* Options */}
-                                <div className="mb-4">
-                                    <h3 className="text-xs font-medium text-muted-foreground mb-2">Options</h3>
-                                    <div className="space-y-2">
-                                        <label className="flex items-center justify-between p-2.5 rounded-lg border border-white/10 cursor-pointer hover:bg-white/5 transition-colors">
-                                            <span className="text-sm">Embed thumbnail</span>
-                                            <input
-                                                type="checkbox"
-                                                checked={embedThumbnail}
-                                                onChange={(e) => setEmbedThumbnail(e.target.checked)}
-                                                className="w-4 h-4 accent-white"
-                                            />
-                                        </label>
-                                        <label className="flex items-center justify-between p-2.5 rounded-lg border border-white/10 cursor-pointer hover:bg-white/5 transition-colors">
-                                            <span className="text-sm">Embed metadata (title, artist, etc.)</span>
-                                            <input
-                                                type="checkbox"
-                                                checked={embedMetadata}
-                                                onChange={(e) => setEmbedMetadata(e.target.checked)}
-                                                className="w-4 h-4 accent-white"
-                                            />
-                                        </label>
-                                        {downloadMode === 'video' && (
+                                {/* Options - only for media streams */}
+                                {!isDirectFile && (
+                                    <div className="mb-4">
+                                        <h3 className="text-xs font-medium text-muted-foreground mb-2">Options</h3>
+                                        <div className="space-y-2">
                                             <label className="flex items-center justify-between p-2.5 rounded-lg border border-white/10 cursor-pointer hover:bg-white/5 transition-colors">
-                                                <div className="flex flex-col">
-                                                    <span className="text-sm">Download subtitles</span>
-                                                    <span className="text-[10px] text-muted-foreground">Will download if available (auto-subs included)</span>
-                                                </div>
+                                                <span className="text-sm">Embed thumbnail</span>
                                                 <input
                                                     type="checkbox"
-                                                    checked={downloadSubtitles}
-                                                    onChange={(e) => setDownloadSubtitles(e.target.checked)}
+                                                    checked={embedThumbnail}
+                                                    onChange={(e) => setEmbedThumbnail(e.target.checked)}
                                                     className="w-4 h-4 accent-white"
                                                 />
                                             </label>
+                                            <label className="flex items-center justify-between p-2.5 rounded-lg border border-white/10 cursor-pointer hover:bg-white/5 transition-colors">
+                                                <span className="text-sm">Embed metadata (title, artist, etc.)</span>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={embedMetadata}
+                                                    onChange={(e) => setEmbedMetadata(e.target.checked)}
+                                                    className="w-4 h-4 accent-white"
+                                                />
+                                            </label>
+                                            {downloadMode === 'video' && (
+                                                <label className="flex items-center justify-between p-2.5 rounded-lg border border-white/10 cursor-pointer hover:bg-white/5 transition-colors">
+                                                    <div className="flex flex-col">
+                                                        <span className="text-sm">Download subtitles</span>
+                                                        <span className="text-[10px] text-muted-foreground">Will download if available (auto-subs included)</span>
+                                                    </div>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={downloadSubtitles}
+                                                        onChange={(e) => setDownloadSubtitles(e.target.checked)}
+                                                        className="w-4 h-4 accent-white"
+                                                    />
+                                                </label>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Advanced: Format Selection - Only for media */}
+                                {!isDirectFile && (
+                                    <div className="mb-4">
+                                        <button
+                                            onClick={() => setShowAdvanced(!showAdvanced)}
+                                            className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                                        >
+                                            <ChevronDown className={cn(
+                                                'w-3 h-3 transition-transform',
+                                                showAdvanced && 'rotate-180'
+                                            )} />
+                                            Advanced: Select specific format
+                                        </button>
+
+                                        {showAdvanced && (
+                                            <motion.div
+                                                initial={{ opacity: 0, height: 0 }}
+                                                animate={{ opacity: 1, height: 'auto' }}
+                                                className="mt-2 space-y-1 max-h-32 overflow-y-auto"
+                                            >
+                                                {mediaInfo.formats.slice(0, 15).map((format) => (
+                                                    <button
+                                                        key={format.format_id}
+                                                        onClick={() => setSelectedFormat(format.format_id)}
+                                                        className={cn(
+                                                            'w-full p-2 rounded-lg border text-left text-xs transition-all',
+                                                            selectedFormat === format.format_id
+                                                                ? 'border-white bg-white/10'
+                                                                : 'border-white/10 hover:border-white/20'
+                                                        )}
+                                                    >
+                                                        <div className="flex items-center justify-between gap-2">
+                                                            <div className="flex items-center gap-1">
+                                                                {format.vcodec && format.vcodec !== 'none' && (
+                                                                    <Video className="w-3 h-3 text-white/70" />
+                                                                )}
+                                                                {format.acodec && format.acodec !== 'none' && (
+                                                                    <Music className="w-3 h-3 text-white/70" />
+                                                                )}
+                                                                <span className="font-mono">{format.format_id}</span>
+                                                                <span className="text-muted-foreground">({format.ext})</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-2 text-muted-foreground">
+                                                                {format.resolution && <span>{format.resolution}</span>}
+                                                                {(format.filesize || format.filesize_approx) && (
+                                                                    <span>
+                                                                        {formatBytes(format.filesize || format.filesize_approx || 0)}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                            </motion.div>
                                         )}
                                     </div>
-                                </div>
-
-                                {/* Advanced: Format Selection */}
-                                <div className="mb-4">
-                                    <button
-                                        onClick={() => setShowAdvanced(!showAdvanced)}
-                                        className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                                    >
-                                        <ChevronDown className={cn(
-                                            'w-3 h-3 transition-transform',
-                                            showAdvanced && 'rotate-180'
-                                        )} />
-                                        Advanced: Select specific format
-                                    </button>
-
-                                    {showAdvanced && (
-                                        <motion.div
-                                            initial={{ opacity: 0, height: 0 }}
-                                            animate={{ opacity: 1, height: 'auto' }}
-                                            className="mt-2 space-y-1 max-h-32 overflow-y-auto"
-                                        >
-                                            {mediaInfo.formats.slice(0, 15).map((format) => (
-                                                <button
-                                                    key={format.format_id}
-                                                    onClick={() => setSelectedFormat(format.format_id)}
-                                                    className={cn(
-                                                        'w-full p-2 rounded-lg border text-left text-xs transition-all',
-                                                        selectedFormat === format.format_id
-                                                            ? 'border-white bg-white/10'
-                                                            : 'border-white/10 hover:border-white/20'
-                                                    )}
-                                                >
-                                                    <div className="flex items-center justify-between gap-2">
-                                                        <div className="flex items-center gap-1">
-                                                            {format.vcodec && format.vcodec !== 'none' && (
-                                                                <Video className="w-3 h-3 text-white/70" />
-                                                            )}
-                                                            {format.acodec && format.acodec !== 'none' && (
-                                                                <Music className="w-3 h-3 text-white/70" />
-                                                            )}
-                                                            <span className="font-mono">{format.format_id}</span>
-                                                            <span className="text-muted-foreground">({format.ext})</span>
-                                                        </div>
-                                                        <div className="flex items-center gap-2 text-muted-foreground">
-                                                            {format.resolution && <span>{format.resolution}</span>}
-                                                            {(format.filesize || format.filesize_approx) && (
-                                                                <span>
-                                                                    {formatBytes(format.filesize || format.filesize_approx || 0)}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </button>
-                                            ))}
-                                        </motion.div>
-                                    )}
-                                </div>
+                                )}
 
                                 {/* Download Button */}
                                 <button
@@ -546,7 +593,7 @@ export function MediaInfoModal({
                                     ) : (
                                         <>
                                             <Download className="w-4 h-4" />
-                                            <span>Download {downloadMode === 'audio' ? 'Audio' : 'Video'}</span>
+                                            <span>Download {isDirectFile ? 'File' : (downloadMode === 'audio' ? 'Audio' : 'Video')}</span>
                                         </>
                                     )}
                                 </button>
@@ -565,9 +612,10 @@ export function MediaInfoModal({
                             </div>
                         </motion.div>
                     </div>
-                </div>
-            )}
-        </AnimatePresence>
+                </div >
+            )
+            }
+        </AnimatePresence >
     );
 
     // Use portal to render at document body level

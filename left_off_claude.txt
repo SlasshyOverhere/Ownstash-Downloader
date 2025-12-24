@@ -1,0 +1,43 @@
+### Continuation Summary: Downloader v2.0 Upgrade
+
+**Current Status: Phase 1 COMPLETE ✓**
+
+We have successfully implemented and integrated the Core Control System:
+
+**Completed Work:**
+1. **Router Integration** - Downloads now go through `DOWNLOAD_ROUTER.route()` to determine optimal engine
+2. **Health Registry Integration** - Downloads register/unregister with `HEALTH_REGISTRY`
+3. **Engine Badges** - `DownloadProgress` now includes `engine_badge` field for UI display
+4. **Database Schema** - `host_reputation` table added for future per-domain learning
+5. **Clean Build** - All code compiles with only expected unused-code warnings
+
+**Files Modified:**
+- `src-tauri/src/downloader.rs` - Added router/health integration + engine_badge field
+- `src-tauri/src/database.rs` - Added host_reputation table schema
+- `src-tauri/src/watchdog.rs` - Cleaned up unused imports
+
+**Files Created (from previous session):**
+- `src-tauri/src/host_reputation.rs`
+- `src-tauri/src/health_metrics.rs`
+- `src-tauri/src/download_router.rs`
+- `src-tauri/src/watchdog.rs`
+
+**Next Steps (Priority Order):**
+1. **Frontend Engine Badge Display** - Add UI component to show "MEDIA ENGINE" / "SNDE ACCELERATED" badge
+2. **Phase 2: SNDE Implementation** - Build the parallel download engine for static files
+3. **Watchdog Activation** - Spawn watchdog loop in Tauri setup for runtime monitoring
+
+**How It Works Now:**
+- All downloads hit the router first
+- Router identifies URL type (media platform vs static file)
+- Router probes for Range request support
+- Currently all downloads use yt-dlp (Media Engine)
+- SNDE will be a future parallel download path for .zip/.exe/.iso files
+
+**Testing:**
+Run `cargo build` in src-tauri to verify clean compilation.
+Start the app and initiate a download - check console for routing decision logs:
+```
+[Downloader] Routing decision for <URL>: ...
+[Downloader] Selected engine: MEDIA ENGINE | Recommended connections: 1 | Reason: ...
+```

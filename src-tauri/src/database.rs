@@ -98,6 +98,23 @@ impl Database {
             [],
         )?;
 
+        // V2.0 Download Control System: Host Reputation Memory
+        // Stores per-domain download performance history for intelligent routing
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS host_reputation (
+                domain TEXT PRIMARY KEY,
+                max_stable_conns INTEGER NOT NULL DEFAULT 4,
+                favored_protocol TEXT NOT NULL DEFAULT 'http1',
+                health_score INTEGER NOT NULL DEFAULT 50,
+                supports_range INTEGER NOT NULL DEFAULT 1,
+                avg_speed_kbps INTEGER NOT NULL DEFAULT 0,
+                success_count INTEGER NOT NULL DEFAULT 0,
+                failure_count INTEGER NOT NULL DEFAULT 0,
+                last_updated INTEGER NOT NULL
+            )",
+            [],
+        )?;
+
         // Create indexes for faster queries
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_downloads_timestamp ON downloads(timestamp DESC)",
@@ -106,6 +123,12 @@ impl Database {
 
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_search_history_timestamp ON search_history(timestamp DESC)",
+            [],
+        )?;
+
+        // V2.0: Host reputation index
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_host_reputation_domain ON host_reputation(domain)",
             [],
         )?;
 

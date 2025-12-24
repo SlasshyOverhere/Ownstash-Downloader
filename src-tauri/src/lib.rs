@@ -3,10 +3,17 @@
 
 mod commands;
 mod database;
+mod download_router;
 mod downloader;
 mod extension_server;
+mod health_metrics;
+mod host_reputation;
+mod scheduler;
+mod snde;
 mod spotify_downloader;
 mod updater;
+mod watchdog;
+mod media_server;
 
 use commands::AppState;
 use database::Database;
@@ -63,6 +70,9 @@ pub fn run() {
 
             // Start the extension server for Chrome extension communication
             extension_server::start_extension_server(app.handle().clone());
+
+            // Start the media server for video playback
+            media_server::start_media_server(app.handle().clone());
 
             // Handle deep links from Chrome extension (for installed app)
             #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
@@ -129,9 +139,15 @@ pub fn run() {
             commands::delete_setting,
             // Utility commands
             commands::open_folder,
+            commands::play_file,
+            // Use media_server's robust matching instead of commands' basic one
+            media_server::find_best_media_match,
+            media_server::get_media_stream_url,
+            commands::transcode_for_playback,
             // Downloader commands
             downloader::check_yt_dlp,
             downloader::get_media_info,
+            downloader::probe_direct_file,
             downloader::start_download,
             downloader::cancel_download,
             downloader::get_supported_platforms,

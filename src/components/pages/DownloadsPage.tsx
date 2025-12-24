@@ -11,18 +11,21 @@ import {
     CheckCircle,
     AlertCircle,
     Loader2,
-    FolderOpen
+    FolderOpen,
+    Play
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { staggerContainer, staggerItem, fadeInUp } from '@/lib/animations';
 import { use3DTilt } from '@/hooks/use3DTilt';
 import { toast } from 'sonner';
 import api, { Download as DownloadType, DownloadProgress, SpotifyDownloadProgress, formatBytes } from '@/services/api';
+import { MediaPlayer } from '@/components/MediaPlayer';
 
 interface DownloadItem extends DownloadType {
     progress?: number;
     speed?: string;
     eta?: string;
+    engine_badge?: string;  // "SNDE ACCELERATED", "SNDE SAFE", or "MEDIA ENGINE"
 }
 
 const typeIcons = {
@@ -46,9 +49,10 @@ interface DownloadCardProps {
     onDelete: (id: string) => void;
     onRetry?: (item: DownloadItem) => void;
     onOpenFolder?: (path: string, title: string, format: string) => void;
+    onPlay?: (path: string, title: string) => void;
 }
 
-function DownloadCard({ item, onCancel, onDelete, onRetry, onOpenFolder }: DownloadCardProps) {
+function DownloadCard({ item, onCancel, onDelete, onRetry, onOpenFolder, onPlay }: DownloadCardProps) {
     const { ref, tiltStyle, handlers } = use3DTilt({ maxTilt: 5, scale: 1.01 });
 
     // Determine type based on format
@@ -141,12 +145,25 @@ function DownloadCard({ item, onCancel, onDelete, onRetry, onOpenFolder }: Downl
                     {isActive && (
                         <div className="mt-3">
                             <div className="flex items-center justify-between text-xs mb-1">
-                                <span className={cn('capitalize flex items-center gap-1', statusColors[item.status])}>
-                                    {item.status === 'downloading' && (
-                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                <div className="flex items-center gap-2">
+                                    <span className={cn('capitalize flex items-center gap-1', statusColors[item.status])}>
+                                        {item.status === 'downloading' && (
+                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                        )}
+                                        {item.status}
+                                    </span>
+                                    {/* Engine Badge */}
+                                    {item.engine_badge && (
+                                        <span className={cn(
+                                            'px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide',
+                                            item.engine_badge.includes('ACCELERATED') && 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-400 border border-cyan-500/30',
+                                            item.engine_badge.includes('SAFE') && 'bg-amber-500/20 text-amber-400 border border-amber-500/30',
+                                            item.engine_badge.includes('MEDIA') && 'bg-violet-500/20 text-violet-400 border border-violet-500/30'
+                                        )}>
+                                            {item.engine_badge}
+                                        </span>
                                     )}
-                                    {item.status}
-                                </span>
+                                </div>
                                 <div className="flex items-center gap-3 text-muted-foreground">
                                     {item.speed && <span>{item.speed}</span>}
                                     {item.eta && <span>ETA: {item.eta}</span>}
@@ -171,16 +188,28 @@ function DownloadCard({ item, onCancel, onDelete, onRetry, onOpenFolder }: Downl
                                 <CheckCircle className="w-4 h-4" />
                                 <span>Download complete</span>
                             </div>
-                            {onOpenFolder && item.path && (
-                                <button
-                                    onClick={() => onOpenFolder(item.path, item.title, item.format || 'mp4')}
-                                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/20 hover:bg-primary/30 text-primary text-sm font-medium transition-colors"
-                                    title="Open download folder"
-                                >
-                                    <FolderOpen className="w-4 h-4" />
-                                    <span>Open Folder</span>
-                                </button>
-                            )}
+                            <div className="flex items-center gap-2">
+                                {onPlay && item.path && (
+                                    <button
+                                        onClick={() => onPlay(item.path, item.title)}
+                                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium transition-colors"
+                                        title="Play file"
+                                    >
+                                        <Play className="w-4 h-4" />
+                                        <span>Play</span>
+                                    </button>
+                                )}
+                                {onOpenFolder && item.path && (
+                                    <button
+                                        onClick={() => onOpenFolder(item.path, item.title, item.format || 'mp4')}
+                                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/20 hover:bg-primary/30 text-primary text-sm font-medium transition-colors"
+                                        title="Open download folder"
+                                    >
+                                        <FolderOpen className="w-4 h-4" />
+                                        <span>Open Folder</span>
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     )}
 
@@ -214,6 +243,12 @@ export function DownloadsPage() {
     const [downloads, setDownloads] = useState<DownloadItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [progressMap, setProgressMap] = useState<Map<string, DownloadProgress>>(new Map());
+
+    // Media player state
+    const [showPlayer, setShowPlayer] = useState(false);
+    const [playerFilePath, setPlayerFilePath] = useState('');
+    const [playerTitle, setPlayerTitle] = useState('');
+    const [playerIsAudio, setPlayerIsAudio] = useState(false);
 
     // Load downloads and set up progress listeners
     useEffect(() => {
@@ -349,6 +384,45 @@ export function DownloadsPage() {
         }
     };
 
+    const handlePlay = async (path: string, title: string) => {
+        try {
+            const mediaInfo = await api.findMediaFile(path, title);
+            const filePath = mediaInfo.file_path;
+
+            // Check if format needs transcoding
+            const extension = filePath.split('.').pop()?.toLowerCase() || '';
+            const webSupported = ['mp4', 'webm', 'ogg', 'mov', 'mp3', 'm4a', 'wav', 'flac', 'opus'];
+
+            let playablePath = filePath;
+
+            if (!webSupported.includes(extension)) {
+                // Need to transcode
+                toast.info('Preparing video for playback... This may take a moment.');
+
+                try {
+                    const result = await api.transcodeForPlayback(filePath);
+                    playablePath = result.output_path;
+
+                    if (result.was_transcoded) {
+                        toast.success('Video ready!');
+                    }
+                } catch (transcodeErr) {
+                    // If transcoding fails, try to play anyway (might work for some formats)
+                    console.error('[DownloadsPage] Transcode failed:', transcodeErr);
+                    toast.warning('Could not transcode video. Attempting direct playback...');
+                }
+            }
+
+            setPlayerFilePath(playablePath);
+            setPlayerTitle(title);
+            setPlayerIsAudio(mediaInfo.is_audio);
+            setShowPlayer(true);
+        } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : 'Failed to find media file';
+            toast.error(errorMsg);
+        }
+    };
+
     // Merge progress data with downloads
     const downloadsWithProgress: DownloadItem[] = downloads.map(download => {
         const progress = progressMap.get(download.id);
@@ -359,6 +433,7 @@ export function DownloadsPage() {
                 speed: progress.speed,
                 eta: progress.eta,
                 status: progress.status,
+                engine_badge: progress.engine_badge,
             };
         }
         return download;
@@ -373,135 +448,147 @@ export function DownloadsPage() {
     );
 
     return (
-        <motion.div
-            variants={staggerContainer}
-            initial="initial"
-            animate="animate"
-            className="max-w-4xl mx-auto space-y-8"
-        >
-            {/* Header */}
-            <motion.div variants={fadeInUp} className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-3xl font-display font-bold">Downloads</h1>
-                    <p className="text-muted-foreground">Manage your active and completed downloads</p>
-                </div>
-                <div className="flex items-center gap-2">
-                    <button
-                        onClick={loadDownloads}
-                        className="px-4 py-2 rounded-xl glass-hover text-sm font-medium flex items-center gap-2"
-                    >
-                        <RefreshCw className={cn('w-4 h-4', isLoading && 'animate-spin')} />
-                        Refresh
-                    </button>
-                    {downloads.length > 0 && (
+        <>
+            <motion.div
+                variants={staggerContainer}
+                initial="initial"
+                animate="animate"
+                className="max-w-4xl mx-auto space-y-8"
+            >
+                {/* Header */}
+                <motion.div variants={fadeInUp} className="flex items-center justify-between">
+                    <div>
+                        <h1 className="text-3xl font-display font-bold">Downloads</h1>
+                        <p className="text-muted-foreground">Manage your active and completed downloads</p>
+                    </div>
+                    <div className="flex items-center gap-2">
                         <button
-                            onClick={handleClearAll}
-                            className="px-4 py-2 rounded-xl glass-hover text-sm font-medium text-red-400"
+                            onClick={loadDownloads}
+                            className="px-4 py-2 rounded-xl glass-hover text-sm font-medium flex items-center gap-2"
                         >
-                            Clear All
+                            <RefreshCw className={cn('w-4 h-4', isLoading && 'animate-spin')} />
+                            Refresh
                         </button>
-                    )}
-                </div>
+                        {downloads.length > 0 && (
+                            <button
+                                onClick={handleClearAll}
+                                className="px-4 py-2 rounded-xl glass-hover text-sm font-medium text-red-400"
+                            >
+                                Clear All
+                            </button>
+                        )}
+                    </div>
+                </motion.div>
+
+                {/* Loading state */}
+                {isLoading && downloads.length === 0 && (
+                    <div className="flex items-center justify-center py-20">
+                        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                    </div>
+                )}
+
+                {/* Active Downloads */}
+                {activeDownloads.length > 0 && (
+                    <motion.section variants={fadeInUp} className="space-y-4">
+                        <h2 className="text-lg font-semibold flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                            Active Downloads
+                            <span className="text-sm font-normal text-muted-foreground">
+                                ({activeDownloads.length})
+                            </span>
+                        </h2>
+                        <motion.div variants={staggerContainer} className="space-y-3">
+                            <AnimatePresence mode="popLayout">
+                                {activeDownloads.map(item => (
+                                    <DownloadCard
+                                        key={item.id}
+                                        item={item}
+                                        onCancel={handleCancel}
+                                        onDelete={handleDelete}
+                                    />
+                                ))}
+                            </AnimatePresence>
+                        </motion.div>
+                    </motion.section>
+                )}
+
+                {/* Completed Downloads */}
+                {completedDownloads.length > 0 && (
+                    <motion.section variants={fadeInUp} className="space-y-4">
+                        <h2 className="text-lg font-semibold flex items-center gap-2 text-muted-foreground">
+                            <CheckCircle className="w-4 h-4 text-white" />
+                            Completed
+                            <span className="text-sm font-normal">
+                                ({completedDownloads.length})
+                            </span>
+                        </h2>
+                        <motion.div variants={staggerContainer} className="space-y-3">
+                            <AnimatePresence mode="popLayout">
+                                {completedDownloads.map(item => (
+                                    <DownloadCard
+                                        key={item.id}
+                                        item={item}
+                                        onCancel={handleCancel}
+                                        onDelete={handleDelete}
+                                        onOpenFolder={handleOpenFolder}
+                                        onPlay={handlePlay}
+                                    />
+                                ))}
+                            </AnimatePresence>
+                        </motion.div>
+                    </motion.section>
+                )}
+
+                {/* Failed Downloads */}
+                {failedDownloads.length > 0 && (
+                    <motion.section variants={fadeInUp} className="space-y-4">
+                        <h2 className="text-lg font-semibold flex items-center gap-2 text-muted-foreground">
+                            <AlertCircle className="w-4 h-4 text-white/50" />
+                            Failed / Cancelled
+                            <span className="text-sm font-normal">
+                                ({failedDownloads.length})
+                            </span>
+                        </h2>
+                        <motion.div variants={staggerContainer} className="space-y-3">
+                            <AnimatePresence mode="popLayout">
+                                {failedDownloads.map(item => (
+                                    <DownloadCard
+                                        key={item.id}
+                                        item={item}
+                                        onCancel={handleCancel}
+                                        onDelete={handleDelete}
+                                    />
+                                ))}
+                            </AnimatePresence>
+                        </motion.div>
+                    </motion.section>
+                )}
+
+                {/* Empty state */}
+                {!isLoading && downloads.length === 0 && (
+                    <motion.div
+                        variants={fadeInUp}
+                        className="flex flex-col items-center justify-center py-20 text-center"
+                    >
+                        <div className="w-20 h-20 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
+                            <Download className="w-10 h-10 text-muted-foreground" />
+                        </div>
+                        <h3 className="text-xl font-semibold mb-2">No downloads yet</h3>
+                        <p className="text-muted-foreground max-w-sm">
+                            Paste a URL on the home page to start downloading your favorite content.
+                        </p>
+                    </motion.div>
+                )}
             </motion.div>
 
-            {/* Loading state */}
-            {isLoading && downloads.length === 0 && (
-                <div className="flex items-center justify-center py-20">
-                    <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                </div>
-            )}
-
-            {/* Active Downloads */}
-            {activeDownloads.length > 0 && (
-                <motion.section variants={fadeInUp} className="space-y-4">
-                    <h2 className="text-lg font-semibold flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-                        Active Downloads
-                        <span className="text-sm font-normal text-muted-foreground">
-                            ({activeDownloads.length})
-                        </span>
-                    </h2>
-                    <motion.div variants={staggerContainer} className="space-y-3">
-                        <AnimatePresence mode="popLayout">
-                            {activeDownloads.map(item => (
-                                <DownloadCard
-                                    key={item.id}
-                                    item={item}
-                                    onCancel={handleCancel}
-                                    onDelete={handleDelete}
-                                />
-                            ))}
-                        </AnimatePresence>
-                    </motion.div>
-                </motion.section>
-            )}
-
-            {/* Completed Downloads */}
-            {completedDownloads.length > 0 && (
-                <motion.section variants={fadeInUp} className="space-y-4">
-                    <h2 className="text-lg font-semibold flex items-center gap-2 text-muted-foreground">
-                        <CheckCircle className="w-4 h-4 text-white" />
-                        Completed
-                        <span className="text-sm font-normal">
-                            ({completedDownloads.length})
-                        </span>
-                    </h2>
-                    <motion.div variants={staggerContainer} className="space-y-3">
-                        <AnimatePresence mode="popLayout">
-                            {completedDownloads.map(item => (
-                                <DownloadCard
-                                    key={item.id}
-                                    item={item}
-                                    onCancel={handleCancel}
-                                    onDelete={handleDelete}
-                                    onOpenFolder={handleOpenFolder}
-                                />
-                            ))}
-                        </AnimatePresence>
-                    </motion.div>
-                </motion.section>
-            )}
-
-            {/* Failed Downloads */}
-            {failedDownloads.length > 0 && (
-                <motion.section variants={fadeInUp} className="space-y-4">
-                    <h2 className="text-lg font-semibold flex items-center gap-2 text-muted-foreground">
-                        <AlertCircle className="w-4 h-4 text-white/50" />
-                        Failed / Cancelled
-                        <span className="text-sm font-normal">
-                            ({failedDownloads.length})
-                        </span>
-                    </h2>
-                    <motion.div variants={staggerContainer} className="space-y-3">
-                        <AnimatePresence mode="popLayout">
-                            {failedDownloads.map(item => (
-                                <DownloadCard
-                                    key={item.id}
-                                    item={item}
-                                    onCancel={handleCancel}
-                                    onDelete={handleDelete}
-                                />
-                            ))}
-                        </AnimatePresence>
-                    </motion.div>
-                </motion.section>
-            )}
-
-            {/* Empty state */}
-            {!isLoading && downloads.length === 0 && (
-                <motion.div
-                    variants={fadeInUp}
-                    className="flex flex-col items-center justify-center py-20 text-center"
-                >
-                    <div className="w-20 h-20 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
-                        <Download className="w-10 h-10 text-muted-foreground" />
-                    </div>
-                    <h3 className="text-xl font-semibold mb-2">No downloads yet</h3>
-                    <p className="text-muted-foreground max-w-sm">
-                        Paste a URL on the home page to start downloading your favorite content.
-                    </p>
-                </motion.div>
-            )}
-        </motion.div>
+            {/* In-App Media Player */}
+            <MediaPlayer
+                isOpen={showPlayer}
+                onClose={() => setShowPlayer(false)}
+                filePath={playerFilePath}
+                title={playerTitle}
+                isAudio={playerIsAudio}
+            />
+        </>
     );
 }

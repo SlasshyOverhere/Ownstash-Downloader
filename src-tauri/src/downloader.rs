@@ -6,6 +6,11 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
+// Import the v2.0 download control system
+use crate::download_router::{DownloadRouter, RoutingDecision, DOWNLOAD_ROUTER};
+use crate::health_metrics::{DownloadEngine, DownloadPhase, HEALTH_REGISTRY};
+use crate::snde::{SNDEEngine, SNDERequest, SNDE_ENGINE};
+
 // Track active download processes for cancellation
 lazy_static::lazy_static! {
     static ref ACTIVE_DOWNLOADS: Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>> = 
@@ -22,6 +27,9 @@ pub struct DownloadProgress {
     pub downloaded_bytes: Option<i64>,
     pub total_bytes: Option<i64>,
     pub filename: Option<String>,
+    /// Engine badge for UI display: "SNDE ACCELERATED", "SNDE SAFE", or "MEDIA ENGINE"
+    #[serde(default)]
+    pub engine_badge: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -319,6 +327,101 @@ impl Downloader {
             downloads.insert(request.id.clone(), cancel_tx);
         }
 
+        // === V2.0 DOWNLOAD CONTROL SYSTEM: Routing Decision ===
+        // Perform preflight routing to determine optimal engine and settings
+        let routing_decision = DOWNLOAD_ROUTER.route(&request.url, None).await;
+        
+        println!("[Downloader] Routing decision for {}: {:?}", request.url, routing_decision);
+        println!("[Downloader] Selected engine: {} | Recommended connections: {} | Reason: {}",
+            routing_decision.badge,
+            routing_decision.recommended_connections,
+            routing_decision.reason
+        );
+
+        // Register with health metrics for watchdog monitoring
+        HEALTH_REGISTRY.register_download(
+            &request.id,
+            routing_decision.engine,
+            routing_decision.file_size,
+        );
+        HEALTH_REGISTRY.set_phase(&request.id, DownloadPhase::Downloading);
+
+        // Clone badge for async use
+        let engine_badge = routing_decision.badge.clone();
+
+        // Emit initial progress event WITH engine badge
+        let _ = app_handle.emit("download-progress", DownloadProgress {
+            id: request.id.clone(),
+            progress: 0.0,
+            speed: String::new(),
+            eta: String::new(),
+            status: "starting".to_string(),
+            downloaded_bytes: None,
+            total_bytes: routing_decision.file_size.map(|s| s as i64),
+            filename: None,
+            engine_badge: Some(engine_badge.clone()),
+        });
+        
+        // === V2.0: Route to SNDE for static files ===
+        // Use SNDE for static files that support range requests
+        // Conditions: SNDE/SNDESafe engine selected, not audio_only, has file size
+        let use_snde = matches!(routing_decision.engine, DownloadEngine::SNDE | DownloadEngine::SNDESafe)
+            && !request.audio_only
+            && routing_decision.file_size.is_some()
+            && routing_decision.probe_result.as_ref().map(|p| p.supports_range).unwrap_or(false);
+
+        if use_snde {
+            println!("[Downloader] Using SNDE for parallel download");
+            
+            // Create SNDE request
+            let output_path = std::path::PathBuf::from(&request.output_path);
+            
+            // Extract filename from URL or use a default
+            let filename = url::Url::parse(&request.url)
+                .ok()
+                .and_then(|u| u.path_segments()?.last().map(|s| s.to_string()))
+                .unwrap_or_else(|| format!("download_{}", request.id));
+            
+            let snde_request = SNDERequest {
+                id: request.id.clone(),
+                url: request.url.clone(),
+                output_path: output_path.join(&filename),
+                routing_decision: routing_decision.clone(),
+            };
+
+            // Convert oneshot cancel to mpsc for SNDE
+            let (snde_cancel_tx, snde_cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
+            
+            // Spawn a task to bridge the cancellation - consumes cancel_rx
+            tokio::spawn(async move {
+                let _ = cancel_rx.await;
+                let _ = snde_cancel_tx.send(()).await;
+            });
+
+            // Run SNDE download
+            let result = SNDE_ENGINE.download(
+                snde_request,
+                app_handle.clone(),
+                snde_cancel_rx,
+            ).await;
+
+            // Cleanup
+            {
+                let mut downloads = ACTIVE_DOWNLOADS.lock().unwrap();
+                downloads.remove(&request.id);
+            }
+            HEALTH_REGISTRY.unregister_download(&request.id);
+
+            if result.success {
+                println!("[Downloader] SNDE completed successfully: {} KB/s avg", result.avg_speed_kbps);
+                return Ok(());
+            } else {
+                // SNDE failed - return error (don't fallback to yt-dlp for static files)
+                return Err(result.error.unwrap_or_else(|| "SNDE download failed".to_string()));
+            }
+        }
+        // === END SNDE ROUTING ===
+
         let mut args = vec![
             "--progress".to_string(),
             "--newline".to_string(),
@@ -411,8 +514,10 @@ impl Downloader {
         let _yt_dlp_path = self.yt_dlp_path.clone();
         let output_path = request.output_path.clone();
         let should_cleanup_subs = request.download_subtitles && !request.audio_only;
+        let engine_badge_for_spawn = engine_badge.clone(); // Capture for async
 
         tokio::spawn(async move {
+            let engine_badge = engine_badge_for_spawn; // Move into spawn
             let mut last_progress = 0.0_f64;
             let mut error_output = String::new();
 
@@ -430,6 +535,7 @@ impl Downloader {
                             downloaded_bytes: None,
                             total_bytes: None,
                             filename: None,
+                            engine_badge: Some(engine_badge.clone()),
                         });
                         break;
                     }
@@ -450,6 +556,7 @@ impl Downloader {
                                         downloaded_bytes: None,
                                         total_bytes: None,
                                         filename: None,
+                                        engine_badge: Some(engine_badge.clone()),
                                     };
                                     let _ = app.emit("download-progress", event);
                                 } else if let Some(progress) = parse_progress(&line) {
@@ -463,6 +570,7 @@ impl Downloader {
                                         downloaded_bytes: None,
                                         total_bytes: None,
                                         filename: None,
+                                        engine_badge: Some(engine_badge.clone()),
                                     };
                                     let _ = app.emit("download-progress", event);
                                 } else if line.contains("[Merger]") || line.contains("[ExtractAudio]") || line.contains("[ffmpeg]") {
@@ -476,6 +584,7 @@ impl Downloader {
                                         downloaded_bytes: None,
                                         total_bytes: None,
                                         filename: None,
+                                        engine_badge: Some(engine_badge.clone()),
                                     };
                                     let _ = app.emit("download-progress", event);
                                 }
@@ -505,6 +614,9 @@ impl Downloader {
                 let mut downloads = ACTIVE_DOWNLOADS.lock().unwrap();
                 downloads.remove(&id);
             }
+            
+            // V2.0: Unregister from health metrics
+            HEALTH_REGISTRY.unregister_download(&id);
 
             // Emit final status
             let final_status = match status {
@@ -538,6 +650,7 @@ impl Downloader {
                 downloaded_bytes: None,
                 total_bytes: None,
                 filename: None,
+                engine_badge: Some(engine_badge.clone()),
             });
         });
 
@@ -618,6 +731,96 @@ pub async fn check_yt_dlp(app_handle: AppHandle) -> Result<YtDlpInfo, String> {
 pub async fn get_media_info(app_handle: AppHandle, url: String) -> Result<MediaInfo, String> {
     let downloader = Downloader::new(&app_handle);
     downloader.get_media_info(&url).await
+}
+
+/// Probe a direct file URL to get size and filename without using yt-dlp
+#[tauri::command]
+pub async fn probe_direct_file(url: String) -> Result<DirectFileInfo, String> {
+    use reqwest::header::{CONTENT_LENGTH, USER_AGENT};
+    
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    
+    let response = client.head(&url)
+        .header(USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        .send()
+        .await
+        .map_err(|e| format!("HEAD request failed: {}", e))?;
+    
+    if !response.status().is_success() {
+        return Err(format!("HEAD request returned status: {}", response.status()));
+    }
+    
+    let headers = response.headers();
+    
+    // Get content length
+    let file_size = headers
+        .get(CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<i64>().ok())
+        .unwrap_or(0);
+    
+    // Get content type
+    let content_type = headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    
+    // Try to get filename from Content-Disposition
+    let filename = headers
+        .get("content-disposition")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| {
+            if let Some(pos) = s.find("filename=") {
+                let rest = &s[pos + 9..];
+                let name = rest.trim_start_matches('"')
+                    .split('"').next()
+                    .or_else(|| rest.split(';').next())
+                    .map(|s| s.trim().to_string());
+                name
+            } else if let Some(pos) = s.find("filename*=") {
+                let rest = &s[pos + 10..];
+                rest.split("''").nth(1)
+                    .map(|s| urlencoding::decode(s).unwrap_or_else(|_| s.into()).to_string())
+            } else {
+                None
+            }
+        });
+    
+    // Fallback to extract filename from URL path
+    let filename = filename.or_else(|| {
+        url::Url::parse(&url).ok()
+            .and_then(|u| u.path_segments()?.last().map(|s| s.to_string()))
+            .filter(|s| !s.is_empty() && s != "download")
+    });
+    
+    // Determine if this is a supported media type
+    let is_media = content_type.as_ref().map(|ct| {
+        ct.starts_with("video/") || 
+        ct.starts_with("audio/") || 
+        ct.contains("octet-stream")
+    }).unwrap_or(true);
+    
+    println!("[ProbeDirectFile] URL: {}", url);
+    println!("[ProbeDirectFile] Size: {} bytes, Filename: {:?}, Type: {:?}", file_size, filename, content_type);
+    
+    Ok(DirectFileInfo {
+        file_size,
+        filename,
+        content_type,
+        is_media,
+    })
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DirectFileInfo {
+    pub file_size: i64,
+    pub filename: Option<String>,
+    pub content_type: Option<String>,
+    pub is_media: bool,
 }
 
 #[tauri::command]

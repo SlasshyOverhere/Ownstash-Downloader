@@ -284,6 +284,25 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
 
             try {
                 const info = await api.getMediaInfo(targetUrl);
+
+                // For direct file hosting services, probe for accurate file size
+                const directFilePlatforms = ['googledrive', 'generic', 'onedrive', 'dropbox', 'mega', 'mediafire'];
+                const isDirectFile = directFilePlatforms.some(p => info.platform.toLowerCase().includes(p));
+
+                if (isDirectFile) {
+                    try {
+                        const probeResult = await api.probeDirectFile(targetUrl);
+                        if (probeResult.file_size > 0 && info.formats.length > 0) {
+                            info.formats[0].filesize = probeResult.file_size;
+                            if (probeResult.filename && probeResult.filename !== 'download') {
+                                info.title = probeResult.filename.replace(/\.[^/.]+$/, '');
+                            }
+                        }
+                    } catch {
+                        // Silently ignore probe failures
+                    }
+                }
+
                 await api.addSearch(targetUrl, info.title, info.thumbnail);
                 setMediaInfo(info);
                 setShowModal(true);
@@ -350,6 +369,26 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                 // Fetch media info first
                 const info = await api.getMediaInfo(url);
 
+                // For direct file hosting services, also probe the URL directly for accurate file size
+                const directFilePlatforms = ['googledrive', 'generic', 'onedrive', 'dropbox', 'mega', 'mediafire'];
+                const isDirectFile = directFilePlatforms.some(p => info.platform.toLowerCase().includes(p));
+
+                if (isDirectFile) {
+                    try {
+                        const probeResult = await api.probeDirectFile(url);
+                        // Update the first format's filesize with the probed value
+                        if (probeResult.file_size > 0 && info.formats.length > 0) {
+                            info.formats[0].filesize = probeResult.file_size;
+                            // Also update title if we got a better filename
+                            if (probeResult.filename && probeResult.filename !== 'download') {
+                                info.title = probeResult.filename.replace(/\.[^/.]+$/, ''); // Remove extension
+                            }
+                        }
+                    } catch (probeErr) {
+                        console.log('[HomePage] Direct file probe failed, using yt-dlp info:', probeErr);
+                    }
+                }
+
                 // Add to search history with title and thumbnail
                 await api.addSearch(url, info.title, info.thumbnail);
 
@@ -405,19 +444,24 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                 video_format: options.videoFormat,
             };
 
-            await api.startDownload(request);
+            // Fire and forget - don't await the download completion
+            // The download runs in background and emits progress events
+            api.startDownload(request).catch(err => {
+                console.error('[HomePage] Download error:', err);
+                // Update the download status to failed
+                api.updateDownloadStatus(downloadId, 'failed').catch(() => { });
+            });
 
-            toast.success('Download started! Check the Downloads page for progress.');
+            // Immediately close modal and navigate
             setShowModal(false);
             setUrl('');
             setMediaInfo(null);
+            toast.success('Download started!');
             loadStats();
 
-            // Auto-navigate to downloads tab
+            // Navigate to downloads tab immediately
             if (onNavigateToDownloads) {
-                setTimeout(() => {
-                    onNavigateToDownloads();
-                }, 500); // Small delay for better UX
+                onNavigateToDownloads();
             }
         } catch (err) {
             const errorMsg = err instanceof Error ? err.message : 'Failed to start download';

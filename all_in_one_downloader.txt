@@ -1,68 +1,94 @@
-# All-in-One OmniDownloader (High-Speed Native Engine) Plan
+# Slasshy OmniDownloader v2.0: The Authoritative Blueprint
+# IDM-Replaceable Architecture (Final Production-Grade Design)
 
-## 1. Vision
-Transform the current downloader from a wrapper (yt-dlp/spot-dl) into a high-performance native concurrent downloader. The goal is to match or exceed the speed of IDM/FDM by implementing multi-connection parallel chunk downloading directly in the Rust backend.
-
-## 2. Core Architecture: "Slasshy Parallel Engine"
-
-### A. Phase 1: Pre-Download Inspection (Metadata)
-- **Tool**: `reqwest::Client` with a `HEAD` or `GET` range request.
-- **Logic**: 
-  - Check `Accept-Ranges: bytes` support.
-  - Retrieve `Content-Length` (Total File Size).
-  - Get a clean filename from `Content-Disposition` or URL.
-
-### B. Phase 2: Dynamic Segmentation
-- **Strategy**: Divide the total file size into $N$ segments (default: 16, configurable up to 64).
-- **Chunk Map**: Create a data structure to track:
-  - `start_byte`, `end_byte`, `current_position`, `status` (Idle, Downloading, Completed, Failed).
-
-### C. Phase 3: Turbo Parallel Download
-- **Implementation**: Use `tokio::spawn` to run $N$ concurrent tasks.
-- **Each Worker**:
-  - Opens an independent TCP connection.
-  - Sends a `Range: bytes=start-end` header.
-  - Streams data into a shared buffer or directly to disk.
-  - **Aggressive Buffering**: Use a 1MB-4MB buffer per connection before flushing to disk to reduce I/O overhead.
-
-### D. Phase 4: Intelligent Storage Management
-- **Pre-allocation**: Use `fs::File::set_len()` to pre-allocate the full file size on disk (creates a "sparse file" on modern filesystems like NTFS/EXT4).
-- **Concurrent Writing**: Multiple threads write to the same file at different offsets using `std::os::windows::fs::FileExt` (seek + write) or equivalent. No merging step needed at the end if written directly!
-
-## 3. Advanced Speed Techniques (The "IDM Magic")
-
-### A. Connection Saturation
-- **Server Throttling Bypass**: Many sites limit speed *per connection* (e.g., 2MB/s). By using 16 connections, we push it to 32MB/s.
-- **TCP Optimization**: Set `TCP_NODELAY` and high `TCP_KEEPALIVE` values in the `reqwest` client builder.
-
-### B. Brutal Resume & Retry
-- **Independent Segments**: If Connection #5 drops, only that 1/16th of the file retries. The other 15 keep flying.
-- **State Persistence**: Save the "Chunk Map" to a `.slasshy` metadata file or the SQLite database. If the app closes, it resumes exactly where it left off.
-
-### C. Dynamic Chunk Splitting
-- If one connection finishes early and others are slow, split the remaining slow chunks into smaller pieces and re-assign them to the idle connection.
-
-## 4. Integration Plan
-
-### Component 1: `native_downloader.rs`
-- New core logic implementation using `reqwest` and `tokio`.
-
-### Component 2: Unified Command Dispatcher
-- Modify `downloader.rs` to detect the URL type:
-  - **Media Platforms (YouTube/Spotify)**: Use `yt-dlp` to get the *Direct Media URL*, then pass that URL to the `NativeDownloader`.
-  - **Direct Links (.zip, .msi, etc.)**: Go directly to `NativeDownloader`.
-
-### Component 3: Frontend UI Enhancements
-- Visualizing segments: A "Progress bar" that shows multiple downloading chunks (classic IDM look).
-- Speedometer: Aggregated speed from all segments.
-
-## 5. Roadmap
-1. **Milestone 1**: Basic Single-file Range Downloader (2-4 connections).
-2. **Milestone 2**: Concurrent File Writer (pre-allocation + offset writing).
-3. **Milestone 3**: Integration with the React frontend and `yt-dlp` URL extraction.
-4. **Milestone 4**: Resilience testing (network drops, resume logic).
-5. **Milestone 5**: Polished UI with segment visualization.
+## 0. The Core Philosophy
+A professional downloader is defined by its **behavior under hostile conditions**. 
+- **Reliability** via Control Systems is the foundation.
+- **Transparency** (Engine Badges) is the bond of trust.
+- **Graceful Degradation** is the operational reality.
 
 ---
-**Created on**: 2025-12-24
-**Target**: Slasshy OmniDownloader v2.0
+
+## 1. Engine Transparency (Defensive UX)
+Explicit user-visible labeling of the active engine to manage expectations:
+- **[ SNDE ACCELERATED ]**: Raw speed for static binaries/archives.
+- **[ MEDIA ENGINE ]**: Maximum compatibility for streaming platforms (yt-dlp).
+*Trust is maintained by identifying why a download might be slower.*
+
+---
+
+## 2. The Integrated State Machine: Router + Watchdog
+This is the "Brain" of the system, combining initial decision-making with runtime adaptation.
+
+### 2.1 Preflight Decision (Initial Routing)
+1. **Heuristics**: Match against media domains (yt-dlp) or static extensions (SNDE).
+2. **Probes**: 2s timeout `Range: bytes=0-0` check.
+3. **Historical Memory (New)**: Check "Host Reputation Table". If `example.com` historically fails at 8 connections, the router overrides and starts at a "Safe Default".
+
+### 2.2 Runtime Strategy Manager (The Watchdog)
+Continuous monitoring of **Health Metrics** (not just speed):
+- **Metrics**: Median throughput per connection, error rate per segment, retry density, stall duration, and server response codes.
+- **Strategy Collapse (Automatic)**: 
+    - High error rates/throttling → Auto-collapse connections (e.g., 8 → 4 → 1).
+    - Throttling signature detected → Toggle "Safe Mode" (single connection, HTTP/2 allowed).
+- **Engine Switching (Explicit Only)**: 
+    - **SNDE → SNDE Safe** is automatic.
+    - **SNDE → Media Engine** is NEVER automatic mid-flight. It must be a user-visible action offered after failure to prevent state corruption.
+
+---
+
+## 3. Advanced Operational Mechanics
+
+### 3.1 Protocol Intelligence
+- **SNDE Segmented**: Force HTTP/1.1 for guaranteed TCP-level parallelism.
+- **SNDE Safe / Media Engine**: Allow HTTP/2/3 for better congestion control and multiplexing on sensitive streams.
+
+### 3.2 Safe Range Management
+- **Rule**: NO mid-stream range splitting.
+- **Logic**: Idle workers may only "steal" unstarted, future byte ranges from the queue of slower workers. This avoids CDN fingerprinting and 403 bans.
+
+### 3.3 Anti-Freeze Disk Policy (Windows Optimized)
+- **< 8GB**: Immediate full pre-allocation (`set_len`).
+- **8GB - 32GB**: Chunked pre-allocation (4GB growing intervals).
+- **> 32GB**: Lazy growth with write-ahead guardrails to prevent UI/System freezing (Antivirus/EDR friendly).
+
+---
+
+## 4. Host Reputation Memory (The Moat)
+Maintain a lightweight local database/table of host-specific behavior:
+- `domain`: e.g., "fastcdn.com"
+- `max_stable_conns`: e.g., 8
+- `favored_protocol`: e.g., HTTP/1.1
+- `last_health_score`: 0-100
+*Goal: Start at the optimal speed instead of trial-and-error every time.*
+
+---
+
+## 5. Global Scheduler (Resource Arbitration)
+- **Traffic Shaping**: Prevent multiple concurrent downloads from starving each other's TCP windows.
+- **Priority**: Active (UI-focused) downloads get first-class bandwidth allocation.
+
+---
+
+## 6. Implementation Roadmap (Final)
+
+### Phase 1: The Core Control System
+- Design `download_router.rs` + `watchdog.rs` as a unified state machine.
+- Implement the **Health Metric** registry and **Host Reputation** table.
+
+### Phase 2: SNDE Adaptive implementation
+- Reqwest/Tokio-based downloader with dynamic connection collapsing.
+- Forced HTTP/1.1 logic.
+
+### Phase 3: Media Engine Integration
+- yt-dlp JSON wrapper with unified health reporting.
+- Frontend "Engine Badges" implementation.
+
+### Phase 4: Operational Polish
+- Tiered disk allocation logic.
+- Global Scheduler for multi-task stability.
+
+---
+**Status**: DESIGN LOCKED & AUTHORITATIVE
+**Target**: Slasshy OmniDownloader v2.0 "The Bulletproof System"
+**Updated Date**: 2025-12-24
