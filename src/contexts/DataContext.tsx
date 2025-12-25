@@ -1,9 +1,10 @@
 // Data Sync Context - Provides cloud-synced data throughout the app
+// Now uses Google Drive as personal database instead of Firestore
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { useAuth } from './AuthContext';
-import { firestoreService, Download, SearchHistory, Setting } from '@/services/firestore';
+import { gdriveService, isGDriveAvailable, clearGDriveAccessToken } from '@/services/gdriveService';
+import { Download, SearchHistory, Setting } from '@/services/firestore';
 import { api } from '@/services/api';
-import { Unsubscribe } from 'firebase/firestore';
 
 interface DataContextType {
     // Downloads
@@ -28,6 +29,9 @@ interface DataContextType {
     isLoading: boolean;
     isSyncing: boolean;
 
+    // Storage info
+    storageType: 'local' | 'gdrive';
+
     // Migration
     migrateLocalData: () => Promise<void>;
 }
@@ -46,21 +50,35 @@ export function DataProvider({ children }: DataProviderProps) {
     const [settings, setSettings] = useState<Setting[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSyncing, setIsSyncing] = useState(false);
+    const [storageType, setStorageType] = useState<'local' | 'gdrive'>('local');
 
-    // Subscribe to Firestore updates when user is logged in
+    // Subscribe to Google Drive updates when user is logged in with GDrive access
     useEffect(() => {
         if (!user) {
             // User not logged in - load from local database via Tauri
+            setStorageType('local');
             loadLocalData();
             return;
         }
 
+        // Check if Google Drive is available (user signed in with Google)
+        if (!isGDriveAvailable()) {
+            console.log('[DataContext] User logged in but no Google Drive access, using local storage');
+            setStorageType('local');
+            loadLocalData();
+            return;
+        }
+
+        // User logged in with Google Drive access
+        setStorageType('gdrive');
         setIsLoading(true);
-        const unsubscribers: Unsubscribe[] = [];
+        const unsubscribers: (() => void)[] = [];
+
+        console.log('[DataContext] Setting up Google Drive subscriptions');
 
         // Subscribe to downloads
         unsubscribers.push(
-            firestoreService.subscribeToDownloads(user.uid, (data) => {
+            gdriveService.subscribeToDownloads(user.uid, (data) => {
                 setDownloads(data);
                 setIsLoading(false);
             })
@@ -68,24 +86,32 @@ export function DataProvider({ children }: DataProviderProps) {
 
         // Subscribe to search history
         unsubscribers.push(
-            firestoreService.subscribeToSearchHistory(user.uid, (data) => {
+            gdriveService.subscribeToSearchHistory(user.uid, (data) => {
                 setSearchHistory(data);
             })
         );
 
         // Subscribe to settings
         unsubscribers.push(
-            firestoreService.subscribeToSettings(user.uid, (data) => {
+            gdriveService.subscribeToSettings(user.uid, (data) => {
                 setSettings(data);
             })
         );
 
         return () => {
+            console.log('[DataContext] Cleaning up subscriptions');
             unsubscribers.forEach(unsub => unsub());
         };
     }, [user]);
 
-    // Load data from local Tauri database (fallback when not logged in)
+    // Clean up GDrive token on logout
+    useEffect(() => {
+        if (!user) {
+            clearGDriveAccessToken();
+        }
+    }, [user]);
+
+    // Load data from local Tauri database (fallback when not logged in or no GDrive access)
     const loadLocalData = async () => {
         try {
             setIsLoading(true);
@@ -109,11 +135,13 @@ export function DataProvider({ children }: DataProviderProps) {
         // Always save to local database first
         await api.addDownload(download);
 
-        // If user is logged in, sync to Firestore
-        if (user) {
+        // If user is logged in with GDrive, sync to Google Drive
+        if (user && isGDriveAvailable()) {
             setIsSyncing(true);
             try {
-                await firestoreService.addDownload(user.uid, download);
+                await gdriveService.addDownload(user.uid, download);
+            } catch (error) {
+                console.error('[DataContext] Failed to sync download to GDrive:', error);
             } finally {
                 setIsSyncing(false);
             }
@@ -126,10 +154,12 @@ export function DataProvider({ children }: DataProviderProps) {
     const updateDownloadStatus = useCallback(async (id: string, status: string) => {
         await api.updateDownloadStatus(id, status);
 
-        if (user) {
+        if (user && isGDriveAvailable()) {
             setIsSyncing(true);
             try {
-                await firestoreService.updateDownloadStatus(user.uid, id, status);
+                await gdriveService.updateDownloadStatus(user.uid, id, status);
+            } catch (error) {
+                console.error('[DataContext] Failed to sync status to GDrive:', error);
             } finally {
                 setIsSyncing(false);
             }
@@ -141,10 +171,12 @@ export function DataProvider({ children }: DataProviderProps) {
     const deleteDownload = useCallback(async (id: string) => {
         await api.deleteDownload(id);
 
-        if (user) {
+        if (user && isGDriveAvailable()) {
             setIsSyncing(true);
             try {
-                await firestoreService.deleteDownload(user.uid, id);
+                await gdriveService.deleteDownload(user.uid, id);
+            } catch (error) {
+                console.error('[DataContext] Failed to delete from GDrive:', error);
             } finally {
                 setIsSyncing(false);
             }
@@ -156,10 +188,12 @@ export function DataProvider({ children }: DataProviderProps) {
     const clearDownloads = useCallback(async () => {
         await api.clearDownloads();
 
-        if (user) {
+        if (user && isGDriveAvailable()) {
             setIsSyncing(true);
             try {
-                await firestoreService.clearDownloads(user.uid);
+                await gdriveService.clearDownloads(user.uid);
+            } catch (error) {
+                console.error('[DataContext] Failed to clear downloads in GDrive:', error);
             } finally {
                 setIsSyncing(false);
             }
@@ -172,10 +206,12 @@ export function DataProvider({ children }: DataProviderProps) {
     const addSearch = useCallback(async (query: string, title?: string, thumbnail?: string) => {
         await api.addSearch(query, title, thumbnail);
 
-        if (user) {
+        if (user && isGDriveAvailable()) {
             setIsSyncing(true);
             try {
-                await firestoreService.addSearch(user.uid, query, title, thumbnail);
+                await gdriveService.addSearch(user.uid, query, title, thumbnail);
+            } catch (error) {
+                console.error('[DataContext] Failed to sync search to GDrive:', error);
             } finally {
                 setIsSyncing(false);
             }
@@ -194,10 +230,12 @@ export function DataProvider({ children }: DataProviderProps) {
     const clearSearchHistory = useCallback(async () => {
         await api.clearSearchHistory();
 
-        if (user) {
+        if (user && isGDriveAvailable()) {
             setIsSyncing(true);
             try {
-                await firestoreService.clearSearchHistory(user.uid);
+                await gdriveService.clearSearchHistory(user.uid);
+            } catch (error) {
+                console.error('[DataContext] Failed to clear search history in GDrive:', error);
             } finally {
                 setIsSyncing(false);
             }
@@ -210,10 +248,12 @@ export function DataProvider({ children }: DataProviderProps) {
     const saveSetting = useCallback(async (key: string, value: string) => {
         await api.saveSetting(key, value);
 
-        if (user) {
+        if (user && isGDriveAvailable()) {
             setIsSyncing(true);
             try {
-                await firestoreService.saveSetting(user.uid, key, value);
+                await gdriveService.saveSetting(user.uid, key, value);
+            } catch (error) {
+                console.error('[DataContext] Failed to sync setting to GDrive:', error);
             } finally {
                 setIsSyncing(false);
             }
@@ -238,10 +278,12 @@ export function DataProvider({ children }: DataProviderProps) {
     const deleteSetting = useCallback(async (key: string) => {
         await api.deleteSetting(key);
 
-        if (user) {
+        if (user && isGDriveAvailable()) {
             setIsSyncing(true);
             try {
-                await firestoreService.deleteSetting(user.uid, key);
+                await gdriveService.deleteSetting(user.uid, key);
+            } catch (error) {
+                console.error('[DataContext] Failed to delete setting from GDrive:', error);
             } finally {
                 setIsSyncing(false);
             }
@@ -250,9 +292,12 @@ export function DataProvider({ children }: DataProviderProps) {
         }
     }, [user]);
 
-    // Migrate local data to cloud
+    // Migrate local data to Google Drive
     const migrateLocalData = useCallback(async () => {
-        if (!user) return;
+        if (!user || !isGDriveAvailable()) {
+            console.log('[DataContext] Cannot migrate: no user or no GDrive access');
+            return;
+        }
 
         setIsSyncing(true);
         try {
@@ -263,17 +308,17 @@ export function DataProvider({ children }: DataProviderProps) {
                 api.getAllSettings(),
             ]);
 
-            // Migrate to Firestore
-            await firestoreService.migrateLocalData(
+            // Migrate to Google Drive
+            await gdriveService.migrateLocalData(
                 user.uid,
                 localDownloads,
                 localSearchHistory,
                 localSettings
             );
 
-            console.log('Successfully migrated local data to cloud');
+            console.log('[DataContext] Successfully migrated local data to Google Drive');
         } catch (error) {
-            console.error('Failed to migrate local data:', error);
+            console.error('[DataContext] Failed to migrate local data:', error);
             throw error;
         } finally {
             setIsSyncing(false);
@@ -295,6 +340,7 @@ export function DataProvider({ children }: DataProviderProps) {
         deleteSetting,
         isLoading,
         isSyncing,
+        storageType,
         migrateLocalData,
     };
 

@@ -16,13 +16,19 @@ const isDev = import.meta.env.DEV;
 
 // Redirect URI configuration:
 // - DEV MODE: Uses localhost:1420 (Vite dev server handles the redirect)
-// - PRODUCTION: Uses the hosted callback page on Netlify (or override with VITE_OAUTH_REDIRECT_URI)
-const PRODUCTION_CALLBACK_URL = 'https://slasshy-omnidownloader-fallback.netlify.app/';
+// - PRODUCTION: Uses the hosted callback page (default or override via .env)
+const PRODUCTION_CALLBACK_URL = import.meta.env.VITE_AUTH_FALLBACK_URL || 'https://omniauth.slasshy.online/';
 const REDIRECT_URI = isDev
     ? 'http://localhost:1420'
     : (import.meta.env.VITE_OAUTH_REDIRECT_URI || PRODUCTION_CALLBACK_URL);
 
-const SCOPES = ['email', 'profile', 'openid'];
+// Scopes: email/profile for auth, drive.appdata for storing user data in their private app folder
+const SCOPES = [
+    'email',
+    'profile',
+    'openid',
+    'https://www.googleapis.com/auth/drive.appdata'  // Allows access ONLY to app-specific hidden folder
+];
 
 // State management
 let authState: string | null = null;
@@ -108,6 +114,14 @@ async function handleOAuthCallback(data: { idToken?: string; accessToken?: strin
 
         // Sign in to Firebase
         await signInWithCredential(auth, credential);
+
+        // Store access token for Google Drive API
+        // This allows us to use Drive as a personal database
+        if (data.accessToken) {
+            const { setGDriveAccessToken } = await import('./gdriveService');
+            setGDriveAccessToken(data.accessToken);
+            console.log('Google Drive access token stored for database sync');
+        }
 
         console.log('Successfully signed in with Google via browser');
         authCallbackHandler?.({ success: true });

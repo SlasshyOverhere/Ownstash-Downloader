@@ -146,6 +146,7 @@ pub fn run() {
             // Utility commands
             commands::open_folder,
             commands::play_file,
+            commands::open_with_external_player,
             // Use media_server's robust matching instead of commands' basic one
             media_server::find_best_media_match,
             media_server::get_media_stream_url,

@@ -2,7 +2,6 @@
 // Authentication is REQUIRED - all features require sign-in
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { authService, AuthUser } from '@/services/auth';
-import { setCurrentUserId } from '@/services/api';
 
 interface AuthContextType {
     user: AuthUser | null;
@@ -24,10 +23,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const [user, setUser] = useState<AuthUser | null>(null);
     const [loading, setLoading] = useState(true);
 
-    // Update the API's current user ID whenever user changes
-    useEffect(() => {
-        setCurrentUserId(user?.uid || null);
-    }, [user]);
 
     useEffect(() => {
         // Initialize Google browser auth listener for deep link callbacks

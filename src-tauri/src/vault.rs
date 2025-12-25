@@ -59,6 +59,15 @@ struct VaultSession {
     unlocked_at: i64,
 }
 
+/// Helper to get the vault key without holding the MutexGuard across await points
+fn get_vault_key() -> Result<[u8; KEY_SIZE], String> {
+    let session = VAULT_SESSION.lock().unwrap();
+    match &*session {
+        Some(s) => Ok(s.key),
+        None => Err("Vault is locked. Unlock it first.".to_string()),
+    }
+}
+
 fn get_vault_dir(app_handle: &AppHandle) -> PathBuf {
     let app_data_dir = app_handle
         .path()
@@ -448,7 +457,7 @@ pub fn vault_lock() -> Result<(), String> {
 
 /// Add a file to the vault (encrypts and moves it)
 #[tauri::command]
-pub fn vault_add_file(
+pub async fn vault_add_file(
     app_handle: AppHandle,
     source_path: String,
     original_name: String,
@@ -456,13 +465,8 @@ pub fn vault_add_file(
     thumbnail: Option<String>,
     delete_original: bool,
 ) -> Result<VaultFile, String> {
-    // Check if vault is unlocked
-    let session = VAULT_SESSION.lock().unwrap();
-    let key = match &*session {
-        Some(s) => s.key,
-        None => return Err("Vault is locked. Unlock it first.".to_string()),
-    };
-    drop(session);
+    // Get the encryption key (this doesn't hold the lock across await points)
+    let key = get_vault_key()?;
 
     let source = PathBuf::from(&source_path);
     if !source.exists() {
@@ -478,8 +482,16 @@ pub fn vault_add_file(
     let encrypted_name = format!("{}{}", file_id, ENCRYPTED_EXTENSION);
     let dest_path = get_vault_files_dir(&app_handle).join(&encrypted_name);
 
-    // Encrypt file
-    encrypt_file(&key, &source, &dest_path)?;
+    // Encrypt file in background thread to avoid blocking UI
+    let source_clone = source.clone();
+    let dest_clone = dest_path.clone();
+    let key_copy = key; // Copy the key for the closure
+    tokio::task::spawn_blocking(move || {
+        encrypt_file(&key_copy, &source_clone, &dest_clone)
+    })
+    .await
+    .map_err(|e| format!("Encryption task failed: {}", e))?
+    .map_err(|e| format!("Encryption failed: {}", e))?;
 
     // Create vault file entry
     let vault_file = VaultFile {
@@ -528,17 +540,13 @@ pub fn vault_list_files(app_handle: AppHandle) -> Result<Vec<VaultFile>, String>
 
 /// Export/decrypt a file from the vault to a destination
 #[tauri::command]
-pub fn vault_export_file(
+pub async fn vault_export_file(
     app_handle: AppHandle,
     file_id: String,
     destination_path: String,
 ) -> Result<String, String> {
-    let session = VAULT_SESSION.lock().unwrap();
-    let key = match &*session {
-        Some(s) => s.key,
-        None => return Err("Vault is locked. Unlock it first.".to_string()),
-    };
-    drop(session);
+    // Get the decryption key (this doesn't hold the lock across await points)
+    let key = get_vault_key()?;
 
     let files = load_vault_index(&app_handle);
     let vault_file = files.iter()
@@ -548,24 +556,28 @@ pub fn vault_export_file(
     let encrypted_path = get_vault_files_dir(&app_handle).join(&vault_file.encrypted_name);
     let dest_path = PathBuf::from(&destination_path).join(&vault_file.original_name);
 
-    // Decrypt to destination
-    decrypt_file(&key, &encrypted_path, &dest_path)?;
+    // Decrypt in background thread to avoid blocking UI
+    let enc_clone = encrypted_path.clone();
+    let dest_clone = dest_path.clone();
+    let key_copy = key; // Copy the key for the closure
+    tokio::task::spawn_blocking(move || {
+        decrypt_file(&key_copy, &enc_clone, &dest_clone)
+    })
+    .await
+    .map_err(|e| format!("Decryption task failed: {}", e))?
+    .map_err(|e| format!("Decryption failed: {}", e))?;
 
     Ok(dest_path.to_string_lossy().to_string())
 }
 
 /// Get a temporary decrypted path for playback (auto-deleted later)
 #[tauri::command]
-pub fn vault_get_temp_playback_path(
+pub async fn vault_get_temp_playback_path(
     app_handle: AppHandle,
     file_id: String,
 ) -> Result<String, String> {
-    let session = VAULT_SESSION.lock().unwrap();
-    let key = match &*session {
-        Some(s) => s.key,
-        None => return Err("Vault is locked. Unlock it first.".to_string()),
-    };
-    drop(session);
+    // Get the decryption key (this doesn't hold the lock across await points)
+    let key = get_vault_key()?;
 
     let files = load_vault_index(&app_handle);
     let vault_file = files.iter()
@@ -581,8 +593,16 @@ pub fn vault_get_temp_playback_path(
     
     let temp_path = temp_dir.join(&vault_file.original_name);
 
-    // Decrypt to temp location
-    decrypt_file(&key, &encrypted_path, &temp_path)?;
+    // Decrypt in background thread to avoid blocking UI
+    let enc_clone = encrypted_path.clone();
+    let temp_clone = temp_path.clone();
+    let key_copy = key; // Copy the key for the closure
+    tokio::task::spawn_blocking(move || {
+        decrypt_file(&key_copy, &enc_clone, &temp_clone)
+    })
+    .await
+    .map_err(|e| format!("Decryption task failed: {}", e))?
+    .map_err(|e| format!("Decryption failed: {}", e))?;
 
     Ok(temp_path.to_string_lossy().to_string())
 }

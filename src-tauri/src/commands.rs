@@ -105,6 +105,51 @@ fn open_path_in_explorer(path: &std::path::Path) -> Result<(), String> {
 
     Ok(())
 }
+
+/// Open a file with an external player
+/// If player_path is provided, use that specific player; otherwise use system default
+#[tauri::command]
+pub async fn open_with_external_player(file_path: String, player_path: Option<String>) -> Result<(), String> {
+    let file = std::path::Path::new(&file_path);
+    
+    if !file.exists() {
+        return Err(format!("File does not exist: {}", file_path));
+    }
+    
+    match player_path {
+        Some(player) => {
+            // Use custom player
+            let player_file = std::path::Path::new(&player);
+            if !player_file.exists() {
+                return Err(format!("Player not found: {}", player));
+            }
+            
+            #[cfg(target_os = "windows")]
+            {
+                Command::new(&player)
+                    .arg(&file_path)
+                    .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                    .spawn()
+                    .map_err(|e| format!("Failed to open with player: {}", e))?;
+            }
+            
+            #[cfg(not(target_os = "windows"))]
+            {
+                Command::new(&player)
+                    .arg(&file_path)
+                    .spawn()
+                    .map_err(|e| format!("Failed to open with player: {}", e))?;
+            }
+        }
+        None => {
+            // Use system default
+            open_file_with_default_app(file)?;
+        }
+    }
+    
+    Ok(())
+}
+
 // Play a file with the default system application
 #[tauri::command]
 pub async fn play_file(path: String, title: String) -> Result<(), String> {

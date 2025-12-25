@@ -14,8 +14,8 @@ import {
     Download,
     Sparkles,
     Cloud,
-    CloudOff,
-    Upload
+    Upload,
+    HardDrive
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { staggerContainer, staggerItem, fadeInUp } from '@/lib/animations';
@@ -104,7 +104,7 @@ function Toggle({ checked, onChange }: ToggleProps) {
 
 export function SettingsPage() {
     const { user } = useAuth();
-    const { migrateLocalData, isSyncing } = useData();
+    const { migrateLocalData, isSyncing, storageType } = useData();
     const [downloadPath, setDownloadPath] = useState<string>('Loading...');
     const [embedThumbnails, setEmbedThumbnails] = useState(true);
     const [embedMetadata, setEmbedMetadata] = useState(true);
@@ -496,14 +496,14 @@ export function SettingsPage() {
 
             {/* Cloud Sync */}
             <SettingSection
-                title="Cloud Sync"
-                description="Keep your data synced across devices"
-                icon={Cloud}
+                title="Data Storage"
+                description="Your data privacy and sync settings"
+                icon={storageType === 'gdrive' ? Cloud : HardDrive}
             >
                 <div className="space-y-4">
-                    {/* Sync Status */}
+                    {/* Storage Type Indicator */}
                     <div className="p-4 rounded-xl bg-muted/30 border border-white/10">
-                        {user ? (
+                        {user && storageType === 'gdrive' ? (
                             <div className="flex items-start gap-3">
                                 <UserAvatar
                                     photoURL={user.photoURL}
@@ -518,29 +518,65 @@ export function SettingsPage() {
                                         {isSyncing ? (
                                             <>
                                                 <Loader2 className="w-3 h-3 text-white/60 animate-spin" />
-                                                <span className="text-xs text-white/60">Syncing...</span>
+                                                <span className="text-xs text-white/60">Syncing to Google Drive...</span>
                                             </>
                                         ) : (
                                             <>
-                                                <CheckCircle className="w-3 h-3 text-white" />
-                                                <span className="text-xs text-white/80">Cloud sync active</span>
+                                                <Cloud className="w-3 h-3 text-white" />
+                                                <span className="text-xs text-white/80">Stored in your Google Drive</span>
                                             </>
                                         )}
                                     </div>
                                 </div>
                             </div>
+                        ) : user ? (
+                            <div className="flex items-start gap-3">
+                                <UserAvatar
+                                    photoURL={user.photoURL}
+                                    displayName={user.displayName}
+                                    email={user.email}
+                                    size="md"
+                                />
+                                <div className="flex-1">
+                                    <p className="text-sm font-medium">{user.displayName || 'User'}</p>
+                                    <p className="text-xs text-muted-foreground">{user.email}</p>
+                                    <div className="flex items-center gap-1.5 mt-2">
+                                        <HardDrive className="w-3 h-3 text-yellow-400" />
+                                        <span className="text-xs text-yellow-400/80">Local storage only</span>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                        Sign in with Google to sync to your Drive
+                                    </p>
+                                </div>
+                            </div>
                         ) : (
                             <div className="flex items-center gap-3">
-                                <CloudOff className="w-5 h-5 text-muted-foreground" />
+                                <HardDrive className="w-5 h-5 text-muted-foreground" />
                                 <div>
-                                    <p className="text-sm font-medium text-muted-foreground">Not signed in</p>
+                                    <p className="text-sm font-medium text-muted-foreground">Local Storage</p>
                                     <p className="text-xs text-muted-foreground/70">
-                                        Sign in to sync your data across devices
+                                        Sign in with Google to sync data to your personal Drive
                                     </p>
                                 </div>
                             </div>
                         )}
                     </div>
+
+                    {/* Privacy notice */}
+                    {storageType === 'gdrive' && (
+                        <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                            <div className="flex items-start gap-2">
+                                <CheckCircle className="w-4 h-4 text-green-400 mt-0.5 shrink-0" />
+                                <div>
+                                    <p className="text-xs font-medium text-green-400">Privacy-First Storage</p>
+                                    <p className="text-xs text-green-400/70 mt-0.5">
+                                        Your data is stored in your own Google Drive, not our servers.
+                                        Only you can access it.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Migration options (only show when logged in) */}
                     {user && (

@@ -154,6 +154,10 @@ export const authService = {
     // Sign out
     async signOut(): Promise<void> {
         try {
+            // Clear Google Drive access token
+            const { clearGDriveAccessToken } = await import('./gdriveService');
+            clearGDriveAccessToken();
+
             await signOut(auth);
         } catch (error: any) {
             throw {

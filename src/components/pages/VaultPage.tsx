@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Lock,
@@ -18,7 +18,11 @@ import {
     Settings,
     Key,
     RefreshCw,
-    X
+    X,
+    Monitor,
+    ExternalLink,
+    HelpCircle,
+    Cloud
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { staggerContainer, fadeInUp } from '@/lib/animations';
@@ -26,6 +30,15 @@ import { toast } from 'sonner';
 import api, { VaultStatus, VaultFile, formatBytes } from '@/services/api';
 import { MediaPlayer } from '@/components/MediaPlayer';
 import { open } from '@tauri-apps/plugin-dialog';
+import {
+    saveVaultIndexToGDrive,
+    loadVaultIndexFromGDrive,
+    isGDriveAvailable
+} from '@/services/gdriveService';
+
+// Player preference types
+type PlayerPreference = 'internal' | 'external' | 'ask';
+
 
 
 
@@ -130,6 +143,36 @@ export function VaultPage() {
     const [newPin, setNewPin] = useState('');
     const [confirmNewPin, setConfirmNewPin] = useState('');
 
+    // Player preference settings
+    const [playerPreference, setPlayerPreference] = useState<PlayerPreference>('internal');
+    const [externalPlayerPath, setExternalPlayerPath] = useState<string>('');
+
+    // Play method choice modal (for "ask every time" option)
+    const [showPlayChoice, setShowPlayChoice] = useState(false);
+    const [pendingPlayFile, setPendingPlayFile] = useState<VaultFile | null>(null);
+
+    // Google Drive cloud sync
+    const [cloudSyncing, setCloudSyncing] = useState(false);
+    const vaultPinRef = useRef<string>(''); // Store PIN for cloud sync (in memory only)
+
+    // Sync vault index to Google Drive (encrypted with PIN)
+    const syncToGDrive = useCallback(async (vaultFiles: VaultFile[]) => {
+        if (!isGDriveAvailable() || !vaultPinRef.current) {
+            return;
+        }
+
+        try {
+            setCloudSyncing(true);
+            await saveVaultIndexToGDrive(vaultFiles, vaultPinRef.current);
+            console.log('[Vault] Synced to Google Drive (encrypted)');
+        } catch (e) {
+            console.error('[Vault] Cloud sync failed:', e);
+            // Don't show error toast - silent background sync
+        } finally {
+            setCloudSyncing(false);
+        }
+    }, []);
+
     const loadStatus = useCallback(async () => {
         try {
             console.log('[Vault] Loading status...');
@@ -167,7 +210,66 @@ export function VaultPage() {
 
     useEffect(() => {
         loadStatus();
+        loadPlayerPreferences();
     }, [loadStatus]);
+
+    // Load player preferences from settings
+    const loadPlayerPreferences = async () => {
+        try {
+            const pref = await api.getSetting('vault_player_preference');
+            if (pref && ['internal', 'external', 'ask'].includes(pref)) {
+                setPlayerPreference(pref as PlayerPreference);
+            }
+
+            const playerPath = await api.getSetting('vault_external_player_path');
+            if (playerPath) {
+                setExternalPlayerPath(playerPath);
+            }
+        } catch (err) {
+            console.log('[Vault] Could not load player preferences, using defaults');
+        }
+    };
+
+    // Save player preference
+    const savePlayerPreference = async (pref: PlayerPreference) => {
+        setPlayerPreference(pref);
+        try {
+            await api.saveSetting('vault_player_preference', pref);
+        } catch (err) {
+            console.error('[Vault] Failed to save player preference:', err);
+        }
+    };
+
+    // Save external player path
+    const saveExternalPlayerPath = async (path: string) => {
+        setExternalPlayerPath(path);
+        try {
+            await api.saveSetting('vault_external_player_path', path);
+        } catch (err) {
+            console.error('[Vault] Failed to save external player path:', err);
+        }
+    };
+
+    // Select external player executable
+    const handleSelectExternalPlayer = async () => {
+        try {
+            const selected = await open({
+                multiple: false,
+                title: 'Select External Player Executable',
+                filters: [{
+                    name: 'Executable',
+                    extensions: ['exe']
+                }]
+            });
+
+            if (selected && typeof selected === 'string') {
+                await saveExternalPlayerPath(selected);
+                toast.success('External player set!');
+            }
+        } catch (err) {
+            toast.error('Failed to select player');
+        }
+    };
 
 
 
@@ -204,10 +306,17 @@ export function VaultPage() {
             setLoading(true);
             setPinError('');
             await api.vaultSetup(pin);
+
+            // Store PIN for cloud sync (in memory only)
+            vaultPinRef.current = pin;
+
             toast.success('Vault created successfully!');
             setPin('');
             setConfirmPin('');
             await loadStatus();
+
+            // Sync empty vault to cloud
+            syncToGDrive([]);
         } catch (err) {
             const msg = err instanceof Error ? err.message : 'Failed to setup vault';
             setPinError(msg);
@@ -230,9 +339,26 @@ export function VaultPage() {
             setLoading(true);
             setPinError('');
             await api.vaultUnlock(pinToUse);
+
+            // Store PIN for cloud sync (in memory only)
+            vaultPinRef.current = pinToUse;
+
             toast.success('Vault unlocked!');
             setPin('');
             await loadStatus();
+
+            // Try to load vault index from cloud if available
+            if (isGDriveAvailable()) {
+                try {
+                    const cloudVault = await loadVaultIndexFromGDrive(pinToUse);
+                    if (cloudVault && cloudVault.length > 0) {
+                        console.log('[Vault] Found cloud vault with', cloudVault.length, 'entries');
+                        // For now, just log - merge logic could be added later
+                    }
+                } catch (e) {
+                    console.log('[Vault] No cloud vault or wrong PIN');
+                }
+            }
         } catch (err) {
             const msg = err instanceof Error ? err.message : 'Invalid PIN';
             setPinError(msg);
@@ -245,6 +371,10 @@ export function VaultPage() {
         try {
             await api.vaultLock();
             await api.vaultCleanupTemp();
+
+            // Clear PIN from memory when locking
+            vaultPinRef.current = '';
+
             setFiles([]);
             setMode('locked');
             toast.success('Vault locked');
@@ -284,7 +414,10 @@ export function VaultPage() {
                 if (prev.some(f => f.id === addedFile.id)) {
                     return prev;
                 }
-                return [...prev, addedFile];
+                const updatedFiles = [...prev, addedFile];
+                // Sync to cloud in background
+                syncToGDrive(updatedFiles);
+                return updatedFiles;
             });
 
             // Then force a backend reload after a short delay to ensure consistency
@@ -306,18 +439,92 @@ export function VaultPage() {
         }
     };
 
+    // Handle play button click - respects player preference
     const handlePlay = async (file: VaultFile) => {
+        if (playerPreference === 'ask') {
+            // Show choice modal
+            setPendingPlayFile(file);
+            setShowPlayChoice(true);
+        } else if (playerPreference === 'external') {
+            await playWithExternalPlayer(file);
+        } else {
+            await playWithInternalPlayer(file);
+        }
+    };
+
+    // Play with external player (fast, but may leave traces)
+    const playWithExternalPlayer = async (file: VaultFile) => {
         try {
             toast.info('Decrypting for playback...');
             const tempPath = await api.vaultGetTempPlaybackPath(file.id);
 
-            setPlayerFilePath(tempPath);
+            toast.info('Opening in external player...');
+            await api.openWithExternalPlayer(
+                tempPath,
+                externalPlayerPath || undefined
+            );
+            toast.success('Opened in external player!');
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Failed to open file';
+            toast.error(msg);
+        }
+    };
+
+    // Play with internal player (secure, may need transcoding)
+    const playWithInternalPlayer = async (file: VaultFile) => {
+        try {
+            toast.info('Decrypting for playback...');
+            const tempPath = await api.vaultGetTempPlaybackPath(file.id);
+
+            // Check if format needs transcoding for web playback
+            const extension = file.original_name.split('.').pop()?.toLowerCase() || '';
+            // Web-supported formats for HTML5 video/audio
+            const webSupportedVideo = ['mp4', 'webm', 'ogg', 'mov'];
+            const webSupportedAudio = ['mp3', 'm4a', 'wav', 'flac', 'opus', 'ogg'];
+            const isAudio = file.file_type === 'audio';
+
+            const webSupported = isAudio ? webSupportedAudio : webSupportedVideo;
+
+            let playablePath = tempPath;
+
+            if (!webSupported.includes(extension) && !isAudio) {
+                // Need to transcode video formats like MKV, AVI, etc.
+                toast.info('Preparing video for playback... This may take a moment.');
+
+                try {
+                    const result = await api.transcodeForPlayback(tempPath);
+                    playablePath = result.output_path;
+
+                    if (result.was_transcoded) {
+                        toast.success('Video ready!');
+                    }
+                } catch (transcodeErr) {
+                    // If transcoding fails, try to play anyway (might work for some formats)
+                    console.error('[VaultPage] Transcode failed:', transcodeErr);
+                    toast.warning('Could not transcode video. Attempting direct playback...');
+                }
+            }
+
+            setPlayerFilePath(playablePath);
             setPlayerTitle(file.original_name);
-            setPlayerIsAudio(file.file_type === 'audio');
+            setPlayerIsAudio(isAudio);
             setShowPlayer(true);
         } catch (err) {
             const msg = err instanceof Error ? err.message : 'Failed to play file';
             toast.error(msg);
+        }
+    };
+
+    // Handle choice from the play method dialog
+    const handlePlayChoice = async (method: 'internal' | 'external') => {
+        setShowPlayChoice(false);
+        if (pendingPlayFile) {
+            if (method === 'external') {
+                await playWithExternalPlayer(pendingPlayFile);
+            } else {
+                await playWithInternalPlayer(pendingPlayFile);
+            }
+            setPendingPlayFile(null);
         }
     };
 
@@ -346,7 +553,12 @@ export function VaultPage() {
 
         try {
             await api.vaultDeleteFile(file.id);
-            setFiles(prev => prev.filter(f => f.id !== file.id));
+            setFiles(prev => {
+                const updatedFiles = prev.filter(f => f.id !== file.id);
+                // Sync to cloud in background
+                syncToGDrive(updatedFiles);
+                return updatedFiles;
+            });
             toast.success('File deleted');
         } catch (err) {
             toast.error('Failed to delete file');
@@ -560,6 +772,17 @@ export function VaultPage() {
                                 <span className="px-2 py-0.5 text-xs font-medium bg-green-500/20 text-green-400 rounded-full">
                                     Unlocked
                                 </span>
+                                {isGDriveAvailable() && (
+                                    <span className={cn(
+                                        "px-2 py-0.5 text-xs font-medium rounded-full flex items-center gap-1",
+                                        cloudSyncing
+                                            ? "bg-blue-500/20 text-blue-400"
+                                            : "bg-purple-500/20 text-purple-400"
+                                    )}>
+                                        <Cloud className="w-3 h-3" />
+                                        {cloudSyncing ? 'Syncing...' : 'Cloud'}
+                                    </span>
+                                )}
                             </h1>
                             <p className="text-sm text-muted-foreground">
                                 {files.length} file{files.length !== 1 ? 's' : ''} • {formatBytes(files.reduce((acc, f) => acc + f.size_bytes, 0))}
@@ -773,6 +996,109 @@ export function VaultPage() {
                                     </button>
                                 </div>
                             </div>
+                            {/* Player Settings */}
+                            <div className="space-y-3 pt-4 border-t border-white/10">
+                                <div className="flex items-center justify-between">
+                                    <h3 className="font-medium flex items-center gap-2">
+                                        <Play className="w-4 h-4" />
+                                        Player Settings
+                                    </h3>
+                                </div>
+
+                                {/* Player Preference - Horizontal Grid */}
+                                <div className="grid grid-cols-3 gap-2">
+                                    {/* Internal Player */}
+                                    <label className={cn(
+                                        "flex flex-col items-center p-2 rounded-lg border cursor-pointer transition-all text-center",
+                                        playerPreference === 'internal'
+                                            ? "border-primary bg-primary/10"
+                                            : "border-white/10 hover:border-white/20"
+                                    )}>
+                                        <input
+                                            type="radio"
+                                            name="playerPreference"
+                                            checked={playerPreference === 'internal'}
+                                            onChange={() => savePlayerPreference('internal')}
+                                            className="sr-only"
+                                        />
+                                        <Monitor className="w-5 h-5 mb-1" />
+                                        <span className="text-xs font-medium">Internal</span>
+                                        <span className="text-[10px] text-muted-foreground">🔒 Secure</span>
+                                    </label>
+
+                                    {/* External Player */}
+                                    <label className={cn(
+                                        "flex flex-col items-center p-2 rounded-lg border cursor-pointer transition-all text-center",
+                                        playerPreference === 'external'
+                                            ? "border-primary bg-primary/10"
+                                            : "border-white/10 hover:border-white/20"
+                                    )}>
+                                        <input
+                                            type="radio"
+                                            name="playerPreference"
+                                            checked={playerPreference === 'external'}
+                                            onChange={() => savePlayerPreference('external')}
+                                            className="sr-only"
+                                        />
+                                        <ExternalLink className="w-5 h-5 mb-1" />
+                                        <span className="text-xs font-medium">External</span>
+                                        <span className="text-[10px] text-muted-foreground">⚡ Fast</span>
+                                    </label>
+
+                                    {/* Ask Every Time */}
+                                    <label className={cn(
+                                        "flex flex-col items-center p-2 rounded-lg border cursor-pointer transition-all text-center",
+                                        playerPreference === 'ask'
+                                            ? "border-primary bg-primary/10"
+                                            : "border-white/10 hover:border-white/20"
+                                    )}>
+                                        <input
+                                            type="radio"
+                                            name="playerPreference"
+                                            checked={playerPreference === 'ask'}
+                                            onChange={() => savePlayerPreference('ask')}
+                                            className="sr-only"
+                                        />
+                                        <HelpCircle className="w-5 h-5 mb-1" />
+                                        <span className="text-xs font-medium">Ask</span>
+                                        <span className="text-[10px] text-muted-foreground">📋 Choose</span>
+                                    </label>
+                                </div>
+
+                                {/* Description based on selection */}
+                                <p className="text-[10px] text-muted-foreground">
+                                    {playerPreference === 'internal' && '🔒 Secure but slower (decryption + transcoding based on your system)'}
+                                    {playerPreference === 'external' && '⚡ Fast but may leave traces in recent files'}
+                                    {playerPreference === 'ask' && '📋 Choose internal or external each time you play'}
+                                </p>
+
+                                {/* External Player Path - Compact */}
+                                <div className="flex gap-2 items-center">
+                                    <span className="text-xs text-muted-foreground whitespace-nowrap">Player:</span>
+                                    <input
+                                        type="text"
+                                        value={externalPlayerPath ? externalPlayerPath.split('\\').pop() : ''}
+                                        readOnly
+                                        placeholder="System default"
+                                        className="flex-1 px-2 py-1 rounded bg-muted/50 border border-white/10 outline-none text-xs truncate"
+                                    />
+                                    <button
+                                        onClick={handleSelectExternalPlayer}
+                                        className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-xs transition-colors"
+                                    >
+                                        Browse
+                                    </button>
+                                    {externalPlayerPath && (
+                                        <button
+                                            onClick={() => saveExternalPlayerPath('')}
+                                            className="text-xs text-muted-foreground hover:text-white transition-colors"
+                                            title="Clear"
+                                        >
+                                            ✕
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
 
                             {/* Danger Zone */}
                             <div className="space-y-3 pt-4 border-t border-white/10">
@@ -791,6 +1117,75 @@ export function VaultPage() {
                                     Reset Vault
                                 </button>
                             </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Play Method Choice Modal */}
+            <AnimatePresence>
+                {showPlayChoice && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                        onClick={() => {
+                            setShowPlayChoice(false);
+                            setPendingPlayFile(null);
+                        }}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.95, opacity: 0 }}
+                            className="w-full max-w-sm glass rounded-2xl p-6 space-y-4"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <div className="text-center">
+                                <h2 className="text-lg font-bold">Choose Player</h2>
+                                <p className="text-sm text-muted-foreground mt-1">
+                                    How would you like to play this file?
+                                </p>
+                            </div>
+
+                            <div className="space-y-3">
+                                <button
+                                    onClick={() => handlePlayChoice('internal')}
+                                    className="w-full p-4 rounded-xl border border-white/10 hover:border-primary hover:bg-primary/10 transition-all text-left"
+                                >
+                                    <div className="font-medium flex items-center gap-2">
+                                        <Monitor className="w-5 h-5" />
+                                        Internal Player
+                                    </div>
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                        🔒 Secure but may take time for transcoding
+                                    </p>
+                                </button>
+
+                                <button
+                                    onClick={() => handlePlayChoice('external')}
+                                    className="w-full p-4 rounded-xl border border-white/10 hover:border-accent hover:bg-accent/10 transition-all text-left"
+                                >
+                                    <div className="font-medium flex items-center gap-2">
+                                        <ExternalLink className="w-5 h-5" />
+                                        External Player
+                                    </div>
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                        ⚡ Fast but may leave traces
+                                    </p>
+                                </button>
+                            </div>
+
+                            <button
+                                onClick={() => {
+                                    setShowPlayChoice(false);
+                                    setPendingPlayFile(null);
+                                }}
+                                className="w-full py-2 text-sm text-muted-foreground hover:text-white transition-colors"
+                            >
+                                Cancel
+                            </button>
                         </motion.div>
                     </motion.div>
                 )}

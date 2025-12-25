@@ -1,6 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
-import { firestoreService } from './firestore';
 
 // Types matching Firestore/Rust structs
 export interface Download {
@@ -179,93 +178,72 @@ export interface NotificationClickEvent {
     file_path?: string;
 }
 
-// Current user ID - will be set from AuthContext
-let currentUserId: string | null = null;
-
-export function setCurrentUserId(userId: string | null) {
-    currentUserId = userId;
-}
-
-function getUserId(): string {
-    if (!currentUserId) {
-        throw new Error('User not authenticated. Please sign in first.');
-    }
-    return currentUserId;
-}
-
-// Download API - Uses Firestore exclusively
+// Download API - Uses Local Tauri SQLite Database
+// Cloud sync is handled separately by DataContext using Google Drive
 export const api = {
-    // Downloads - Firestore only
+    // Downloads - Local SQLite via Tauri
     async addDownload(download: Download): Promise<void> {
-        return firestoreService.addDownload(getUserId(), download);
+        return invoke('add_download', { download });
     },
 
     async getDownloads(): Promise<Download[]> {
-        return firestoreService.getDownloads(getUserId());
+        return invoke('get_downloads');
     },
 
     async updateDownloadStatus(id: string, status: string): Promise<void> {
-        return firestoreService.updateDownloadStatus(getUserId(), id, status);
+        return invoke('update_download_status', { id, status });
     },
 
     async deleteDownload(id: string): Promise<void> {
-        return firestoreService.deleteDownload(getUserId(), id);
+        return invoke('delete_download', { id });
     },
 
     async clearDownloads(): Promise<void> {
-        return firestoreService.clearDownloads(getUserId());
+        return invoke('clear_downloads');
     },
 
-    // Search History - Firestore only
+    // Search History - Local SQLite via Tauri
     async addSearch(query: string, title?: string, thumbnail?: string): Promise<void> {
-        return firestoreService.addSearch(getUserId(), query, title, thumbnail);
+        return invoke('add_search', { query, title, thumbnail });
     },
 
     async getSearchHistory(limit: number = 50): Promise<SearchHistory[]> {
-        return firestoreService.getSearchHistory(getUserId(), limit);
+        return invoke('get_search_history', { limit });
     },
 
     async clearSearchHistory(): Promise<void> {
-        return firestoreService.clearSearchHistory(getUserId());
+        return invoke('clear_search_history');
     },
 
-    // Settings - Firestore only
+    // Settings - Local SQLite via Tauri
     async saveSetting(key: string, value: string): Promise<void> {
-        return firestoreService.saveSetting(getUserId(), key, value);
+        return invoke('save_setting', { key, value });
     },
 
     async getSetting(key: string): Promise<string | null> {
-        return firestoreService.getSetting(getUserId(), key);
+        return invoke('get_setting', { key });
     },
 
     async getAllSettings(): Promise<Setting[]> {
-        return firestoreService.getAllSettings(getUserId());
+        return invoke('get_all_settings');
     },
 
     async deleteSetting(key: string): Promise<void> {
-        return firestoreService.deleteSetting(getUserId(), key);
+        return invoke('delete_setting', { key });
     },
 
-    // Real-time subscriptions
-    subscribeToDownloads(callback: (downloads: Download[]) => void): () => void {
-        return firestoreService.subscribeToDownloads(getUserId(), callback);
-    },
+    // Utility functions - Rust backend
 
-    subscribeToSearchHistory(callback: (history: SearchHistory[]) => void, limit: number = 50): () => void {
-        return firestoreService.subscribeToSearchHistory(getUserId(), callback, limit);
-    },
-
-    subscribeToSettings(callback: (settings: Setting[]) => void): () => void {
-        return firestoreService.subscribeToSettings(getUserId(), callback);
-    },
-
-    // Utility functions - still use Rust backend
     async openFolder(path: string, fileName?: string): Promise<void> {
         return invoke('open_folder', { path, fileName });
     },
 
     async playFile(path: string, title: string): Promise<void> {
         return invoke('play_file', { path, title });
+    },
+
+    async openWithExternalPlayer(filePath: string, playerPath?: string): Promise<void> {
+        return invoke('open_with_external_player', { filePath, playerPath });
     },
 
     async findMediaFile(path: string, title: string): Promise<MediaFileInfo> {
