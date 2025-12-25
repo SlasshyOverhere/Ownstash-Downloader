@@ -154,6 +154,31 @@ export interface SpotDlInfo {
     is_available: boolean;
 }
 
+// Vault types
+export interface VaultStatus {
+    is_setup: boolean;
+    is_unlocked: boolean;
+    file_count: number;
+    total_size_bytes: number;
+}
+
+export interface VaultFile {
+    id: string;
+    original_name: string;
+    encrypted_name: string;
+    size_bytes: number;
+    added_at: number;
+    file_type: string; // "video", "audio", "file"
+    thumbnail?: string;
+}
+
+// Native integration types
+export interface NotificationClickEvent {
+    type: string;
+    title: string;
+    file_path?: string;
+}
+
 // Current user ID - will be set from AuthContext
 let currentUserId: string | null = null;
 
@@ -329,6 +354,111 @@ export const api = {
     // Spotify event listeners - Rust backend
     onSpotifyDownloadProgress(callback: (progress: SpotifyDownloadProgress) => void): Promise<UnlistenFn> {
         return listen<SpotifyDownloadProgress>('spotify-download-progress', (event) => {
+            callback(event.payload);
+        });
+    },
+
+    // ============ Vault API ============
+    async vaultGetStatus(): Promise<VaultStatus> {
+        return invoke('vault_get_status');
+    },
+
+    async vaultSetup(pin: string): Promise<void> {
+        return invoke('vault_setup', { pin });
+    },
+
+    async vaultUnlock(pin: string): Promise<void> {
+        return invoke('vault_unlock', { pin });
+    },
+
+    async vaultLock(): Promise<void> {
+        return invoke('vault_lock');
+    },
+
+    async vaultAddFile(
+        sourcePath: string,
+        originalName: string,
+        fileType: string,
+        thumbnail?: string,
+        deleteOriginal: boolean = true
+    ): Promise<VaultFile> {
+        console.log('[Vault API] Adding file:', { sourcePath, originalName, fileType, deleteOriginal });
+        try {
+            const result = await invoke<VaultFile>('vault_add_file', {
+                sourcePath,
+                originalName,
+                fileType,
+                thumbnail: thumbnail ?? null,
+                deleteOriginal
+            });
+            console.log('[Vault API] File added successfully:', result);
+            return result;
+        } catch (error) {
+            console.error('[Vault API] Failed to add file:', error);
+            throw error;
+        }
+    },
+
+    async vaultListFiles(): Promise<VaultFile[]> {
+        return invoke('vault_list_files');
+    },
+
+    async vaultExportFile(fileId: string, destinationPath: string): Promise<string> {
+        return invoke('vault_export_file', { fileId, destinationPath });
+    },
+
+    async vaultGetTempPlaybackPath(fileId: string): Promise<string> {
+        return invoke('vault_get_temp_playback_path', { fileId });
+    },
+
+    async vaultCleanupTemp(): Promise<void> {
+        return invoke('vault_cleanup_temp');
+    },
+
+    async vaultDeleteFile(fileId: string): Promise<void> {
+        return invoke('vault_delete_file', { fileId });
+    },
+
+    async vaultChangePin(currentPin: string, newPin: string): Promise<void> {
+        return invoke('vault_change_pin', { currentPin, newPin });
+    },
+
+    async vaultReset(pin: string): Promise<void> {
+        return invoke('vault_reset', { pin });
+    },
+
+    // ============ Native Integration API ============
+    async updateTaskbarProgress(progress: number, state: string): Promise<void> {
+        return invoke('update_taskbar_progress', { progress, state });
+    },
+
+    async clearTaskbarProgress(): Promise<void> {
+        return invoke('clear_taskbar_progress');
+    },
+
+    async sendNotification(title: string, body: string, notificationType: string = 'info'): Promise<void> {
+        return invoke('send_notification', { title, body, notificationType });
+    },
+
+    async notifyDownloadComplete(title: string, filePath: string): Promise<void> {
+        return invoke('notify_download_complete', { title, filePath });
+    },
+
+    async notifyDownloadFailed(title: string, error: string): Promise<void> {
+        return invoke('notify_download_failed', { title, error });
+    },
+
+    async checkNotificationPermission(): Promise<boolean> {
+        return invoke('check_notification_permission');
+    },
+
+    async requestNotificationPermission(): Promise<boolean> {
+        return invoke('request_notification_permission');
+    },
+
+    // Listen for notification clicks
+    onNotificationClick(callback: (event: NotificationClickEvent) => void): Promise<UnlistenFn> {
+        return listen<NotificationClickEvent>('notification-click', (event) => {
             callback(event.payload);
         });
     },

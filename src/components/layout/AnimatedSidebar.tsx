@@ -11,7 +11,8 @@ import {
     LogOut,
     Cloud,
     CloudOff,
-    Loader2
+    Loader2,
+    Shield
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { sidebarVariants, sidebarItemText } from '@/lib/animations';
@@ -28,6 +29,7 @@ interface AnimatedSidebarProps {
 const navItems = [
     { id: 'home' as const, label: 'Home', icon: Home },
     { id: 'downloads' as const, label: 'Downloads', icon: Download },
+    { id: 'vault' as const, label: 'Vault', icon: Shield },
     { id: 'history' as const, label: 'History', icon: History },
     { id: 'settings' as const, label: 'Settings', icon: Settings },
 ];

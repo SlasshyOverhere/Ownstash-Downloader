@@ -92,6 +92,7 @@ public/New folder/
 
 # Documentation (except README)
 *.md
+*.txt
 !README.md
 
 # Scripts (dev/setup tools)

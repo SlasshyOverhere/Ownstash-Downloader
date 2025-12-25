@@ -14,6 +14,8 @@ mod spotify_downloader;
 mod updater;
 mod watchdog;
 mod media_server;
+mod vault;
+mod native_integration;
 
 use commands::AppState;
 use database::Database;
@@ -26,6 +28,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_notification::init())
         // Single instance plugin - prevents multiple app instances
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             println!("[SingleInstance] Received argv: {:?}", argv);
@@ -70,6 +73,9 @@ pub fn run() {
 
             // Start the extension server for Chrome extension communication
             extension_server::start_extension_server(app.handle().clone());
+
+            // Initialize native integration (taskbar progress, notifications)
+            native_integration::init(app.handle());
 
             // Start the media server for video playback
             media_server::start_media_server(app.handle().clone());
@@ -162,6 +168,27 @@ pub fn run() {
             updater::check_for_updates,
             updater::download_and_install_update,
             updater::get_current_version,
+            // Vault commands
+            vault::vault_get_status,
+            vault::vault_setup,
+            vault::vault_unlock,
+            vault::vault_lock,
+            vault::vault_add_file,
+            vault::vault_list_files,
+            vault::vault_export_file,
+            vault::vault_get_temp_playback_path,
+            vault::vault_cleanup_temp,
+            vault::vault_delete_file,
+            vault::vault_change_pin,
+            vault::vault_reset,
+            // Native integration commands
+            native_integration::update_taskbar_progress,
+            native_integration::clear_taskbar_progress,
+            native_integration::send_notification,
+            native_integration::notify_download_complete,
+            native_integration::notify_download_failed,
+            native_integration::check_notification_permission,
+            native_integration::request_notification_permission,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
