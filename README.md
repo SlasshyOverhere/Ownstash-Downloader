@@ -1,79 +1,70 @@
-# Slasshy OmniDownloader 🚀
+# 🚀 Slasshy OmniDownloader
 
-**The Ultimate Cross-Platform Media Hub**
+**"Download Everything. Protect Anything."**
 
-Slasshy OmniDownloader is a powerful, modern, and beautiful application designed to be your one-stop solution for downloading, organizing, and consuming media. Built with the latest web technologies and Rust, it delivers native performance with a stunning user interface.
+Slasshy OmniDownloader is a powerful, modern, and beautiful media powerhouse designed to be your one-stop solution for downloading, organizing, and consuming media. Built with **Tauri 2**, **Rust**, and **React 19**, it delivers native performance with a stunning, premium user interface.
 
-![Slasshy OmniDownloader](https://img.shields.io/badge/Version-1.0.0-blue?style=for-the-badge)
+![Slasshy OmniDownloader](https://img.shields.io/badge/Version-2.0.0-blue?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-orange?style=for-the-badge)
 
 ---
 
-## ⚡ Tech Stack
-
-Built on the cutting edge of modern app development:
-
-| Technology | Purpose |
-|------------|---------|
-| **[Tauri 2](https://v2.tauri.app/)** | Core runtime (Rust + Webview) |
-| **React 19 + TypeScript** | Frontend framework |
-| **TailwindCSS + shadcn/ui** | Styling & UI components |
-| **Firebase** | Cloud sync & authentication |
-| **Framer Motion + Three.js** | Immersive 3D effects & animations |
-
----
-
-## ✨ Features
+## ✨ Killer Features
 
 ### 🎬 Universal Downloader
-- Support for **1000+ platforms** including YouTube, Twitch, Instagram, TikTok, and more
-- Powered by yt-dlp for maximum compatibility
-- Spotify playlist & track downloads via SpotDL integration
+- **1000+ Platforms Supported**: YouTube, Twitch, Instagram, TikTok, Twitter/X, Reddit, and more.
+- **8K Video Support**: Download in highest available resolutions.
+- **Playlist & Channel Downloads**: Grab entire collections with a single click.
+- **SponsorBlock Integration**: Automatically skip ads, sponsors, and intros in YouTube videos.
+- **Multi-Connection Speed**: Accelerated downloads via `aria2c` integration.
 
-### ☁️ Cloud Sync (NEW!)
-- **Firebase Authentication** - Sign in with Google
-- **Cross-device sync** - Access your download history and settings from anywhere
-- **Automatic backup** - Never lose your data
+### 🔒 The Vault (Military-Grade Security)
+- **AES-256-GCM Encryption**: Your sensitive media is protected by the same standards used by governments.
+- **Zero-Knowledge Cloud Sync**: Encrypted files and metadata are synced to your Google Drive (`appDataFolder`). Google sees only random blobs.
+- **Forensic-Proof**: No filenames, metadata, or file types are stored in plaintext. Even the local index is encrypted.
+- **On-the-Fly Decryption**: Play your encrypted files directly within the app without ever writing plaintext to disk.
 
-### 📺 Smart Library
-- Automatic organization of downloaded movies and TV shows
-- Metadata fetching and thumbnail generation
-- Quick search and filter capabilities
+### 🎵 Spotify Integration
+- **SpotDL Integration**: Download entire Spotify playlists and tracks as MP3/FLAC.
+- **Automatic Metadata**: High-quality album art, lyrics, and ID3 tags embedded automatically.
 
-### 🎨 Immersive UI
-- Rich 3D animated interface with glassmorphism
-- Dynamic visual effects and smooth animations
-- Dark mode optimized design
+### 🌐 Secure Vault Browser (Sidecar)
+- **Built-in Secure Engine**: A standalone Electron-based "Secure Browser" for the Vault.
+- **Custom Incognito**: Browse and sniff media links with absolute privacy.
+- **Direct Stream to Vault**: Download media directly into the encrypted vault from the browser.
 
-### 📊 Real-time Tracking
-- Detailed progress bars with speed metrics
-- Complete download history
-- Queue management
-
-### 🎵 Media Tools
-- Audio extraction from videos
-- Format conversion support
-- Quality selection (up to 8K)
-
-### 🔌 Browser Integration
-- Chrome extension for one-click downloads
-- Direct integration with YouTube and other platforms
-- Context menu support
+### 📺 Integrated Media Tools
+- **Native Media Player**: A beautiful, fluid player built right into the app.
+- **Format Converter**: Extract audio or convert files to MP4, MKV, MP3, FLAC, and more.
+- **System Tray Agent**: Keep downloads running in the background with a minimal footprint.
 
 ---
 
-## 🛠️ Development Setup
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| **Core Runtime** | [Tauri 2](https://v2.tauri.app/) (Rust + Webview) |
+| **Frontend** | React 19 + TypeScript |
+| **Styling** | TailwindCSS + shadcn/ui |
+| **Animations** | Framer Motion + Three.js |
+| **Browser Engine** | Electron (Secure Sidecar) |
+| **Security** | AES-256-GCM + Argon2id |
+| **Services** | Firebase (Auth/Sync) + Google Drive API |
+| **Engines** | yt-dlp + aria2c + SpotDL + FFmpeg |
+
+---
+
+## 🚀 Getting Started
 
 ### Prerequisites
-
-- **Node.js**: v18 or higher
+- **Node.js**: v18+ 
 - **Rust**: Latest stable release ([Install Rust](https://www.rust-lang.org/tools/install))
-- **Visual Studio C++ Build Tools** (Windows only)
-- **yt-dlp**: Must be installed and available in your system PATH
-- **FFmpeg**: Required for media processing
+- **FFmpeg**: Required for media merging and conversion
+- **yt-dlp**: Must be in your system PATH
 
-### Getting Started
+### Installation
 
 1. **Clone the repository**
    ```bash
@@ -86,79 +77,60 @@ Built on the cutting edge of modern app development:
    npm install
    ```
 
-3. **Set up environment variables**
+3. **Environment Setup**
    ```bash
    cp .env.example .env
-   # Edit .env with your Firebase credentials
+   # Add your Firebase and Google OAuth credentials
    ```
 
-4. **Download required binaries**
-   ```bash
-   # Windows (PowerShell)
+4. **Download Sidecar Binaries**
+   ```powershell
+   # Windows
    .\src-tauri\download-binaries.ps1
    ```
 
-5. **Run Development Environment**
+5. **Run Development Mode**
    ```bash
    npm run tauri dev
-   ```
-
-6. **Build for Production**
-   ```bash
-   npm run tauri build
    ```
 
 ---
 
 ## 🔧 Configuration
 
-### Firebase Setup (Optional - for Cloud Sync)
-
-To enable cloud sync features, you'll need to set up a Firebase project:
-
-1. Create a new project at [Firebase Console](https://console.firebase.google.com/)
-2. Enable Authentication (Google Sign-In)
-3. Create a Firestore database
-4. Copy your config to `.env`
-
-See the full setup guide in the documentation.
+### Firebase & Google Drive
+To enable Cloud Sync and the Vault:
+1. Create a project in the [Firebase Console](https://console.firebase.google.com/).
+2. Enable **Google Sign-In**.
+3. Create a **Google Cloud Project** and enable the **Google Drive API**.
+4. Configure your `.env` with the Client IDs and API keys.
 
 ---
 
-## 📦 Chrome Extension
+## 📦 Browser Extension
 
-The included Chrome extension allows you to download media directly from supported websites:
-
-1. Navigate to `chrome://extensions/`
-2. Enable "Developer mode"
-3. Click "Load unpacked" and select the `chrome-extension` folder
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+The Slasshy Chrome Extension provides one-click integration:
+1. Open `chrome://extensions/`
+2. Enable **Developer mode**.
+3. Click **Load unpacked** and select the `/chrome-extension` folder.
 
 ---
 
-## 📝 License
+## 🌐 Web Landing Page
 
-This project is licensed under the [MIT License](LICENSE).
+The project includes a stunning, high-conversion landing page built with **Next.js** and **Three.js**:
+- Located in the `/frontend-landing-page` directory.
+- Features immersive 3D effects and detailed documentation of the app's capabilities.
+- Integrated with the deep link protocol for a seamless "Download to App" experience.
 
 ---
 
 ## 🙏 Acknowledgments
 
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) - The backbone of our download engine
-- [SpotDL](https://github.com/spotDL/spotify-downloader) - Spotify integration
-- [Tauri](https://tauri.app/) - For making cross-platform apps awesome
-- [shadcn/ui](https://ui.shadcn.com/) - Beautiful UI components
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) - The ultimate download engine.
+- [Tauri](https://tauri.app/) - For the incredible lightweight framework.
+- [SpotDL](https://github.com/spotDL/spotify-downloader) - Spotify integration magic.
+- [aria2](https://github.com/aria2/aria2) - Blazing fast download segments.
 
 ---
 
