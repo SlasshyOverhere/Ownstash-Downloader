@@ -1398,3 +1398,298 @@ pub async fn vault_list_folder_contents(
     .await
     .map_err(|e| format!("List task failed: {}", e))?
 }
+
+/// Add a ZIP file to the vault
+/// The ZIP is encrypted as-is and its contents are indexed for browsing
+#[tauri::command]
+pub async fn vault_add_zip(
+    app_handle: AppHandle,
+    zip_path: String,
+    delete_original: bool,
+) -> Result<VaultFile, String> {
+    println!("[Vault] Adding ZIP file: {}", zip_path);
+    
+    let key = get_vault_key()?;
+    let source_path = PathBuf::from(&zip_path);
+    
+    if !source_path.exists() {
+        return Err("ZIP file not found".to_string());
+    }
+    
+    // Get ZIP file name
+    let zip_name = source_path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "archive.zip".to_string());
+    
+    // Remove .zip extension for display name
+    let display_name = if zip_name.to_lowercase().ends_with(".zip") {
+        zip_name[..zip_name.len() - 4].to_string()
+    } else {
+        zip_name.clone()
+    };
+    
+    // Get ZIP file size
+    let zip_size = fs::metadata(&source_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+    
+    // Read ZIP contents to build folder_entries
+    let source_clone = source_path.clone();
+    let folder_entries = tokio::task::spawn_blocking(move || {
+        let file = File::open(&source_clone)
+            .map_err(|e| format!("Failed to open ZIP: {}", e))?;
+        let mut archive = ZipArchive::new(file)
+            .map_err(|e| format!("Failed to read ZIP: {}", e))?;
+        
+        let mut entries: Vec<VaultFolderEntry> = Vec::new();
+        
+        for i in 0..archive.len() {
+            let file = archive.by_index(i)
+                .map_err(|e| format!("Failed to read ZIP entry: {}", e))?;
+            
+            let path = file.name().to_string();
+            let size = file.size();
+            let is_dir = file.is_dir();
+            
+            // Get just the filename
+            let name = PathBuf::from(&path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            
+            if name.is_empty() && !is_dir {
+                continue;
+            }
+            
+            let file_type = if is_dir {
+                "directory".to_string()
+            } else {
+                let ext = PathBuf::from(&path)
+                    .extension()
+                    .map(|e| e.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                detect_file_type(&ext)
+            };
+            
+            entries.push(VaultFolderEntry {
+                name: if name.is_empty() { path.trim_end_matches('/').split('/').last().unwrap_or("").to_string() } else { name },
+                path: path.replace("\\", "/").trim_end_matches('/').to_string(),
+                size_bytes: size,
+                file_type,
+                is_directory: is_dir,
+            });
+        }
+        
+        Ok::<Vec<VaultFolderEntry>, String>(entries)
+    })
+    .await
+    .map_err(|e| format!("ZIP read task failed: {}", e))??;
+    
+    println!("[Vault] ZIP contains {} entries", folder_entries.len());
+    
+    // Generate unique file ID and encrypted filename
+    let file_id = uuid::Uuid::new_v4().to_string();
+    let encrypted_name = format!("{}{}", file_id, ENCRYPTED_EXTENSION);
+    
+    // Get vault files directory
+    let vault_files_dir = get_vault_files_dir(&app_handle);
+    fs::create_dir_all(&vault_files_dir)
+        .map_err(|e| format!("Failed to create vault directory: {}", e))?;
+    
+    let dest_path = vault_files_dir.join(&encrypted_name);
+    
+    // Encrypt the ZIP file directly
+    let source_clone = source_path.clone();
+    let dest_clone = dest_path.clone();
+    let key_copy = key;
+    
+    tokio::task::spawn_blocking(move || {
+        encrypt_file(&key_copy, &source_clone, &dest_clone)
+    })
+    .await
+    .map_err(|e| format!("Encryption task failed: {}", e))?
+    .map_err(|e| format!("Encryption failed: {}", e))?;
+    
+    println!("[Vault] ZIP encrypted successfully");
+    
+    // Create vault file entry
+    let vault_file = VaultFile {
+        id: file_id,
+        original_name: display_name,
+        encrypted_name,
+        size_bytes: zip_size,
+        added_at: chrono::Utc::now().timestamp(),
+        file_type: "folder".to_string(),
+        thumbnail: None,
+        is_folder: true,
+        folder_entries: Some(folder_entries),
+    };
+    
+    // Optionally delete original ZIP
+    if delete_original {
+        let _ = fs::remove_file(&source_path);
+        println!("[Vault] Deleted original ZIP file");
+    }
+    
+    Ok(vault_file)
+}
+
+
+
+
+fn detect_vault_file_type(extension: &str) -> String {
+    match extension.to_lowercase().as_str() {
+        "mp4" | "mkv" | "webm" | "avi" | "mov" | "wmv" | "flv" => "video".to_string(),
+        "mp3" | "wav" | "flac" | "ogg" | "m4a" => "audio".to_string(),
+        "jpg" | "jpeg" | "png" | "gif" | "webp" | "bmp" => "image".to_string(),
+        "txt" | "md" | "json" | "xml" => "text".to_string(),
+        "zip" | "rar" | "7z" | "tar" | "gz" => "archive".to_string(),
+        _ => "file".to_string(),
+    }
+}
+
+/// Convert an existing encrypted file to a folder by scanning its structure (ZIP or 7Z)
+/// Returns the folder entries if successful
+#[tauri::command]
+pub async fn vault_convert_to_folder(
+    app_handle: AppHandle,
+    file_id: String,
+    encrypted_name: String,
+) -> Result<Vec<VaultFolderEntry>, String> {
+    println!("[Vault] Converting file to folder: {}", file_id);
+    
+    let key = get_vault_key()?;
+    let files_dir = get_vault_files_dir(&app_handle);
+    let encrypted_path = files_dir.join(&encrypted_name);
+    
+    if !encrypted_path.exists() {
+        return Err("File not found".to_string());
+    }
+    
+    // Create temp path for decryption
+    let temp_dir = app_handle.path().temp_dir().map_err(|e| e.to_string())?;
+    let temp_file_path = temp_dir.join(format!("temp_convert_{}.archive", file_id));
+    
+    // Decrypt to temp
+    let key_clone = key;
+    let source_clone = encrypted_path.clone();
+    let dest_clone = temp_file_path.clone();
+    
+    tokio::task::spawn_blocking(move || {
+        decrypt_file(&key_clone, &source_clone, &dest_clone)
+    })
+    .await
+    .map_err(|e| format!("Decryption task failed: {}", e))?
+    .map_err(|e| format!("Decryption failed: {}", e))?;
+    
+    // Scan structure
+    let temp_path_clone = temp_file_path.clone();
+    let entries = tokio::task::spawn_blocking(move || {
+        use std::io::Seek;
+        
+        let mut file = File::open(&temp_path_clone)
+            .map_err(|e| format!("Failed to open temp archive: {}", e))?;
+            
+        // Check Magic Bytes
+        let mut magic = [0u8; 4];
+        if file.read_exact(&mut magic).is_err() {
+            return Err("File too short to identify format".to_string());
+        }
+        file.rewind().map_err(|e| e.to_string())?;
+        
+        let mut entries: Vec<VaultFolderEntry> = Vec::new();
+        
+        if magic[0] == 0x50 && magic[1] == 0x4B { // PK -> ZIP
+             let mut archive = ZipArchive::new(file)
+                .map_err(|e| format!("Failed to read ZIP structure: {}", e))?;
+            
+            for i in 0..archive.len() {
+                let file = archive.by_index(i)
+                    .map_err(|e| format!("Failed to read ZIP entry: {}", e))?;
+                
+                let path = file.name().to_string();
+                let size = file.size();
+                let is_dir = file.is_dir();
+                
+                // Get filename
+                let name = PathBuf::from(&path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                
+                if name.is_empty() && !is_dir { continue; }
+                
+                let file_type = if is_dir {
+                    "directory".to_string()
+                } else {
+                    let ext = PathBuf::from(&path).extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
+                    detect_vault_file_type(&ext)
+                };
+                
+                entries.push(VaultFolderEntry {
+                    name: if name.is_empty() { path.trim_end_matches('/').split('/').last().unwrap_or("").to_string() } else { name },
+                    path: path.replace("\\", "/").trim_end_matches('/').to_string(),
+                    size_bytes: size,
+                    file_type,
+                    is_directory: is_dir,
+                });
+            }
+        
+        } else if magic[0] == 0x37 && magic[1] == 0x7A && magic[2] == 0xBC && magic[3] == 0xAF { // 7z
+            // Use sevenz-rust
+             let file_len = file.metadata().map_err(|e| e.to_string())?.len();
+             let mut reader = sevenz_rust::SevenZReader::new(file, file_len, sevenz_rust::Password::empty())
+                .map_err(|e| format!("Failed to read 7z archive: {}", e))?;
+             
+             reader.for_each_entries(|entry, _| {
+                 let path = entry.name().to_string();
+                 let is_dir = entry.is_directory();
+                 let size = entry.size();
+                 
+                  // Get filename
+                let name = PathBuf::from(&path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                
+                if (name.is_empty() && !is_dir) { return Ok(true); }
+
+                let file_type = if is_dir {
+                    "directory".to_string()
+                } else {
+                    let ext = PathBuf::from(&path).extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
+                    detect_vault_file_type(&ext)
+                };
+
+                 entries.push(VaultFolderEntry {
+                    name: if name.is_empty() { path.trim_end_matches('/').split('/').last().unwrap_or("").to_string() } else { name },
+                    path: path.replace("\\", "/").trim_end_matches('/').to_string(),
+                    size_bytes: size,
+                    file_type,
+                    is_directory: is_dir,
+                });
+                Ok(true)
+             }).map_err(|e| format!("Error listing 7z entries: {}", e))?;
+
+        } else if magic[0] == 0x52 && magic[1] == 0x61 && magic[2] == 0x72 && magic[3] == 0x21 { // Rar!
+            return Err("RAR format is not supported for internal extraction yet. Please convert to ZIP or 7Z.".to_string());
+        } else {
+             // Fallback: Try Zip anyway just in case magic check failed or offset
+             match ZipArchive::new(file) {
+                 Ok(_) => return Err("Detected ZIP but magic bytes were off?".to_string()), 
+                 Err(_) => return Err("Unsupported archive format. Supported formats: ZIP, 7Z.".to_string())
+             }
+        }
+        
+        Ok::<Vec<VaultFolderEntry>, String>(entries)
+    })
+    .await
+    .map_err(|e| format!("Scan task failed: {}", e))??;
+    
+    // Clean up temp file
+    let _ = fs::remove_file(&temp_file_path);
+    
+    println!("[Vault] Converted successfully. Found {} entries.", entries.len());
+    Ok(entries)
+}

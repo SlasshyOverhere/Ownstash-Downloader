@@ -4,7 +4,7 @@ import {
     ArrowRight, Shield, Zap, Download, Lock, Smartphone, Globe,
     Chrome, Youtube, Music, Video, HardDrive, Cpu, Gauge,
     CloudLightning, Fingerprint, Server, Waves, Play, CheckCircle2,
-    Sparkles, ArrowDown
+    Sparkles, ArrowDown, Terminal, Command, Hash, Network, Code2
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { GlowingEffect } from './ui/glowing-effect';
@@ -14,6 +14,32 @@ import {
     AccordionItem,
     AccordionTrigger,
 } from './ui/accordion';
+
+// --- Utility: Mouse Position for Spotlight ---
+const useMousePosition = () => {
+    const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+    useEffect(() => {
+        const updateMousePosition = (ev: MouseEvent) => {
+            setMousePosition({ x: ev.clientX, y: ev.clientY });
+        };
+        window.addEventListener('mousemove', updateMousePosition);
+        return () => window.removeEventListener('mousemove', updateMousePosition);
+    }, []);
+    return mousePosition;
+};
+
+// --- Component: Mouse Spotlight ---
+const MouseSpotlight = () => {
+    const { x, y } = useMousePosition();
+    return (
+        <div 
+            className="pointer-events-none fixed inset-0 z-30 transition-opacity duration-300"
+            style={{
+                background: `radial-gradient(600px circle at ${x}px ${y}px, rgba(255,255,255,0.06), transparent 40%)`
+            }}
+        />
+    );
+};
 
 // --- Animated Counter Component ---
 const AnimatedCounter = ({ value, suffix = '', duration = 2 }: { value: number; suffix?: string; duration?: number }) => {
@@ -38,7 +64,7 @@ const AnimatedCounter = ({ value, suffix = '', duration = 2 }: { value: number; 
     return <span ref={ref}>{count}{suffix}</span>;
 };
 
-// --- Floating Orbs Background ---
+// --- Floating Orbs Background (Monochrome) ---
 const FloatingOrbs = () => (
     <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <motion.div
@@ -79,6 +105,131 @@ const GridBackground = () => (
         }} />
     </div>
 );
+
+// --- Component: Terminal Demo ---
+const TerminalDemo = () => {
+    const [lines, setLines] = useState<string[]>([
+        "> initializing slasshy_core v2.0...",
+    ]);
+    const ref = useRef(null);
+    const isInView = useInView(ref, { once: true, margin: "-100px" });
+
+    useEffect(() => {
+        if (!isInView) return;
+
+        const sequence = [
+            { text: "> connecting to secure_vault...", delay: 800 },
+            { text: "> handshake established (AES-256-GCM)", delay: 1600 },
+            { text: "> allocating memory for 8K buffer...", delay: 2400 },
+            { text: "> thread_pool: 32 workers active", delay: 3000 },
+            { text: "> downloading chunk_01 [################] 100%", delay: 3800 },
+            { text: "> downloading chunk_02 [################] 100%", delay: 4200 },
+            { text: "> encrypting stream...", delay: 4800 },
+            { text: "> verify: integrity_check passed", delay: 5500 },
+            { text: "> transfer complete. file secure.", delay: 6200 },
+            { text: "> waiting for next job...", delay: 7000 },
+        ];
+
+        let timeouts: NodeJS.Timeout[] = [];
+
+        sequence.forEach(({ text, delay }) => {
+            const timeout = setTimeout(() => {
+                setLines(prev => [...prev.slice(-7), text]); // Keep last 8 lines
+            }, delay);
+            timeouts.push(timeout);
+        });
+
+        return () => timeouts.forEach(clearTimeout);
+    }, [isInView]);
+
+    return (
+        <section className="py-20 relative z-10">
+            <div className="container px-4 md:px-6">
+                <div className="flex flex-col items-center">
+                    <motion.div 
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        className="text-center mb-10"
+                    >
+                        <div className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-zinc-400 mb-4">
+                            <Terminal className="h-3 w-3 mr-2" />
+                            Live Engine Preview
+                        </div>
+                        <h2 className="text-3xl md:text-4xl font-bold text-white">Power Under the Hood</h2>
+                    </motion.div>
+
+                    <motion.div
+                        ref={ref}
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        whileInView={{ opacity: 1, scale: 1 }}
+                        viewport={{ once: true }}
+                        className="w-full max-w-3xl rounded-xl overflow-hidden border border-white/10 bg-black/90 shadow-2xl backdrop-blur-xl"
+                    >
+                        {/* Terminal Header */}
+                        <div className="flex items-center px-4 py-2 bg-white/5 border-b border-white/5 gap-2">
+                            <div className="flex gap-1.5">
+                                <div className="w-3 h-3 rounded-full bg-red-500/20 border border-red-500/50" />
+                                <div className="w-3 h-3 rounded-full bg-yellow-500/20 border border-yellow-500/50" />
+                                <div className="w-3 h-3 rounded-full bg-green-500/20 border border-green-500/50" />
+                            </div>
+                            <div className="flex-1 text-center text-xs font-mono text-zinc-500">slasshy-cli — rust — 80x24</div>
+                        </div>
+                        
+                        {/* Terminal Body */}
+                        <div className="p-6 font-mono text-sm h-[300px] flex flex-col justify-end bg-black/50">
+                            {lines.map((line, i) => (
+                                <motion.div
+                                    key={i}
+                                    initial={{ opacity: 0, x: -10 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    className="mb-1 text-zinc-300"
+                                >
+                                    <span className="text-zinc-600 mr-2">$</span>
+                                    {line}
+                                </motion.div>
+                            ))}
+                            <motion.div
+                                animate={{ opacity: [0, 1, 0] }}
+                                transition={{ duration: 0.8, repeat: Infinity }}
+                                className="w-2 h-4 bg-white/50 mt-1"
+                            />
+                        </div>
+                    </motion.div>
+                </div>
+            </div>
+        </section>
+    );
+};
+
+// --- Component: Infinite Marquee ---
+const InfiniteMarquee = () => {
+    return (
+        <div className="py-10 border-y border-white/5 bg-white/[0.02] overflow-hidden relative group">
+            <div className="absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-black to-transparent z-10" />
+            <div className="absolute inset-y-0 right-0 w-32 bg-gradient-to-l from-black to-transparent z-10" />
+            
+            <motion.div 
+                className="flex gap-16 items-center whitespace-nowrap min-w-full"
+                animate={{ x: "-50%" }}
+                transition={{ duration: 30, repeat: Infinity, ease: "linear" }}
+            >
+                {[...Array(2)].map((_, i) => (
+                    <div key={i} className="flex gap-16 items-center">
+                        <span className="text-2xl font-bold text-zinc-600 uppercase tracking-widest flex items-center gap-2"><Youtube className="h-6 w-6" /> YouTube</span>
+                        <span className="text-2xl font-bold text-zinc-600 uppercase tracking-widest flex items-center gap-2"><Music className="h-6 w-6" /> Spotify</span>
+                        <span className="text-2xl font-bold text-zinc-600 uppercase tracking-widest flex items-center gap-2"><Video className="h-6 w-6" /> Twitch</span>
+                        <span className="text-2xl font-bold text-zinc-600 uppercase tracking-widest flex items-center gap-2"><Waves className="h-6 w-6" /> SoundCloud</span>
+                        <span className="text-2xl font-bold text-zinc-600 uppercase tracking-widest flex items-center gap-2"><Play className="h-6 w-6" /> Vimeo</span>
+                        <span className="text-2xl font-bold text-zinc-600 uppercase tracking-widest flex items-center gap-2"><Network className="h-6 w-6" /> TikTok</span>
+                        <span className="text-2xl font-bold text-zinc-600 uppercase tracking-widest flex items-center gap-2"><Hash className="h-6 w-6" /> Instagram</span>
+                        <span className="text-2xl font-bold text-zinc-600 uppercase tracking-widest flex items-center gap-2"><Code2 className="h-6 w-6" /> GitHub</span>
+                    </div>
+                ))}
+            </motion.div>
+        </div>
+    );
+};
 
 // --- Hero Section ---
 const Hero = ({ onLoginClick }: { onLoginClick: () => void }) => {
@@ -218,48 +369,6 @@ const Hero = ({ onLoginClick }: { onLoginClick: () => void }) => {
     );
 };
 
-// --- Platform Logos Section ---
-const PlatformLogos = () => {
-    const platforms = [
-        { name: 'YouTube', icon: Youtube, color: 'text-white' },
-        { name: 'Spotify', icon: Music, color: 'text-white' },
-        { name: 'Twitch', icon: Video, color: 'text-white' },
-        { name: 'SoundCloud', icon: Waves, color: 'text-white' },
-        { name: 'Vimeo', icon: Play, color: 'text-white' },
-    ];
-
-    return (
-        <section className="py-16 border-y border-white/5 bg-zinc-950/50">
-            <div className="container px-4 md:px-6">
-                <motion.p
-                    initial={{ opacity: 0 }}
-                    whileInView={{ opacity: 1 }}
-                    viewport={{ once: true }}
-                    className="text-center text-sm text-zinc-500 mb-8 uppercase tracking-widest"
-                >
-                    Works with 1000+ platforms including
-                </motion.p>
-                <div className="flex flex-wrap justify-center items-center gap-8 md:gap-16">
-                    {platforms.map((platform, i) => (
-                        <motion.div
-                            key={platform.name}
-                            initial={{ opacity: 0, y: 20 }}
-                            whileInView={{ opacity: 1, y: 0 }}
-                            viewport={{ once: true }}
-                            transition={{ delay: i * 0.1 }}
-                            whileHover={{ scale: 1.1, y: -5 }}
-                            className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors cursor-pointer"
-                        >
-                            <platform.icon className={cn("h-6 w-6", platform.color)} />
-                            <span className="font-medium">{platform.name}</span>
-                        </motion.div>
-                    ))}
-                </div>
-            </div>
-        </section>
-    );
-};
-
 // --- Features Grid ---
 const FeatureCard = ({ icon: Icon, title, description, delay }: any) => {
     const ref = useRef(null);
@@ -273,7 +382,7 @@ const FeatureCard = ({ icon: Icon, title, description, delay }: any) => {
             transition={{ duration: 0.6, delay }}
             className="group relative rounded-3xl overflow-hidden"
         >
-            <div className="relative h-full rounded-3xl border border-white/5 p-1">
+            <div className="relative h-full rounded-3xl border border-white/5 p-1 transition-colors duration-500 hover:border-white/10">
                 <GlowingEffect
                     spread={40}
                     glow={true}
@@ -282,7 +391,7 @@ const FeatureCard = ({ icon: Icon, title, description, delay }: any) => {
                     inactiveZone={0.01}
                     borderWidth={2}
                 />
-                <div className="relative z-10 h-full p-8 rounded-[1.25rem] bg-zinc-900/80 backdrop-blur-xl flex flex-col justify-start">
+                <div className="relative z-10 h-full p-8 rounded-[1.25rem] bg-zinc-900/80 backdrop-blur-xl flex flex-col justify-start transition-colors duration-500 group-hover:bg-zinc-800/80">
                     <motion.div
                         className="h-14 w-14 rounded-2xl bg-white/5 flex items-center justify-center mb-6 group-hover:scale-110 group-hover:bg-white/10 transition-all duration-300 border border-white/10 group-hover:border-white/20"
                         whileHover={{ rotate: [0, -10, 10, 0] }}
@@ -584,11 +693,11 @@ const LoginModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                     animate={{ scale: 1, opacity: 1, y: 0 }}
                     exit={{ scale: 0.9, opacity: 0, y: 20 }}
                     onClick={(e) => e.stopPropagation()}
-                    className="bg-zinc-950 w-full max-w-md rounded-3xl border border-white/10 shadow-2xl overflow-hidden"
+                    className="bg-zinc-950 w-full max-w-md rounded-3xl border border-white/10 shadow-2xl overflow-hidden relative"
                 >
                     <button
                         onClick={onClose}
-                        className="absolute top-6 right-6 text-zinc-500 hover:text-white transition-colors text-xl z-20"
+                        className="absolute top-6 right-6 text-zinc-500 hover:text-white transition-colors text-xl z-20 hover:rotate-90 duration-300"
                     >
                         ✕
                     </button>
@@ -742,7 +851,9 @@ export default function LandingPage() {
     }, []);
 
     return (
-        <div className="min-h-screen bg-black text-white selection:bg-white/20 overflow-x-hidden">
+        <div className="min-h-screen bg-black text-white selection:bg-white/20 overflow-x-hidden cursor-default relative">
+            <MouseSpotlight />
+            
             {/* Navbar */}
             <motion.nav
                 initial={{ y: -100 }}
@@ -811,7 +922,8 @@ export default function LandingPage() {
             </motion.nav>
 
             <Hero onLoginClick={() => setShowLogin(true)} />
-            <PlatformLogos />
+            <InfiniteMarquee />
+            <TerminalDemo />
             <FeaturesSection />
             <TechnicalSpecs />
             <FAQSection />

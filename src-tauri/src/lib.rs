@@ -259,6 +259,8 @@ pub fn run() {
             vault::vault_add_folder,
             vault::vault_extract_folder_file,
             vault::vault_list_folder_contents,
+            vault::vault_add_zip,
+            vault::vault_convert_to_folder,
             // Native integration commands
             native_integration::update_taskbar_progress,
             native_integration::clear_taskbar_progress,

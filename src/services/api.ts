@@ -594,6 +594,44 @@ export const api = {
         }
     },
 
+    // Add a ZIP file to the vault (encrypted, browsable like a folder)
+    async vaultAddZip(
+        zipPath: string,
+        deleteOriginal: boolean = false
+    ): Promise<VaultFile> {
+        console.log('[Vault API] Adding ZIP file:', zipPath);
+        try {
+            const result = await invoke<VaultFile>('vault_add_zip', {
+                zipPath,
+                deleteOriginal
+            });
+            console.log('[Vault API] ZIP added successfully:', result.id);
+            return result;
+        } catch (error) {
+            console.error('[Vault API] Failed to add ZIP:', error);
+            throw error;
+        }
+    },
+
+    // Convert an existing encrypted file (that is actually a ZIP) to a browsable folder
+    async vaultConvertToFolder(
+        fileId: string,
+        encryptedName: string
+    ): Promise<VaultFolderEntry[]> {
+        console.log('[Vault API] Converting file to folder:', fileId);
+        try {
+            const result = await invoke<VaultFolderEntry[]>('vault_convert_to_folder', {
+                fileId,
+                encryptedName
+            });
+            console.log('[Vault API] Converted successfully, entries:', result.length);
+            return result;
+        } catch (error) {
+            console.error('[Vault API] Failed to convert to folder:', error);
+            throw error;
+        }
+    },
+
     // ============ Native Integration API ============
     async updateTaskbarProgress(progress: number, state: string): Promise<void> {
         return invoke('update_taskbar_progress', { progress, state });

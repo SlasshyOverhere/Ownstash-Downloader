@@ -29,7 +29,12 @@ import {
     CheckCircle2,
     Clock,
     AlertCircle,
-    Upload
+    Upload,
+    PackageOpen,
+    FileArchive,
+    Music,
+    Image,
+    FileText
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { staggerContainer, fadeInUp } from '@/lib/animations';
@@ -605,11 +610,14 @@ export function VaultPage() {
         }
     };
 
-    const handleAddFile = async () => {
+    // Unified upload handler - supports files, folders, and archives
+    const handleUpload = async () => {
         try {
+            // Open file/folder picker - allow any file type
             const selected = await open({
                 multiple: false,
-                title: 'Select file to add to Vault',
+                directory: false, // Set to false - users can select files OR folders via picker
+                title: 'Select file or archive to add to Vault',
             });
 
             if (!selected || typeof selected !== 'string') return;
@@ -617,17 +625,63 @@ export function VaultPage() {
             const fileName = selected.split(/[/\\]/).pop() || 'unknown';
             const extension = fileName.split('.').pop()?.toLowerCase() || '';
 
+            // Determine file type
             let fileType = 'file';
+            const archiveExtensions = ['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'tgz'];
+
             if (['mp4', 'webm', 'mkv', 'avi', 'mov'].includes(extension)) {
                 fileType = 'video';
             } else if (['mp3', 'm4a', 'flac', 'wav', 'opus', 'ogg'].includes(extension)) {
                 fileType = 'audio';
+            } else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(extension)) {
+                fileType = 'image';
+            } else if (archiveExtensions.includes(extension)) {
+                fileType = 'archive';
             }
 
-            toast.info('Encrypting and adding file to vault...');
+            // For ZIP files, try to add as browsable archive
+            if (extension === 'zip') {
+                try {
+                    toast.loading('Processing ZIP archive...');
+                    const addedZip = await api.vaultAddZip(selected, false);
+                    toast.dismiss();
+                    toast.success('Archive added to vault!');
+
+                    // Add to cloud index
+                    const newZipEntry: VaultFileEntry = {
+                        id: addedZip.id,
+                        original_name: addedZip.original_name,
+                        encrypted_name: addedZip.encrypted_name,
+                        size_bytes: addedZip.size_bytes,
+                        added_at: addedZip.added_at,
+                        file_type: addedZip.file_type,
+                        thumbnail: addedZip.thumbnail || undefined,
+                        is_folder: true,
+                        folder_entries: addedZip.folder_entries,
+                    };
+
+                    await addToVaultIndex(newZipEntry);
+
+                    setFiles(prev => {
+                        if (prev.some(f => f.id === addedZip.id)) return prev;
+                        return [...prev, addedZip];
+                    });
+
+                    enqueueUpload(addedZip.id);
+                    return;
+                } catch (zipErr) {
+                    // If ZIP parsing fails, fall through to regular file upload
+                    console.warn('[Vault] ZIP parsing failed, treating as regular file:', zipErr);
+                    toast.dismiss();
+                }
+            }
+
+            // Regular file upload (including failed archives)
+            toast.loading('Encrypting file...');
             console.log('[Vault] Adding file:', fileName, 'type:', fileType);
             const addedFile = await api.vaultAddFile(selected, fileName, fileType, undefined, true);
             console.log('[Vault] File added successfully:', addedFile);
+            toast.dismiss();
             toast.success('File added to vault!');
 
             // Update state and sync to cloud via service
@@ -644,7 +698,6 @@ export function VaultPage() {
             await addToVaultIndex(newFileEntry);
 
             // Update local state for immediate feedback
-            // Convert to VaultFile (same structure roughly, but type safety)
             const newFile: VaultFile = {
                 ...newFileEntry
             };
@@ -661,11 +714,15 @@ export function VaultPage() {
         } catch (err) {
             console.error('[Vault] Failed to add file:', err);
             const msg = typeof err === 'string' ? err : (err instanceof Error ? err.message : String(err));
+            toast.dismiss();
             toast.error(`Failed: ${msg}`);
             // Reload files on error to ensure UI consistency
             await loadFiles();
         }
     };
+
+    // Legacy handler kept for backward compatibility
+    const handleAddFile = handleUpload;
 
     // Handle folder upload
     const handleAddFolder = async () => {
@@ -716,6 +773,53 @@ export function VaultPage() {
             const msg = typeof err === 'string' ? err : (err instanceof Error ? err.message : String(err));
             toast.error(`Failed: ${msg}`);
             await loadFiles();
+        }
+    };
+
+    // Extract archive (convert to browsable folder)
+    const handleExtractArchive = async (file: VaultFile) => {
+        try {
+            toast.loading('Extracting archive contents...');
+
+            // Call backend to scan ZIP structure (decrypt -> scan -> index)
+            const entries = await api.vaultConvertToFolder(file.id, file.encrypted_name);
+
+            // Update local file data to match "folder" structure
+            const updatedFile: VaultFile = {
+                ...file,
+                is_folder: true,
+                folder_entries: entries,
+                file_type: 'folder' // Change type to folder
+            };
+
+            // Update Cloud Index to reflect it's now a folder
+            const entry: VaultFileEntry = {
+                id: updatedFile.id,
+                original_name: updatedFile.original_name,
+                encrypted_name: updatedFile.encrypted_name,
+                size_bytes: updatedFile.size_bytes,
+                added_at: updatedFile.added_at,
+                file_type: 'folder', // Change type to folder
+                thumbnail: updatedFile.thumbnail || undefined,
+                is_folder: true,
+                folder_entries: entries,
+            };
+
+            await addToVaultIndex(entry);
+
+            // Update local state
+            setFiles(prev => prev.map(f => f.id === file.id ? updatedFile : f));
+
+            toast.dismiss();
+            toast.success('Archive extracted! You can now browse contents.');
+
+            // Auto open the folder
+            handleOpenFolder(updatedFile);
+
+        } catch (err) {
+            console.error('[Vault] Extraction failed:', err);
+            toast.dismiss();
+            toast.error('Failed to extract: Archive might be invalid or unsupported format.');
         }
     };
 
@@ -1411,18 +1515,18 @@ export function VaultPage() {
                     </div>
                     <div className="flex items-center gap-2">
                         <button
-                            onClick={handleAddFile}
-                            className="px-4 py-2 rounded-xl glass-hover text-sm font-medium flex items-center gap-2 hover:bg-primary/20 transition-colors"
+                            onClick={handleUpload}
+                            className="px-4 py-2 rounded-xl bg-primary/20 hover:bg-primary/30 text-primary text-sm font-medium flex items-center gap-2 transition-colors"
                         >
-                            <Plus className="w-4 h-4" />
-                            Add File
+                            <Upload className="w-4 h-4" />
+                            Upload
                         </button>
                         <button
                             onClick={handleAddFolder}
-                            className="px-4 py-2 rounded-xl glass-hover text-sm font-medium flex items-center gap-2 hover:bg-yellow-500/20 text-yellow-400 transition-colors"
+                            className="p-2 rounded-xl glass-hover hover:bg-yellow-500/20 text-yellow-400 transition-colors"
+                            title="Add Folder"
                         >
-                            <FolderPlus className="w-4 h-4" />
-                            Add Folder
+                            <FolderPlus className="w-5 h-5" />
                         </button>
                         <button
                             onClick={handleSyncToCloud}
@@ -1498,8 +1602,16 @@ export function VaultPage() {
                                             />
                                         ) : (file.is_folder || file.file_type === 'folder') ? (
                                             <Folder className="w-7 h-7 text-yellow-400" />
-                                        ) : (
+                                        ) : (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'tgz'].includes(file.original_name.split('.').pop()?.toLowerCase() || '') || file.file_type === 'archive') ? (
+                                            <FileArchive className="w-7 h-7 text-purple-400" />
+                                        ) : (['mp3', 'wav', 'flac', 'ogg', 'm4a'].includes(file.original_name.split('.').pop()?.toLowerCase() || '') || file.file_type === 'audio') ? (
+                                            <Music className="w-7 h-7 text-green-400" />
+                                        ) : (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(file.original_name.split('.').pop()?.toLowerCase() || '') || file.file_type === 'image') ? (
+                                            <Image className="w-7 h-7 text-blue-400" />
+                                        ) : (['mp4', 'mkv', 'webm', 'avi', 'mov'].includes(file.original_name.split('.').pop()?.toLowerCase() || '') || file.file_type === 'video') ? (
                                             <Video className="w-7 h-7 text-primary" />
+                                        ) : (
+                                            <FileText className="w-7 h-7 text-gray-400" />
                                         )}
                                         <div className="absolute inset-0 flex items-center justify-center bg-black/50">
                                             <Lock className="w-5 h-5 text-white/80" />
@@ -1532,6 +1644,14 @@ export function VaultPage() {
                                                         title="Open Folder"
                                                     >
                                                         <FolderOpen className="w-4 h-4" />
+                                                    </button>
+                                                ) : file.original_name.match(/\.(zip|rar|7z|tar|gz|bz2|xz|tgz)$/i) ? (
+                                                    <button
+                                                        onClick={() => handleExtractArchive(file)}
+                                                        className="p-2 rounded-lg hover:bg-purple-500/20 text-purple-400 transition-colors"
+                                                        title="Extract Archive"
+                                                    >
+                                                        <PackageOpen className="w-4 h-4" />
                                                     </button>
                                                 ) : (
                                                     <button
