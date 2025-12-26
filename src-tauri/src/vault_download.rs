@@ -303,6 +303,8 @@ pub async fn vault_direct_download(
         added_at: chrono::Utc::now().timestamp(),
         file_type: request.file_type,
         thumbnail: request.thumbnail,
+        is_folder: false,
+        folder_entries: None,
     };
 
     // Clean up active download tracking

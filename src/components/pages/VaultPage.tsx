@@ -12,6 +12,8 @@ import {
     Download,
     Play,
     FolderOpen,
+    Folder,
+    FolderPlus,
     AlertTriangle,
     Loader2,
     Plus,
@@ -66,6 +68,7 @@ import {
 } from '@/services/vaultFileSyncService';
 import { CloudDownloadPopup } from '@/components/vault/CloudDownloadPopup';
 import { CloudSyncModal, PendingFile } from '@/components/vault/CloudSyncModal';
+import { FolderBrowserModal } from '@/components/vault/FolderBrowserModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { signInWithGoogleBrowser } from '@/services/googleAuth';
 
@@ -218,6 +221,15 @@ export function VaultPage() {
     // Login state for offline mode
     const [isLoggingIn, setIsLoggingIn] = useState(false);
 
+    // Folder browser modal state
+    const [showFolderBrowser, setShowFolderBrowser] = useState(false);
+    const [selectedFolder, setSelectedFolder] = useState<VaultFile | null>(null);
+
+    // Image viewer state
+    const [showImageViewer, setShowImageViewer] = useState(false);
+    const [viewerImagePath, setViewerImagePath] = useState('');
+    const [viewerImageName, setViewerImageName] = useState('');
+
     // Handle Google Sign In from vault when in offline mode
     const handleVaultGoogleSignIn = async () => {
         setIsLoggingIn(true);
@@ -352,7 +364,7 @@ export function VaultPage() {
                 console.log('[Vault] Loading files from Google Drive (cloud-only mode)');
                 const cloudFiles = await loadVaultIndexFromGDrive(vaultPinRef.current);
                 if (cloudFiles && Array.isArray(cloudFiles)) {
-                    // Convert VaultFileEntry to VaultFile format (including sync status)
+                    // Convert VaultFileEntry to VaultFile format (including sync status and folder info)
                     const vaultFiles = cloudFiles.map((f: VaultFileEntry & { cloud_sync_status?: string; cloud_file_id?: string }) => ({
                         id: f.id,
                         original_name: f.original_name,
@@ -361,6 +373,9 @@ export function VaultPage() {
                         added_at: f.added_at,
                         file_type: f.file_type,
                         thumbnail: f.thumbnail,
+                        // Include folder-specific fields
+                        is_folder: f.is_folder || false,
+                        folder_entries: f.folder_entries,
                         // Include cloud sync fields
                         cloud_sync_status: f.cloud_sync_status,
                         cloud_file_id: f.cloud_file_id
@@ -651,6 +666,141 @@ export function VaultPage() {
             await loadFiles();
         }
     };
+
+    // Handle folder upload
+    const handleAddFolder = async () => {
+        try {
+            const selected = await open({
+                directory: true,
+                title: 'Select folder to add to Vault',
+            });
+
+            if (!selected || typeof selected !== 'string') return;
+
+            const folderName = selected.split(/[/\\]/).pop() || 'Folder';
+
+            toast.info('Compressing and encrypting folder...');
+            console.log('[Vault] Adding folder:', folderName);
+
+            const addedFolder = await api.vaultAddFolder(selected, folderName, false);
+            console.log('[Vault] Folder added successfully:', addedFolder);
+            toast.success('Folder added to vault!');
+
+            // Update state and sync to cloud via service
+            const newFolderEntry: VaultFileEntry = {
+                id: addedFolder.id,
+                original_name: addedFolder.original_name,
+                encrypted_name: addedFolder.encrypted_name,
+                size_bytes: addedFolder.size_bytes,
+                added_at: addedFolder.added_at,
+                file_type: addedFolder.file_type,
+                thumbnail: addedFolder.thumbnail,
+                is_folder: true,
+                folder_entries: addedFolder.folder_entries
+            };
+
+            await addToVaultIndex(newFolderEntry);
+
+            // Update local state for immediate feedback
+            setFiles(prev => {
+                if (prev.some(f => f.id === addedFolder.id)) return prev;
+                return [...prev, addedFolder];
+            });
+
+            // Queue folder for background cloud upload
+            enqueueUpload(addedFolder.id);
+
+            console.log('[Vault] Cloud sync completed for new folder via service');
+        } catch (err) {
+            console.error('[Vault] Failed to add folder:', err);
+            const msg = typeof err === 'string' ? err : (err instanceof Error ? err.message : String(err));
+            toast.error(`Failed: ${msg}`);
+            await loadFiles();
+        }
+    };
+
+    // Open folder browser modal
+    const handleOpenFolder = (folder: VaultFile) => {
+        setSelectedFolder(folder);
+        setShowFolderBrowser(true);
+    };
+
+    // Play a media file from inside a folder
+    const handlePlayFolderFile = async (filePathInFolder: string) => {
+        if (!selectedFolder) return;
+
+        try {
+            toast.info('Extracting and preparing file...');
+            const tempPath = await api.vaultExtractFolderFile(
+                selectedFolder.id,
+                selectedFolder.encrypted_name,
+                filePathInFolder
+            );
+
+            // Determine if audio or video based on extension
+            const ext = filePathInFolder.split('.').pop()?.toLowerCase() || '';
+            const isAudio = ['mp3', 'm4a', 'flac', 'wav', 'opus', 'ogg', 'aac'].includes(ext);
+
+            // Play with internal player
+            const fileName = filePathInFolder.split('/').pop() || 'Media';
+            setPlayerFilePath(tempPath);
+            setPlayerTitle(fileName);
+            setPlayerIsAudio(isAudio);
+            setShowPlayer(true);
+        } catch (err) {
+            console.error('[Vault] Failed to play folder file:', err);
+            toast.error('Failed to play file');
+        }
+    };
+
+    // Export a file from inside a folder
+    const handleExportFolderFile = async (filePathInFolder: string) => {
+        if (!selectedFolder) return;
+
+        try {
+            const destDir = await open({
+                directory: true,
+                title: 'Select export destination',
+            });
+
+            if (!destDir || typeof destDir !== 'string') return;
+
+            toast.info('Extracting file...');
+            const tempPath = await api.vaultExtractFolderFile(
+                selectedFolder.id,
+                selectedFolder.encrypted_name,
+                filePathInFolder
+            );
+
+            // File extracted to temp location
+            toast.success(`File extracted! Location: ${tempPath}`);
+        } catch (err) {
+            console.error('[Vault] Failed to export folder file:', err);
+            toast.error('Failed to export file');
+        }
+    };
+
+    // View an image from inside a folder
+    const handleViewFolderImage = async (filePathInFolder: string, fileName: string) => {
+        if (!selectedFolder) return;
+
+        try {
+            toast.info('Extracting image...');
+            const tempPath = await api.vaultExtractFolderFile(
+                selectedFolder.id,
+                selectedFolder.encrypted_name,
+                filePathInFolder
+            );
+
+            setViewerImagePath(tempPath);
+            setViewerImageName(fileName);
+            setShowImageViewer(true);
+        } catch (err) {
+            console.error('[Vault] Failed to view folder image:', err);
+            toast.error('Failed to view image');
+        }
+    };
+
 
     // Handle play button click - respects player preference
     // Now checks if file is available locally and triggers cloud download if needed
@@ -1268,6 +1418,13 @@ export function VaultPage() {
                             Add File
                         </button>
                         <button
+                            onClick={handleAddFolder}
+                            className="px-4 py-2 rounded-xl glass-hover text-sm font-medium flex items-center gap-2 hover:bg-yellow-500/20 text-yellow-400 transition-colors"
+                        >
+                            <FolderPlus className="w-4 h-4" />
+                            Add Folder
+                        </button>
+                        <button
                             onClick={handleSyncToCloud}
                             disabled={isSyncing}
                             className={cn(
@@ -1321,16 +1478,26 @@ export function VaultPage() {
                                 initial={{ opacity: 0, y: 20 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ delay: index * 0.05 }}
-                                className="glass-hover rounded-2xl p-4 border-glow"
+                                className={cn(
+                                    "glass-hover rounded-2xl p-4 border-glow",
+                                    (file.is_folder || file.file_type === 'folder') && "border-yellow-500/30"
+                                )}
                             >
                                 <div className="flex items-start gap-4">
-                                    <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center shrink-0 relative overflow-hidden">
+                                    <div className={cn(
+                                        "w-14 h-14 rounded-xl flex items-center justify-center shrink-0 relative overflow-hidden",
+                                        (file.is_folder || file.file_type === 'folder')
+                                            ? "bg-gradient-to-br from-yellow-500/20 to-orange-500/20"
+                                            : "bg-gradient-to-br from-primary/20 to-accent/20"
+                                    )}>
                                         {file.thumbnail ? (
                                             <img
                                                 src={file.thumbnail}
                                                 alt={file.original_name}
                                                 className="w-full h-full object-cover"
                                             />
+                                        ) : (file.is_folder || file.file_type === 'folder') ? (
+                                            <Folder className="w-7 h-7 text-yellow-400" />
                                         ) : (
                                             <Video className="w-7 h-7 text-primary" />
                                         )}
@@ -1341,7 +1508,14 @@ export function VaultPage() {
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-start justify-between gap-2">
                                             <div className="min-w-0 flex-1">
-                                                <h3 className="font-semibold truncate text-sm">{file.original_name}</h3>
+                                                <h3 className="font-semibold truncate text-sm flex items-center gap-2">
+                                                    {file.original_name}
+                                                    {(file.is_folder || file.file_type === 'folder') && (
+                                                        <span className="text-xs text-yellow-400 bg-yellow-500/10 px-1.5 py-0.5 rounded">
+                                                            {file.folder_entries?.length || 0} items
+                                                        </span>
+                                                    )}
+                                                </h3>
                                                 <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5">
                                                     {formatBytes(file.size_bytes)} • {file.file_type}
                                                     <SyncStatusIcon status={(file as VaultFileWithSync).cloud_sync_status} />
@@ -1351,13 +1525,23 @@ export function VaultPage() {
                                                 </p>
                                             </div>
                                             <div className="flex items-center gap-1 shrink-0">
-                                                <button
-                                                    onClick={() => handlePlay(file)}
-                                                    className="p-2 rounded-lg hover:bg-white/10 transition-colors"
-                                                    title="Play"
-                                                >
-                                                    <Play className="w-4 h-4" />
-                                                </button>
+                                                {(file.is_folder || file.file_type === 'folder') ? (
+                                                    <button
+                                                        onClick={() => handleOpenFolder(file)}
+                                                        className="p-2 rounded-lg hover:bg-yellow-500/20 text-yellow-400 transition-colors"
+                                                        title="Open Folder"
+                                                    >
+                                                        <FolderOpen className="w-4 h-4" />
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => handlePlay(file)}
+                                                        className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+                                                        title="Play"
+                                                    >
+                                                        <Play className="w-4 h-4" />
+                                                    </button>
+                                                )}
                                                 <button
                                                     onClick={() => handleExport(file)}
                                                     className="p-2 rounded-lg hover:bg-white/10 transition-colors"
@@ -1695,6 +1879,65 @@ export function VaultPage() {
                 onClose={() => setShowSyncModal(false)}
                 onUpload={handleUploadSelected}
             />
+
+            {/* Folder Browser Modal */}
+            <FolderBrowserModal
+                isOpen={showFolderBrowser}
+                folder={selectedFolder}
+                onClose={() => {
+                    setShowFolderBrowser(false);
+                    setSelectedFolder(null);
+                }}
+                onPlayFile={handlePlayFolderFile}
+                onExportFile={handleExportFolderFile}
+                onViewImage={handleViewFolderImage}
+            />
+
+            {/* Image Viewer Modal */}
+            <AnimatePresence>
+                {showImageViewer && viewerImagePath && (
+                    <>
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50"
+                            onClick={() => {
+                                setShowImageViewer(false);
+                                setViewerImagePath('');
+                                api.vaultCleanupTemp().catch(console.error);
+                            }}
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.9 }}
+                            className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 max-w-[90vw] max-h-[90vh]"
+                        >
+                            <div className="relative">
+                                <button
+                                    onClick={() => {
+                                        setShowImageViewer(false);
+                                        setViewerImagePath('');
+                                        api.vaultCleanupTemp().catch(console.error);
+                                    }}
+                                    className="absolute -top-10 right-0 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                                <img
+                                    src={`asset://localhost/${viewerImagePath.replace(/\\/g, '/')}`}
+                                    alt={viewerImageName}
+                                    className="max-w-[85vw] max-h-[85vh] rounded-lg shadow-2xl object-contain"
+                                />
+                                <p className="text-center text-sm text-muted-foreground mt-2">
+                                    {viewerImageName}
+                                </p>
+                            </div>
+                        </motion.div>
+                    </>
+                )}
+            </AnimatePresence>
         </>
     );
 }

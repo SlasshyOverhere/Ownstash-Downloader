@@ -669,6 +669,15 @@ export const gdriveService = {
 const VAULT_FILE = 'slasshy_vault_index.enc';
 
 // Vault file interface (matching Rust struct)
+// Represents a file or directory inside a vault folder
+export interface VaultFolderEntry {
+    name: string;           // File/folder name
+    path: string;           // Relative path within the folder
+    size_bytes: number;     // Size in bytes (0 for directories)
+    file_type: string;      // "video", "audio", "image", "file", "directory"
+    is_directory: boolean;  // True if this is a directory
+}
+
 export interface VaultFileEntry {
     id: string;
     original_name: string;
@@ -677,6 +686,9 @@ export interface VaultFileEntry {
     added_at: number;
     file_type: string;
     thumbnail?: string;
+    // Folder-specific fields
+    is_folder?: boolean;
+    folder_entries?: VaultFolderEntry[];
 }
 
 /**

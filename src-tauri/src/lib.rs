@@ -255,6 +255,10 @@ pub fn run() {
             vault::vault_rename_file,
             vault::vault_get_files_dir_path,
             vault::vault_get_file_size,
+            // Vault folder commands
+            vault::vault_add_folder,
+            vault::vault_extract_folder_file,
+            vault::vault_list_folder_contents,
             // Native integration commands
             native_integration::update_taskbar_progress,
             native_integration::clear_taskbar_progress,

@@ -42,7 +42,7 @@ const AnimatedCounter = ({ value, suffix = '', duration = 2 }: { value: number; 
 const FloatingOrbs = () => (
     <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <motion.div
-            className="absolute top-[10%] left-[15%] w-[500px] h-[500px] bg-purple-600/20 rounded-full blur-[150px]"
+            className="absolute top-[10%] left-[15%] w-[500px] h-[500px] bg-white/5 rounded-full blur-[150px]"
             animate={{
                 x: [0, 50, 0],
                 y: [0, -30, 0],
@@ -51,7 +51,7 @@ const FloatingOrbs = () => (
             transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
         />
         <motion.div
-            className="absolute bottom-[20%] right-[10%] w-[600px] h-[600px] bg-blue-600/15 rounded-full blur-[150px]"
+            className="absolute bottom-[20%] right-[10%] w-[600px] h-[600px] bg-zinc-500/10 rounded-full blur-[150px]"
             animate={{
                 x: [0, -40, 0],
                 y: [0, 40, 0],
@@ -60,7 +60,7 @@ const FloatingOrbs = () => (
             transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }}
         />
         <motion.div
-            className="absolute top-[50%] left-[50%] w-[400px] h-[400px] bg-cyan-500/10 rounded-full blur-[120px]"
+            className="absolute top-[50%] left-[50%] w-[400px] h-[400px] bg-white/5 rounded-full blur-[120px]"
             animate={{
                 x: [0, 30, -30, 0],
                 y: [0, -50, 20, 0]
@@ -115,7 +115,7 @@ const Hero = ({ onLoginClick }: { onLoginClick: () => void }) => {
                     transition={{ duration: 0.5 }}
                     className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-sm text-white/80 mb-8 backdrop-blur-sm"
                 >
-                    <Sparkles className="h-4 w-4 mr-2 text-yellow-400" />
+                    <Sparkles className="h-4 w-4 mr-2 text-white" />
                     v2.0 Now Available with Cloud Vault & 8K Support
                 </motion.div>
 
@@ -134,7 +134,7 @@ const Hero = ({ onLoginClick }: { onLoginClick: () => void }) => {
                         {titles.map((title, index) => (
                             <motion.span
                                 key={index}
-                                className="absolute font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400"
+                                className="absolute font-bold bg-clip-text text-transparent bg-gradient-to-r from-zinc-200 via-white to-zinc-200"
                                 initial={{ opacity: 0, y: 50 }}
                                 animate={
                                     titleNumber === index
@@ -221,11 +221,11 @@ const Hero = ({ onLoginClick }: { onLoginClick: () => void }) => {
 // --- Platform Logos Section ---
 const PlatformLogos = () => {
     const platforms = [
-        { name: 'YouTube', icon: Youtube, color: 'text-red-500' },
-        { name: 'Spotify', icon: Music, color: 'text-green-500' },
-        { name: 'Twitch', icon: Video, color: 'text-purple-500' },
-        { name: 'SoundCloud', icon: Waves, color: 'text-orange-500' },
-        { name: 'Vimeo', icon: Play, color: 'text-blue-400' },
+        { name: 'YouTube', icon: Youtube, color: 'text-white' },
+        { name: 'Spotify', icon: Music, color: 'text-white' },
+        { name: 'Twitch', icon: Video, color: 'text-white' },
+        { name: 'SoundCloud', icon: Waves, color: 'text-white' },
+        { name: 'Vimeo', icon: Play, color: 'text-white' },
     ];
 
     return (
@@ -284,14 +284,14 @@ const FeatureCard = ({ icon: Icon, title, description, delay }: any) => {
                 />
                 <div className="relative z-10 h-full p-8 rounded-[1.25rem] bg-zinc-900/80 backdrop-blur-xl flex flex-col justify-start">
                     <motion.div
-                        className="h-14 w-14 rounded-2xl bg-white/5 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300 border border-white/10"
+                        className="h-14 w-14 rounded-2xl bg-white/5 flex items-center justify-center mb-6 group-hover:scale-110 group-hover:bg-white/10 transition-all duration-300 border border-white/10 group-hover:border-white/20"
                         whileHover={{ rotate: [0, -10, 10, 0] }}
                         transition={{ duration: 0.5 }}
                     >
                         <Icon className="h-7 w-7 text-white" />
                     </motion.div>
-                    <h3 className="text-xl font-semibold mb-3 text-white">{title}</h3>
-                    <p className="text-zinc-400 leading-relaxed">{description}</p>
+                    <h3 className="text-xl font-semibold mb-3 text-white group-hover:text-white transition-colors">{title}</h3>
+                    <p className="text-zinc-400 leading-relaxed group-hover:text-zinc-300 transition-colors">{description}</p>
                 </div>
             </div>
         </motion.div>
@@ -304,37 +304,37 @@ const FeaturesSection = () => {
             icon: Shield,
             title: "Military-Grade Encryption",
             description: "Your data is secured with AES-256-GCM encryption. Zero-knowledge architecture means even we can't see what you store.",
-            gradient: "bg-gradient-to-br from-green-500/10 to-transparent"
+            gradient: "bg-gradient-to-br from-white/10 to-transparent"
         },
         {
             icon: Download,
             title: "8K Video & FLAC Audio",
             description: "Download media in the highest quality available. Full support for 60fps, HDR10+, Dolby Vision, and lossless audio.",
-            gradient: "bg-gradient-to-br from-blue-500/10 to-transparent"
+            gradient: "bg-gradient-to-br from-white/10 to-transparent"
         },
         {
             icon: Cpu,
             title: "Multi-Threaded Rust Engine",
             description: "Blazing-fast downloads powered by our custom Rust engine with intelligent connection pooling and adaptive chunk sizing.",
-            gradient: "bg-gradient-to-br from-orange-500/10 to-transparent"
+            gradient: "bg-gradient-to-br from-white/10 to-transparent"
         },
         {
             icon: Smartphone,
             title: "Cross-Device Sync",
             description: "Your encrypted vault syncs seamlessly using your own Google Drive. No third-party servers. Your data, your control.",
-            gradient: "bg-gradient-to-br from-purple-500/10 to-transparent"
+            gradient: "bg-gradient-to-br from-white/10 to-transparent"
         },
         {
             icon: Chrome,
             title: "Browser Extension",
             description: "One-click downloads directly from your browser. Automatically detects media on the page and queues it for download.",
-            gradient: "bg-gradient-to-br from-yellow-500/10 to-transparent"
+            gradient: "bg-gradient-to-br from-white/10 to-transparent"
         },
         {
             icon: Fingerprint,
             title: "Biometric Vault Lock",
             description: "Secure your vault with PIN, password, or biometric authentication. Auto-lock after inactivity keeps your files safe.",
-            gradient: "bg-gradient-to-br from-pink-500/10 to-transparent"
+            gradient: "bg-gradient-to-br from-white/10 to-transparent"
         },
     ];
 
@@ -374,15 +374,15 @@ const SpecRow = ({ icon: Icon, label, value, highlight }: any) => (
         initial={{ opacity: 0, x: -20 }}
         whileInView={{ opacity: 1, x: 0 }}
         viewport={{ once: true }}
-        className="flex items-center justify-between py-4 px-4 border-b border-white/5 hover:bg-white/[0.02] rounded-lg transition-colors group"
+        className="flex items-center justify-between py-4 px-4 border-b border-white/5 hover:bg-white/[0.05] rounded-lg transition-colors group cursor-default"
     >
         <div className="flex items-center gap-3">
             <div className="h-8 w-8 rounded-lg bg-white/5 flex items-center justify-center group-hover:bg-white/10 transition-colors">
-                <Icon className="h-4 w-4 text-zinc-400" />
+                <Icon className="h-4 w-4 text-zinc-400 group-hover:text-white transition-colors" />
             </div>
-            <span className="text-zinc-400 font-medium">{label}</span>
+            <span className="text-zinc-400 font-medium group-hover:text-zinc-300 transition-colors">{label}</span>
         </div>
-        <span className={cn("font-mono font-semibold", highlight ? "text-green-400" : "text-white")}>
+        <span className={cn("font-mono font-semibold transition-colors", highlight ? "text-white group-hover:text-white" : "text-white group-hover:text-zinc-200")}>
             {value}
         </span>
     </motion.div>
@@ -413,7 +413,7 @@ const TechnicalSpecs = () => {
                             whileInView={{ opacity: 1, y: 0 }}
                             viewport={{ once: true }}
                         >
-                            <span className="text-sm font-medium text-blue-400 uppercase tracking-widest mb-4 block">Technical Specifications</span>
+                            <span className="text-sm font-medium text-zinc-500 uppercase tracking-widest mb-4 block">Technical Specifications</span>
                             <h2 className="text-4xl md:text-5xl font-bold mb-6">
                                 <span className="bg-clip-text text-transparent bg-gradient-to-r from-white to-zinc-500">
                                     Enterprise-Grade Tech
@@ -437,12 +437,12 @@ const TechnicalSpecs = () => {
                         whileInView={{ opacity: 1, x: 0 }}
                         viewport={{ once: true }}
                         transition={{ duration: 0.8 }}
-                        className="relative lg:sticky lg:top-24"
+                        className="relative lg:sticky lg:top-32"
                     >
-                        <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 to-purple-500/20 rounded-3xl blur-3xl" />
+                        <div className="absolute inset-0 bg-gradient-to-r from-zinc-500/10 to-white/5 rounded-3xl blur-3xl" />
                         <div className="relative bg-black rounded-3xl border border-white/10 p-8 shadow-2xl overflow-hidden">
                             {/* Live Download Preview */}
-                            <div className="absolute top-0 right-0 px-3 py-1 bg-green-500/20 text-green-400 text-xs font-medium rounded-bl-lg">
+                            <div className="absolute top-0 right-0 px-3 py-1 bg-white/10 text-white text-xs font-medium rounded-bl-lg">
                                 LIVE
                             </div>
 
@@ -456,8 +456,8 @@ const TechnicalSpecs = () => {
                                 >
                                     <div className="flex items-center justify-between mb-4">
                                         <div className="flex items-center gap-4">
-                                            <div className="h-12 w-12 bg-red-500/20 rounded-xl flex items-center justify-center">
-                                                <Youtube className="h-6 w-6 text-red-500" />
+                                            <div className="h-12 w-12 bg-white/10 rounded-xl flex items-center justify-center">
+                                                <Youtube className="h-6 w-6 text-white" />
                                             </div>
                                             <div>
                                                 <div className="font-semibold text-white">The Matrix 4K HDR</div>
@@ -465,14 +465,14 @@ const TechnicalSpecs = () => {
                                             </div>
                                         </div>
                                         <motion.div
-                                            className="h-3 w-3 bg-green-500 rounded-full"
+                                            className="h-3 w-3 bg-white rounded-full"
                                             animate={{ scale: [1, 1.2, 1] }}
                                             transition={{ duration: 1, repeat: Infinity }}
                                         />
                                     </div>
                                     <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
                                         <motion.div
-                                            className="h-full bg-gradient-to-r from-blue-500 to-purple-500"
+                                            className="h-full bg-gradient-to-r from-zinc-500 to-white"
                                             initial={{ width: "0%" }}
                                             whileInView={{ width: "72%" }}
                                             viewport={{ once: true }}
@@ -491,18 +491,18 @@ const TechnicalSpecs = () => {
                                 >
                                     <div className="flex items-center justify-between mb-4">
                                         <div className="flex items-center gap-4">
-                                            <div className="h-12 w-12 bg-green-500/20 rounded-xl flex items-center justify-center">
-                                                <Music className="h-6 w-6 text-green-500" />
+                                            <div className="h-12 w-12 bg-white/10 rounded-xl flex items-center justify-center">
+                                                <Music className="h-6 w-6 text-white" />
                                             </div>
                                             <div>
                                                 <div className="font-semibold text-white">Daft Punk - Discovery</div>
                                                 <div className="text-xs text-zinc-500">FLAC • 14 tracks</div>
                                             </div>
                                         </div>
-                                        <CheckCircle2 className="h-5 w-5 text-green-500" />
+                                        <CheckCircle2 className="h-5 w-5 text-white" />
                                     </div>
                                     <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
-                                        <div className="h-full bg-green-500 w-full" />
+                                        <div className="h-full bg-white w-full" />
                                     </div>
                                 </motion.div>
 
@@ -512,14 +512,14 @@ const TechnicalSpecs = () => {
                                         className="bg-zinc-900/50 rounded-xl p-4 flex items-center gap-3"
                                         whileHover={{ scale: 1.02 }}
                                     >
-                                        <Shield className="text-green-500 h-5 w-5" />
+                                        <Shield className="text-white h-5 w-5" />
                                         <span className="text-sm text-zinc-300">Encrypted</span>
                                     </motion.div>
                                     <motion.div
                                         className="bg-zinc-900/50 rounded-xl p-4 flex items-center gap-3"
                                         whileHover={{ scale: 1.02 }}
                                     >
-                                        <Lock className="text-blue-500 h-5 w-5" />
+                                        <Lock className="text-white h-5 w-5" />
                                         <span className="text-sm text-zinc-300">Vault Synced</span>
                                     </motion.div>
                                 </div>
@@ -535,7 +535,7 @@ const TechnicalSpecs = () => {
 // --- CTA Section ---
 const CTASection = ({ onLoginClick }: { onLoginClick: () => void }) => (
     <section id="download" className="py-32 relative overflow-hidden scroll-mt-20">
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-pink-600/10" />
+        <div className="absolute inset-0 bg-gradient-to-r from-zinc-500/10 via-white/5 to-zinc-500/10" />
         <FloatingOrbs />
 
         <div className="container px-4 md:px-6 relative z-10 text-center">
@@ -802,7 +802,7 @@ export default function LandingPage() {
                         
                         <button
                             onClick={() => setShowLogin(true)}
-                            className="text-sm font-semibold px-6 py-2.5 rounded-full bg-blue-600 text-white hover:bg-blue-500 transition-colors shadow-[0_0_20px_rgba(37,99,235,0.4)] ml-2"
+                            className="text-sm font-semibold px-6 py-2.5 rounded-full bg-white text-black hover:bg-zinc-200 transition-colors shadow-[0_0_20px_rgba(255,255,255,0.4)] ml-2"
                         >
                             Sign In
                         </button>

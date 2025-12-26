@@ -169,14 +169,26 @@ export interface VaultStatus {
     total_size_bytes: number;
 }
 
+// Represents a file or directory inside a vault folder
+export interface VaultFolderEntry {
+    name: string;           // File/folder name
+    path: string;           // Relative path within the folder
+    size_bytes: number;     // Size in bytes (0 for directories)
+    file_type: string;      // "video", "audio", "image", "file", "directory"
+    is_directory: boolean;  // True if this is a directory
+}
+
 export interface VaultFile {
     id: string;
     original_name: string;
     encrypted_name: string;
     size_bytes: number;
     added_at: number;
-    file_type: string; // "video", "audio", "file"
+    file_type: string; // "video", "audio", "file", "folder"
     thumbnail?: string;
+    // Folder-specific fields
+    is_folder?: boolean;
+    folder_entries?: VaultFolderEntry[];
 }
 
 // Vault Direct Download types
@@ -518,6 +530,68 @@ export const api = {
     // Get file size of encrypted file
     async vaultGetFileSize(encryptedName: string): Promise<number> {
         return invoke('vault_get_file_size', { encryptedName });
+    },
+
+    // ============ Vault Folder API ============
+    // Add a folder to the vault (compresses and encrypts)
+    async vaultAddFolder(
+        folderPath: string,
+        folderName: string,
+        deleteOriginal: boolean = false
+    ): Promise<VaultFile> {
+        console.log('[Vault API] Adding folder:', { folderPath, folderName, deleteOriginal });
+        try {
+            const result = await invoke<VaultFile>('vault_add_folder', {
+                folderPath,
+                folderName,
+                deleteOriginal
+            });
+            console.log('[Vault API] Folder added successfully:', result);
+            return result;
+        } catch (error) {
+            console.error('[Vault API] Failed to add folder:', error);
+            throw error;
+        }
+    },
+
+    // Extract a specific file from an encrypted folder
+    async vaultExtractFolderFile(
+        fileId: string,
+        encryptedName: string,
+        filePathInFolder: string
+    ): Promise<string> {
+        console.log('[Vault API] Extracting file from folder:', { fileId, filePathInFolder });
+        try {
+            const result = await invoke<string>('vault_extract_folder_file', {
+                fileId,
+                encryptedName,
+                filePathInFolder
+            });
+            console.log('[Vault API] File extracted to:', result);
+            return result;
+        } catch (error) {
+            console.error('[Vault API] Failed to extract file:', error);
+            throw error;
+        }
+    },
+
+    // List contents of an encrypted folder (fallback if folder_entries not in index)
+    async vaultListFolderContents(
+        fileId: string,
+        encryptedName: string
+    ): Promise<VaultFolderEntry[]> {
+        console.log('[Vault API] Listing folder contents:', fileId);
+        try {
+            const result = await invoke<VaultFolderEntry[]>('vault_list_folder_contents', {
+                fileId,
+                encryptedName
+            });
+            console.log('[Vault API] Folder has', result.length, 'entries');
+            return result;
+        } catch (error) {
+            console.error('[Vault API] Failed to list folder contents:', error);
+            throw error;
+        }
     },
 
     // ============ Native Integration API ============
