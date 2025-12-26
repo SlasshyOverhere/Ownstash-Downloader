@@ -1518,36 +1518,72 @@ export function VaultPage() {
                 variants={staggerContainer}
                 initial="initial"
                 animate="animate"
-                className="max-w-4xl mx-auto space-y-6"
+                className="w-full max-w-6xl mx-auto space-y-6 px-4"
             >
                 {/* Header */}
-                <motion.div variants={fadeInUp} className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 flex items-center justify-center">
-                            <ShieldCheck className="w-6 h-6 text-green-400" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl font-display font-bold flex items-center gap-2">
-                                Private Vault
-                                <span className="px-2 py-0.5 text-xs font-medium bg-green-500/20 text-green-400 rounded-full">
-                                    Unlocked
-                                </span>
-                                {isGDriveAvailable() && (
-                                    <span className="px-2 py-0.5 text-xs font-medium bg-purple-500/20 text-purple-400 rounded-full flex items-center gap-1">
-                                        <Cloud className="w-3 h-3" />
-                                        Cloud
+                <motion.div variants={fadeInUp} className="glass-panel rounded-2xl p-6 border-glow">
+                    {/* Top row: Title and Lock button */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                        <div className="flex items-center gap-4">
+                            <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 flex items-center justify-center shrink-0">
+                                <ShieldCheck className="w-7 h-7 text-green-400" />
+                            </div>
+                            <div>
+                                <h1 className="text-2xl font-display font-bold flex flex-wrap items-center gap-2">
+                                    Private Vault
+                                    <span className="px-2 py-0.5 text-xs font-medium bg-green-500/20 text-green-400 rounded-full">
+                                        Unlocked
                                     </span>
-                                )}
-                            </h1>
-                            <p className="text-sm text-muted-foreground">
-                                {files.length} file{files.length !== 1 ? 's' : ''} • {formatBytes(files.reduce((acc, f) => acc + f.size_bytes, 0))}
-                            </p>
+                                    {isGDriveAvailable() && (
+                                        <span className="px-2 py-0.5 text-xs font-medium bg-purple-500/20 text-purple-400 rounded-full flex items-center gap-1">
+                                            <Cloud className="w-3 h-3" />
+                                            Cloud
+                                        </span>
+                                    )}
+                                </h1>
+                                <p className="text-sm text-muted-foreground mt-1">
+                                    {files.length} file{files.length !== 1 ? 's' : ''} • {formatBytes(files.reduce((acc, f) => acc + f.size_bytes, 0))}
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Utility buttons (Settings, Lock) */}
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={async () => {
+                                    toast.info('Refreshing files...');
+                                    await loadFiles();
+                                    toast.success('Files refreshed!');
+                                }}
+                                className="p-2.5 rounded-xl glass-hover hover:bg-white/10 transition-colors"
+                                title="Refresh Files"
+                            >
+                                <RefreshCw className="w-5 h-5" />
+                            </button>
+                            <button
+                                onClick={() => setShowSettings(true)}
+                                className="p-2.5 rounded-xl glass-hover hover:bg-white/10 transition-colors"
+                                title="Vault Settings"
+                            >
+                                <Settings className="w-5 h-5" />
+                            </button>
+                            <button
+                                onClick={handleLock}
+                                className="px-4 py-2.5 rounded-xl text-sm font-medium flex items-center gap-2 bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 transition-colors border border-yellow-500/20"
+                            >
+                                <Lock className="w-4 h-4" />
+                                <span className="hidden sm:inline">Lock Vault</span>
+                                <span className="sm:hidden">Lock</span>
+                            </button>
                         </div>
                     </div>
-                    <div className="flex items-center gap-2">
+
+                    {/* Action buttons row */}
+                    <div className="flex flex-wrap items-center gap-3">
+                        {/* Primary actions */}
                         <button
                             onClick={handleUpload}
-                            className="px-4 py-2 rounded-xl bg-primary/20 hover:bg-primary/30 text-primary text-sm font-medium flex items-center gap-2 transition-colors"
+                            className="px-5 py-2.5 rounded-xl bg-primary/20 hover:bg-primary/30 text-primary text-sm font-medium flex items-center gap-2 transition-colors border border-primary/20"
                             title="Upload files or folders"
                         >
                             <Upload className="w-4 h-4" />
@@ -1555,50 +1591,30 @@ export function VaultPage() {
                         </button>
                         <button
                             onClick={() => setShowDownloadModal(true)}
-                            className="px-4 py-2 rounded-xl bg-gradient-to-r from-primary/20 to-accent/20 hover:from-primary/30 hover:to-accent/30 text-white text-sm font-medium flex items-center gap-2 transition-all border border-primary/30"
+                            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary/20 to-accent/20 hover:from-primary/30 hover:to-accent/30 text-white text-sm font-medium flex items-center gap-2 transition-all border border-primary/30"
                             title="Download from URL to Vault"
                         >
                             <Download className="w-4 h-4" />
                             Download
                         </button>
+
+                        {/* Separator */}
+                        <div className="hidden sm:block w-px h-6 bg-white/10" />
+
+                        {/* Cloud sync button */}
                         <button
                             onClick={handleSyncToCloud}
                             disabled={isSyncing}
                             className={cn(
-                                "px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2 transition-colors",
+                                "px-5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-2 transition-colors border",
                                 isSyncing
-                                    ? "bg-blue-500/20 text-blue-400 cursor-wait"
-                                    : "glass-hover hover:bg-blue-500/20 text-blue-400"
+                                    ? "bg-blue-500/20 text-blue-400 cursor-wait border-blue-500/20"
+                                    : "hover:bg-blue-500/20 text-blue-400 border-blue-500/20"
                             )}
                             title="Upload all local files to Google Drive"
                         >
                             <Cloud className={cn("w-4 h-4", isSyncing && "animate-pulse")} />
                             {isSyncing ? 'Syncing...' : 'Sync to Cloud'}
-                        </button>
-                        <button
-                            onClick={async () => {
-                                toast.info('Refreshing files...');
-                                await loadFiles();
-                                toast.success('Files refreshed!');
-                            }}
-                            className="p-2 rounded-xl glass-hover hover:bg-white/10 transition-colors"
-                            title="Refresh Files"
-                        >
-                            <RefreshCw className="w-5 h-5" />
-                        </button>
-                        <button
-                            onClick={() => setShowSettings(true)}
-                            className="p-2 rounded-xl glass-hover hover:bg-white/10 transition-colors"
-                            title="Vault Settings"
-                        >
-                            <Settings className="w-5 h-5" />
-                        </button>
-                        <button
-                            onClick={handleLock}
-                            className="px-4 py-2 rounded-xl glass-hover text-sm font-medium flex items-center gap-2 bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 transition-colors"
-                        >
-                            <Lock className="w-4 h-4" />
-                            Lock
                         </button>
                     </div>
                 </motion.div>
@@ -1608,7 +1624,7 @@ export function VaultPage() {
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
-                        className="grid grid-cols-1 md:grid-cols-2 gap-4"
+                        className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
                     >
                         {files.map((file, index) => (
                             <motion.div
@@ -1720,22 +1736,34 @@ export function VaultPage() {
                 ) : (
                     <motion.div
                         variants={fadeInUp}
-                        className="flex flex-col items-center justify-center py-20 text-center"
+                        className="glass-panel rounded-2xl p-12 border-glow"
                     >
-                        <div className="w-20 h-20 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
-                            <FolderOpen className="w-10 h-10 text-muted-foreground" />
+                        <div className="flex flex-col items-center justify-center text-center">
+                            <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-primary/10 to-accent/10 flex items-center justify-center mb-6">
+                                <FolderOpen className="w-12 h-12 text-muted-foreground" />
+                            </div>
+                            <h3 className="text-2xl font-display font-semibold mb-3">Your Vault is Empty</h3>
+                            <p className="text-muted-foreground max-w-md mb-8">
+                                Add files to your encrypted vault to keep them hidden and protected.
+                                Upload from your device or download directly from any URL.
+                            </p>
+                            <div className="flex flex-wrap items-center justify-center gap-4">
+                                <button
+                                    onClick={handleAddFile}
+                                    className="px-6 py-3 rounded-xl bg-primary/20 hover:bg-primary/30 text-primary font-medium flex items-center gap-2 transition-colors border border-primary/20"
+                                >
+                                    <Upload className="w-5 h-5" />
+                                    Add Files
+                                </button>
+                                <button
+                                    onClick={() => setShowDownloadModal(true)}
+                                    className="px-6 py-3 rounded-xl bg-gradient-to-r from-primary to-accent text-white font-medium flex items-center gap-2 hover:opacity-90 transition-opacity"
+                                >
+                                    <Download className="w-5 h-5" />
+                                    Download from URL
+                                </button>
+                            </div>
                         </div>
-                        <h3 className="text-xl font-semibold mb-2">Vault is Empty</h3>
-                        <p className="text-muted-foreground max-w-sm mb-4">
-                            Add files to your encrypted vault to keep them hidden and protected.
-                        </p>
-                        <button
-                            onClick={handleAddFile}
-                            className="px-6 py-3 rounded-xl bg-gradient-to-r from-primary to-accent text-white font-medium flex items-center gap-2"
-                        >
-                            <Plus className="w-5 h-5" />
-                            Add First File
-                        </button>
                     </motion.div>
                 )}
             </motion.div>
