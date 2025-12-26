@@ -339,7 +339,7 @@ const FeaturesSection = () => {
     ];
 
     return (
-        <section className="py-32 relative">
+        <section id="features" className="py-32 relative scroll-mt-20">
             <FloatingOrbs />
             <div className="container px-4 md:px-6 relative z-10">
                 <motion.div
@@ -403,7 +403,7 @@ const TechnicalSpecs = () => {
     ];
 
     return (
-        <section className="py-32 bg-gradient-to-b from-black via-zinc-950 to-black relative">
+        <section id="specs" className="py-32 bg-gradient-to-b from-black via-zinc-950 to-black relative scroll-mt-20">
             <GridBackground />
             <div className="container px-4 md:px-6 relative z-10">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-start">
@@ -534,7 +534,7 @@ const TechnicalSpecs = () => {
 
 // --- CTA Section ---
 const CTASection = ({ onLoginClick }: { onLoginClick: () => void }) => (
-    <section className="py-32 relative overflow-hidden">
+    <section id="download" className="py-32 relative overflow-hidden scroll-mt-20">
         <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-pink-600/10" />
         <FloatingOrbs />
 
@@ -643,7 +643,7 @@ const LoginModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
 // --- FAQ Section ---
 const FAQSection = () => {
     return (
-        <section className="py-24 relative z-10 border-t border-white/5 bg-zinc-950/30">
+        <section id="faq" className="py-24 relative z-10 border-t border-white/5 bg-zinc-950/30 scroll-mt-20">
             <div className="container px-4 md:px-6 max-w-4xl mx-auto">
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
@@ -701,11 +701,18 @@ const Footer = () => (
     <footer className="py-12 bg-black border-t border-white/5">
         <div className="container px-4 md:px-6">
             <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-                <div className="flex items-center gap-2 font-bold text-lg">
-                    <div className="h-8 w-8 rounded-lg bg-white flex items-center justify-center text-black">
-                        <Zap className="h-5 w-5 fill-current" />
+                <div className="flex items-center gap-3 group cursor-pointer">
+                    <div className="h-8 w-8 rounded-lg bg-white flex items-center justify-center text-black group-hover:scale-105 transition-transform duration-300">
+                        <Zap className="h-4 w-4 fill-current" />
                     </div>
-                    <span>Slasshy OmniDownloader</span>
+                    <div className="flex flex-col -space-y-1">
+                        <span className="text-lg font-bold tracking-tighter text-white">
+                            Slasshy
+                        </span>
+                        <span className="text-[9px] uppercase tracking-[0.2em] font-semibold text-zinc-500">
+                            OmniDownloader
+                        </span>
+                    </div>
                 </div>
 
                 <div className="flex gap-8">
@@ -724,6 +731,15 @@ const Footer = () => (
 // --- Main Component ---
 export default function LandingPage() {
     const [showLogin, setShowLogin] = useState(false);
+    const [isScrolled, setIsScrolled] = useState(false);
+
+    useEffect(() => {
+        const handleScroll = () => {
+            setIsScrolled(window.scrollY > 20);
+        };
+        window.addEventListener('scroll', handleScroll);
+        return () => window.removeEventListener('scroll', handleScroll);
+    }, []);
 
     return (
         <div className="min-h-screen bg-black text-white selection:bg-white/20 overflow-x-hidden">
@@ -731,22 +747,62 @@ export default function LandingPage() {
             <motion.nav
                 initial={{ y: -100 }}
                 animate={{ y: 0 }}
-                className="fixed top-0 w-full z-50 border-b border-white/5 bg-black/50 backdrop-blur-xl"
+                className={cn(
+                    "fixed top-0 w-full z-50 transition-all duration-300",
+                    isScrolled 
+                        ? "bg-black/80 backdrop-blur-xl border-b border-white/5 py-3" 
+                        : "bg-transparent py-6"
+                )}
             >
-                <div className="container flex h-16 items-center justify-between px-4 md:px-6">
-                    <div className="flex items-center gap-2 font-bold text-xl tracking-tight">
-                        <div className="h-8 w-8 rounded-lg bg-white flex items-center justify-center text-black">
+                <div className="container flex items-center justify-between px-4 md:px-6">
+                    <div className="flex items-center gap-3 group cursor-pointer" onClick={() => window.scrollTo(0, 0)}>
+                        <div className="h-9 w-9 rounded-xl bg-white flex items-center justify-center text-black shadow-[0_0_20px_rgba(255,255,255,0.3)] group-hover:scale-105 transition-all duration-300">
                             <Zap className="h-5 w-5 fill-current" />
                         </div>
-                        <span>Slasshy OmniDownloader</span>
+                        <div className="flex flex-col -space-y-1">
+                            <span className="text-xl font-bold tracking-tighter text-white">
+                                Slasshy
+                            </span>
+                            <span className="text-[10px] uppercase tracking-[0.2em] font-semibold text-zinc-500">
+                                OmniDownloader
+                            </span>
+                        </div>
                     </div>
-                    <div className="flex items-center gap-6">
-                        <a href="#" className="text-sm font-medium text-zinc-400 hover:text-white transition-colors hidden md:block">Features</a>
-                        <a href="#" className="text-sm font-medium text-zinc-400 hover:text-white transition-colors hidden md:block">Specs</a>
-                        <a href="#" className="text-sm font-medium text-zinc-400 hover:text-white transition-colors hidden md:block">Download</a>
+                    
+                    <div className="flex items-center gap-1 md:gap-2">
+                        <div className="hidden md:flex items-center bg-white/5 rounded-full p-1 border border-white/5 backdrop-blur-md mr-4">
+                            {[
+                                { name: 'Features', href: '#features' },
+                                { name: 'Specs', href: '#specs' },
+                                { name: 'FAQ', href: '#faq' }
+                            ].map((item) => (
+                                <a 
+                                    key={item.name}
+                                    href={item.href}
+                                    className="px-5 py-2 rounded-full text-sm font-medium text-zinc-400 hover:text-white hover:bg-white/10 transition-all duration-200"
+                                >
+                                    {item.name}
+                                </a>
+                            ))}
+                        </div>
+                        
+                        <button
+                            onClick={() => {
+                                const downloadLink = import.meta.env.VITE_DOWNLOAD_LINK;
+                                if (downloadLink) {
+                                    window.location.href = downloadLink;
+                                } else {
+                                    document.getElementById('download')?.scrollIntoView();
+                                }
+                            }}
+                            className="hidden md:inline-flex text-sm font-semibold px-6 py-2.5 rounded-full bg-white text-black hover:bg-zinc-200 transition-colors shadow-[0_0_20px_rgba(255,255,255,0.2)]"
+                        >
+                            Get App
+                        </button>
+                        
                         <button
                             onClick={() => setShowLogin(true)}
-                            className="text-sm font-semibold px-5 py-2 rounded-lg bg-white text-black hover:bg-zinc-200 transition-colors"
+                            className="text-sm font-semibold px-6 py-2.5 rounded-full bg-blue-600 text-white hover:bg-blue-500 transition-colors shadow-[0_0_20px_rgba(37,99,235,0.4)] ml-2"
                         >
                             Sign In
                         </button>
