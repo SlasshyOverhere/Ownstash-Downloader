@@ -1219,6 +1219,7 @@ pub async fn vault_add_folder(
 
 /// Extract a specific file from an encrypted folder archive
 /// Returns the path to a temporary decrypted file for playback/viewing
+/// Supports ZIP, 7Z, and RAR archives
 #[tauri::command]
 pub async fn vault_extract_folder_file(
     app_handle: AppHandle,
@@ -1231,7 +1232,7 @@ pub async fn vault_extract_folder_file(
     // Get the decryption key
     let key = get_vault_key()?;
     
-    let encrypted_path = get_vault_files_dir(&app_handle).join(&encrypted_name);
+    let mut encrypted_path = get_vault_files_dir(&app_handle).join(&encrypted_name);
     if !encrypted_path.exists() {
         // Try alternate extension
         let alt_name = if encrypted_name.ends_with(".slasshy") {
@@ -1240,7 +1241,9 @@ pub async fn vault_extract_folder_file(
             encrypted_name.replace(".vault", ".slasshy")
         };
         let alt_path = get_vault_files_dir(&app_handle).join(&alt_name);
-        if !alt_path.exists() {
+        if alt_path.exists() {
+            encrypted_path = alt_path;
+        } else {
             return Err(format!("Encrypted folder not found: {}", file_id));
         }
     }
@@ -1250,8 +1253,8 @@ pub async fn vault_extract_folder_file(
     fs::create_dir_all(&temp_dir)
         .map_err(|e| format!("Failed to create temp directory: {}", e))?;
     
-    // Temp path for decrypted ZIP
-    let temp_zip_path = temp_dir.join(format!("{}_extracted.zip", file_id));
+    // Temp path for decrypted archive
+    let temp_archive_path = temp_dir.join(format!("{}_extracted.archive", file_id));
     
     // Get the file name from the path
     let file_name = PathBuf::from(&file_path_in_folder)
@@ -1264,37 +1267,215 @@ pub async fn vault_extract_folder_file(
     
     // Clone for background task
     let encrypted_clone = encrypted_path.clone();
-    let temp_zip_clone = temp_zip_path.clone();
+    let temp_archive_clone = temp_archive_path.clone();
     let temp_file_clone = temp_file_path.clone();
     let file_path_clone = file_path_in_folder.clone();
     let key_copy = key;
     
     // Decrypt and extract in background
     tokio::task::spawn_blocking(move || {
-        // 1. Decrypt the encrypted file to get the ZIP
-        decrypt_file(&key_copy, &encrypted_clone, &temp_zip_clone)?;
+        use std::io::Seek;
         
-        // 2. Open the ZIP and extract the specific file
-        let zip_file = File::open(&temp_zip_clone)
-            .map_err(|e| format!("Failed to open decrypted ZIP: {}", e))?;
-        let mut archive = ZipArchive::new(zip_file)
-            .map_err(|e| format!("Failed to read ZIP archive: {}", e))?;
+        // 1. Decrypt the encrypted file to get the archive
+        decrypt_file(&key_copy, &encrypted_clone, &temp_archive_clone)?;
+        
+        // 2. Detect archive format from magic bytes
+        let mut archive_file = File::open(&temp_archive_clone)
+            .map_err(|e| format!("Failed to open decrypted archive: {}", e))?;
+        
+        let mut magic = [0u8; 4];
+        if archive_file.read_exact(&mut magic).is_err() {
+            return Err("Archive file too short".to_string());
+        }
+        archive_file.rewind().map_err(|e| e.to_string())?;
+        
+        println!("[Vault] Extract: Archive magic bytes: {:02X} {:02X} {:02X} {:02X}", 
+            magic[0], magic[1], magic[2], magic[3]);
         
         // Normalize path separators
         let normalized_path = file_path_clone.replace("\\", "/");
         
-        // Find the file in the archive
-        let mut found_file = archive.by_name(&normalized_path)
-            .map_err(|e| format!("File not found in archive: {} ({})", normalized_path, e))?;
+        if magic[0] == 0x50 && magic[1] == 0x4B { // PK -> ZIP
+            println!("[Vault] Extracting from ZIP archive");
+            let mut archive = ZipArchive::new(archive_file)
+                .map_err(|e| format!("Failed to read ZIP archive: {}", e))?;
+            
+            let mut found_file = archive.by_name(&normalized_path)
+                .map_err(|e| format!("File not found in ZIP: {} ({})", normalized_path, e))?;
+            
+            let mut output_file = File::create(&temp_file_clone)
+                .map_err(|e| format!("Failed to create output file: {}", e))?;
+            std::io::copy(&mut found_file, &mut output_file)
+                .map_err(|e| format!("Failed to extract file: {}", e))?;
+                
+        } else if magic[0] == 0x37 && magic[1] == 0x7A && magic[2] == 0xBC && magic[3] == 0xAF { // 7z
+            println!("[Vault] Extracting from 7Z archive");
+            let file_len = archive_file.metadata().map_err(|e| e.to_string())?.len();
+            let mut reader = sevenz_rust::SevenZReader::new(archive_file, file_len, sevenz_rust::Password::empty())
+                .map_err(|e| format!("Failed to read 7z archive: {}", e))?;
+            
+            let mut found = false;
+            reader.for_each_entries(|entry, reader| {
+                let entry_path = entry.name().replace("\\", "/");
+                if entry_path == normalized_path || entry_path.trim_start_matches('/') == normalized_path.trim_start_matches('/') {
+                    // Found our file
+                    let mut output_file = File::create(&temp_file_clone)?;
+                    std::io::copy(reader, &mut output_file)?;
+                    found = true;
+                    Ok(false) // Stop iteration
+                } else {
+                    Ok(true) // Continue
+                }
+            }).map_err(|e| format!("Error extracting from 7z: {}", e))?;
+            
+            if !found {
+                return Err(format!("File not found in 7z: {}", normalized_path));
+            }
+            
+        } else if magic[0] == 0x52 && magic[1] == 0x61 && magic[2] == 0x72 && magic[3] == 0x21 { // Rar!
+            println!("[Vault] Extracting from RAR archive");
+            drop(archive_file); // Close file handle before using unrar
+            
+            // Create a temp folder for RAR extraction
+            let rar_extract_dir = temp_archive_clone.parent().unwrap().join(format!("{}_rar_extract", file_id));
+            fs::create_dir_all(&rar_extract_dir)
+                .map_err(|e| format!("Failed to create RAR extract directory: {}", e))?;
+            
+            // Use unrar to extract all files to a directory
+            let archive = unrar::Archive::new(&temp_archive_clone);
+            let open_archive = archive.open_for_processing()
+                .map_err(|e| format!("Failed to open RAR for processing: {:?}", e))?;
+            
+            // Process all entries and extract them
+            let mut current = Some(open_archive);
+            while let Some(archive_handle) = current {
+                match archive_handle.read_header() {
+                    Ok(Some(header)) => {
+                        // Get the entry filename to pre-create parent directories
+                        let entry_filename = header.entry().filename.to_string_lossy().to_string();
+                        let entry_path = rar_extract_dir.join(&entry_filename);
+                        
+                        // Create parent directories for nested files
+                        if let Some(parent) = entry_path.parent() {
+                            let _ = fs::create_dir_all(parent);
+                        }
+                        
+                        // Extract this entry - use extract_with_base to preserve paths
+                        let result = header.extract_with_base(&rar_extract_dir);
+                        match result {
+                            Ok(next) => current = Some(next),
+                            Err(e) => {
+                                // Try skipping this entry and continue
+                                println!("[Vault] Warning: Error extracting RAR entry '{}': {:?}", entry_filename, e);
+                                current = None;
+                                break;
+                            }
+                        }
+                    },
+                    Ok(None) => {
+                        current = None;
+                        break; // No more entries
+                    },
+                    Err(e) => {
+                        println!("[Vault] Warning: Error reading RAR header: {:?}", e);
+                        current = None;
+                        break;
+                    }
+                }
+            }
+            
+            // Find the extracted file - check multiple path variations
+            let mut found_path: Option<PathBuf> = None;
+            
+            // Try 1: Direct path with forward slashes converted to OS separator
+            let path1 = rar_extract_dir.join(&normalized_path.replace("/", std::path::MAIN_SEPARATOR_STR));
+            if path1.exists() {
+                found_path = Some(path1);
+            }
+            
+            // Try 2: Original path as-is
+            if found_path.is_none() {
+                let path2 = rar_extract_dir.join(&file_path_clone);
+                if path2.exists() {
+                    found_path = Some(path2);
+                }
+            }
+            
+            // Try 3: Just the filename in the root
+            if found_path.is_none() {
+                let just_filename = PathBuf::from(&file_path_clone)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let path3 = rar_extract_dir.join(&just_filename);
+                if path3.exists() {
+                    found_path = Some(path3);
+                }
+            }
+            
+            // Try 4: Walk the directory and find any file matching the filename
+            if found_path.is_none() {
+                let target_filename = PathBuf::from(&file_path_clone)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string().to_lowercase())
+                    .unwrap_or_default();
+                
+                for entry in WalkDir::new(&rar_extract_dir).into_iter().filter_map(|e| e.ok()) {
+                    if entry.path().is_file() {
+                        let entry_name = entry.file_name().to_string_lossy().to_lowercase();
+                        if entry_name == target_filename {
+                            found_path = Some(entry.path().to_path_buf());
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            match found_path {
+                Some(extracted_file_path) => {
+                    println!("[Vault] Found extracted file at: {}", extracted_file_path.display());
+                    fs::copy(&extracted_file_path, &temp_file_clone)
+                        .map_err(|e| format!("Failed to copy extracted file: {}", e))?;
+                },
+                None => {
+                    // List what was actually extracted for debugging
+                    let mut extracted_files: Vec<String> = Vec::new();
+                    for entry in WalkDir::new(&rar_extract_dir).into_iter().filter_map(|e| e.ok()) {
+                        extracted_files.push(entry.path().to_string_lossy().to_string());
+                    }
+                    let _ = fs::remove_dir_all(&rar_extract_dir);
+                    return Err(format!("File not found in RAR: '{}'. Extracted contents: {:?}", 
+                        file_path_clone, extracted_files));
+                }
+            }
+            
+            // Clean up RAR extraction directory
+            let _ = fs::remove_dir_all(&rar_extract_dir);
+            
+        } else {
+            // Try ZIP as fallback
+            println!("[Vault] Trying ZIP fallback for unknown format");
+            match ZipArchive::new(archive_file) {
+                Ok(mut archive) => {
+                    let mut found_file = archive.by_name(&normalized_path)
+                        .map_err(|e| format!("File not found in archive: {} ({})", normalized_path, e))?;
+                    
+                    let mut output_file = File::create(&temp_file_clone)
+                        .map_err(|e| format!("Failed to create output file: {}", e))?;
+                    std::io::copy(&mut found_file, &mut output_file)
+                        .map_err(|e| format!("Failed to extract file: {}", e))?;
+                },
+                Err(_) => {
+                    return Err(format!(
+                        "Unsupported archive format (magic bytes: {:02X} {:02X} {:02X} {:02X})",
+                        magic[0], magic[1], magic[2], magic[3]
+                    ));
+                }
+            }
+        }
         
-        // Extract to temp file
-        let mut output_file = File::create(&temp_file_clone)
-            .map_err(|e| format!("Failed to create output file: {}", e))?;
-        std::io::copy(&mut found_file, &mut output_file)
-            .map_err(|e| format!("Failed to extract file: {}", e))?;
-        
-        // Clean up the decrypted ZIP (we only need the extracted file)
-        let _ = fs::remove_file(&temp_zip_clone);
+        // Clean up the decrypted archive
+        let _ = fs::remove_file(&temp_archive_clone);
         
         Ok::<String, String>(temp_file_clone.to_string_lossy().to_string())
     })
@@ -1561,10 +1742,24 @@ pub async fn vault_convert_to_folder(
     
     let key = get_vault_key()?;
     let files_dir = get_vault_files_dir(&app_handle);
-    let encrypted_path = files_dir.join(&encrypted_name);
+    let mut encrypted_path = files_dir.join(&encrypted_name);
     
+    // Check for file with alternate extension
     if !encrypted_path.exists() {
-        return Err("File not found".to_string());
+        let alt_name = if encrypted_name.ends_with(".slasshy") {
+            encrypted_name.replace(".slasshy", ".vault")
+        } else if encrypted_name.ends_with(".vault") {
+            encrypted_name.replace(".vault", ".slasshy")
+        } else {
+            return Err(format!("File not found: {}", encrypted_name));
+        };
+        let alt_path = files_dir.join(&alt_name);
+        if alt_path.exists() {
+            encrypted_path = alt_path;
+            println!("[Vault] Using alternate extension: {}", alt_name);
+        } else {
+            return Err(format!("Encrypted file not found: {} (checked both extensions)", file_id));
+        }
     }
     
     // Create temp path for decryption
@@ -1598,9 +1793,14 @@ pub async fn vault_convert_to_folder(
         }
         file.rewind().map_err(|e| e.to_string())?;
         
+        // Log magic bytes for debugging
+        println!("[Vault] Archive magic bytes: {:02X} {:02X} {:02X} {:02X}", 
+            magic[0], magic[1], magic[2], magic[3]);
+        
         let mut entries: Vec<VaultFolderEntry> = Vec::new();
         
         if magic[0] == 0x50 && magic[1] == 0x4B { // PK -> ZIP
+            println!("[Vault] Detected ZIP archive");
              let mut archive = ZipArchive::new(file)
                 .map_err(|e| format!("Failed to read ZIP structure: {}", e))?;
             
@@ -1653,7 +1853,7 @@ pub async fn vault_convert_to_folder(
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
                 
-                if (name.is_empty() && !is_dir) { return Ok(true); }
+                if name.is_empty() && !is_dir { return Ok(true); }
 
                 let file_type = if is_dir {
                     "directory".to_string()
@@ -1673,12 +1873,112 @@ pub async fn vault_convert_to_folder(
              }).map_err(|e| format!("Error listing 7z entries: {}", e))?;
 
         } else if magic[0] == 0x52 && magic[1] == 0x61 && magic[2] == 0x72 && magic[3] == 0x21 { // Rar!
-            return Err("RAR format is not supported for internal extraction yet. Please convert to ZIP or 7Z.".to_string());
+            println!("[Vault] Detected RAR archive (magic: {:02X} {:02X} {:02X} {:02X})", 
+                magic[0], magic[1], magic[2], magic[3]);
+            
+            // Use unrar crate to list RAR contents
+            // Need to pass the file path to unrar, not the file handle
+            drop(file); // Close the file handle first
+            
+            let archive = unrar::Archive::new(&temp_path_clone);
+            let open_result = archive.open_for_listing();
+            
+            match open_result {
+                Ok(archive_iter) => {
+                    for entry_result in archive_iter {
+                        match entry_result {
+                            Ok(entry) => {
+                                let path = entry.filename.to_string_lossy().to_string();
+                                let is_dir = entry.is_directory();
+                                let size = entry.unpacked_size as u64;
+                                
+                                let name = PathBuf::from(&path)
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().to_string())
+                                    .unwrap_or_default();
+                                
+                                if name.is_empty() && !is_dir { continue; }
+                                
+                                let file_type = if is_dir {
+                                    "directory".to_string()
+                                } else {
+                                    let ext = PathBuf::from(&path).extension()
+                                        .map(|e| e.to_string_lossy().to_string())
+                                        .unwrap_or_default();
+                                    detect_vault_file_type(&ext)
+                                };
+                                
+                                entries.push(VaultFolderEntry {
+                                    name: if name.is_empty() { 
+                                        path.trim_end_matches('/').trim_end_matches('\\')
+                                            .split(&['/', '\\'][..]).last().unwrap_or("").to_string() 
+                                    } else { name },
+                                    path: path.replace("\\", "/").trim_end_matches('/').to_string(),
+                                    size_bytes: size,
+                                    file_type,
+                                    is_directory: is_dir,
+                                });
+                            },
+                            Err(e) => {
+                                println!("[Vault] Warning: Error reading RAR entry: {:?}", e);
+                            }
+                        }
+                    }
+                    println!("[Vault] RAR archive contains {} entries", entries.len());
+                },
+                Err(e) => {
+                    return Err(format!("Failed to open RAR archive: {:?}", e));
+                }
+            }
         } else {
-             // Fallback: Try Zip anyway just in case magic check failed or offset
+             // Log the magic bytes for debugging
+             println!("[Vault] Unknown magic bytes: {:02X} {:02X} {:02X} {:02X}", 
+                 magic[0], magic[1], magic[2], magic[3]);
+             
+             // Fallback: Rewind and try Zip anyway just in case magic check failed or offset
+             file.rewind().map_err(|e| format!("Failed to rewind file: {}", e))?;
              match ZipArchive::new(file) {
-                 Ok(_) => return Err("Detected ZIP but magic bytes were off?".to_string()), 
-                 Err(_) => return Err("Unsupported archive format. Supported formats: ZIP, 7Z.".to_string())
+                 Ok(mut archive) => {
+                     // It's actually a valid ZIP despite magic bytes mismatch
+                     println!("[Vault] ZIP detected via fallback (magic bytes: {:02X} {:02X} {:02X} {:02X})", 
+                         magic[0], magic[1], magic[2], magic[3]);
+                     for i in 0..archive.len() {
+                         let file = archive.by_index(i)
+                             .map_err(|e| format!("Failed to read ZIP entry: {}", e))?;
+                         
+                         let path = file.name().to_string();
+                         let size = file.size();
+                         let is_dir = file.is_dir();
+                         
+                         let name = PathBuf::from(&path)
+                             .file_name()
+                             .map(|n| n.to_string_lossy().to_string())
+                             .unwrap_or_default();
+                         
+                         if name.is_empty() && !is_dir { continue; }
+                         
+                         let file_type = if is_dir {
+                             "directory".to_string()
+                         } else {
+                             let ext = PathBuf::from(&path).extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
+                             detect_vault_file_type(&ext)
+                         };
+                         
+                         entries.push(VaultFolderEntry {
+                             name: if name.is_empty() { path.trim_end_matches('/').split('/').last().unwrap_or("").to_string() } else { name },
+                             path: path.replace("\\", "/").trim_end_matches('/').to_string(),
+                             size_bytes: size,
+                             file_type,
+                             is_directory: is_dir,
+                         });
+                     }
+                 },
+                 Err(_) => {
+                     return Err(format!(
+                         "Unsupported archive format (magic bytes: {:02X} {:02X} {:02X} {:02X}). Supported formats: ZIP, 7Z, RAR.",
+                         magic[0], magic[1], magic[2], magic[3]
+                     ));
+                 }
              }
         }
         

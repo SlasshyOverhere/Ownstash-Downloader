@@ -819,7 +819,11 @@ export function VaultPage() {
         } catch (err) {
             console.error('[Vault] Extraction failed:', err);
             toast.dismiss();
-            toast.error('Failed to extract: Archive might be invalid or unsupported format.');
+            // Show actual error from backend for better debugging
+            const errorMsg = typeof err === 'string'
+                ? err
+                : (err instanceof Error ? err.message : String(err));
+            toast.error(`Extraction failed: ${errorMsg}`);
         }
     };
 
