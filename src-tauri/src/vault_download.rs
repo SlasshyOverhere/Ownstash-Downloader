@@ -372,6 +372,7 @@ fn is_direct_file_url(url: &str) -> bool {
 }
 
 /// Download a direct URL via HTTP with progress tracking
+/// Handles special cases like Google Drive virus scan confirmation
 async fn download_direct_url(
     app_handle: &AppHandle,
     request: &VaultDownloadRequest,
@@ -385,13 +386,21 @@ async fn download_direct_url(
     
     // Create HTTP client
     let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .redirect(reqwest::redirect::Policy::limited(10))
         .timeout(std::time::Duration::from_secs(3600)) // 1 hour timeout
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
     
+    // Handle Google Drive URLs specially - add confirm parameter for virus scan bypass
+    let download_url: String = if request.url.contains("drive.google.com") || request.url.contains("drive.usercontent.google.com") {
+        handle_google_drive_url(&request.url)
+    } else {
+        request.url.clone()
+    };
+    
     // Start request
-    let response = client.get(&request.url)
+    let response = client.get(&download_url)
         .send()
         .await
         .map_err(|e| format!("HTTP request failed: {}", e))?;
@@ -400,8 +409,22 @@ async fn download_direct_url(
         return Err(format!("HTTP error: {}", response.status()));
     }
     
+    // Check content type - if it's HTML, something went wrong
+    let content_type: String = response.headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    
+    if content_type.contains("text/html") {
+        println!("[VaultDownload] Got HTML response instead of file - Google Drive may require browser authentication");
+        return Err("Google Drive requires browser authentication for this file. Try downloading it manually first.".to_string());
+    }
+    
     // Get content length for progress
     let total_size = response.content_length().unwrap_or(0);
+    
+    println!("[VaultDownload] Content-Type: {}, Size: {} bytes", content_type, total_size);
     
     // Emit downloading status
     let _ = app_handle.emit("vault-download-progress", VaultDownloadProgress {
@@ -497,6 +520,58 @@ async fn download_direct_url(
     println!("[VaultDownload] Direct download complete: {} bytes", downloaded);
     
     Ok(())
+}
+
+/// Handle Google Drive URL to get the actual download link
+/// Bypasses virus scan warning for large files by adding confirm=t
+fn handle_google_drive_url(url: &str) -> String {
+    // Extract file ID from URL
+    let file_id = extract_gdrive_file_id(url);
+    
+    if let Some(id) = file_id {
+        // Try the direct download URL with confirm parameter
+        let confirm_url = format!(
+            "https://drive.usercontent.google.com/download?id={}&export=download&confirm=t",
+            id
+        );
+        
+        println!("[VaultDownload] Google Drive: Using confirmed download URL for file ID: {}", id);
+        
+        return confirm_url;
+    }
+    
+    // Fallback: use original URL
+    url.to_string()
+}
+
+/// Extract file ID from Google Drive URL
+fn extract_gdrive_file_id(url: &str) -> Option<String> {
+    // Handle drive.usercontent.google.com/download?id=XXX format
+    if let Ok(parsed) = reqwest::Url::parse(url) {
+        if let Some(id) = parsed.query_pairs().find(|(k, _)| k == "id").map(|(_, v)| v.to_string()) {
+            return Some(id);
+        }
+    }
+    
+    // Handle drive.google.com/file/d/XXX/view format
+    if url.contains("/file/d/") {
+        let parts: Vec<&str> = url.split("/file/d/").collect();
+        if parts.len() > 1 {
+            let id_part = parts[1].split('/').next()?;
+            return Some(id_part.to_string());
+        }
+    }
+    
+    // Handle drive.google.com/open?id=XXX format
+    if url.contains("open?id=") {
+        let parts: Vec<&str> = url.split("open?id=").collect();
+        if parts.len() > 1 {
+            let id_part = parts[1].split('&').next()?;
+            return Some(id_part.to_string());
+        }
+    }
+    
+    None
 }
 
 /// Format download speed

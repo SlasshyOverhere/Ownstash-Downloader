@@ -8,7 +8,8 @@
 // ============================================
 const STORAGE_KEYS = {
     ENABLED_SITES: 'slasshy_enabled_sites',
-    SETTINGS: 'slasshy_settings'
+    SETTINGS: 'slasshy_settings',
+    VAULT_DOWNLOAD_ENABLED: 'slasshy_vault_download_enabled'
 };
 
 // ============================================
@@ -337,6 +338,258 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
     const tab = await chrome.tabs.get(activeInfo.tabId);
     if (tab.url) {
         updateBadge(activeInfo.tabId, tab.url);
+    }
+});
+
+// ============================================
+// Vault Download Interception
+// ============================================
+let vaultDownloadEnabled = false;
+
+// Load vault download state on startup
+chrome.storage.local.get(STORAGE_KEYS.VAULT_DOWNLOAD_ENABLED, (result) => {
+    vaultDownloadEnabled = result[STORAGE_KEYS.VAULT_DOWNLOAD_ENABLED] || false;
+    updateVaultBadge();
+    console.log('[Slasshy Background] Vault download mode:', vaultDownloadEnabled ? 'ENABLED' : 'DISABLED');
+});
+
+// Listen for storage changes (from popup toggle)
+chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && changes[STORAGE_KEYS.VAULT_DOWNLOAD_ENABLED]) {
+        vaultDownloadEnabled = changes[STORAGE_KEYS.VAULT_DOWNLOAD_ENABLED].newValue || false;
+        updateVaultBadge();
+        console.log('[Slasshy Background] Vault download mode changed:', vaultDownloadEnabled ? 'ENABLED' : 'DISABLED');
+    }
+});
+
+// Update extension icon badge based on vault mode
+function updateVaultBadge() {
+    if (vaultDownloadEnabled) {
+        // Show vault indicator - purple lock
+        chrome.action.setBadgeText({ text: '🔒' });
+        chrome.action.setBadgeBackgroundColor({ color: '#8b5cf6' }); // Purple
+    } else {
+        // Clear badge when vault mode is off
+        chrome.action.setBadgeText({ text: '' });
+    }
+}
+
+// Download interception handler
+chrome.downloads.onCreated.addListener(async (downloadItem) => {
+    if (!vaultDownloadEnabled) {
+        // Vault mode is off, let download proceed normally
+        return;
+    }
+
+    console.log('[Slasshy Background] Intercepting download:', downloadItem);
+
+    // Get the download URL
+    const downloadUrl = downloadItem.finalUrl || downloadItem.url;
+
+    // Cancel the browser download immediately
+    try {
+        await chrome.downloads.cancel(downloadItem.id);
+        console.log('[Slasshy Background] Cancelled browser download:', downloadItem.id);
+    } catch (e) {
+        console.warn('[Slasshy Background] Could not cancel download:', e);
+    }
+
+    // Remove the cancelled download from Chrome's download history
+    try {
+        await chrome.downloads.erase({ id: downloadItem.id });
+    } catch (e) {
+        console.warn('[Slasshy Background] Could not erase download entry:', e);
+    }
+
+    // Try to get the best filename
+    let filename = await getBestFilename(downloadItem, downloadUrl);
+
+    console.log('[Slasshy Background] Final filename:', filename);
+
+    // Send to Slasshy Vault
+    await sendToVault(downloadUrl, filename, downloadItem.fileSize || downloadItem.totalBytes || 0);
+});
+
+// Get the best possible filename for a download
+async function getBestFilename(downloadItem, url) {
+    // 1. Try the suggested filename from download item (if not empty/default)
+    if (downloadItem.filename && downloadItem.filename.trim() && !downloadItem.filename.endsWith('\\') && !downloadItem.filename.endsWith('/')) {
+        const parts = downloadItem.filename.split(/[\/\\]/);
+        const name = parts[parts.length - 1];
+        if (name && name !== 'download' && name.length > 0) {
+            console.log('[Slasshy Background] Using downloadItem.filename:', name);
+            return name;
+        }
+    }
+
+    // 2. Try Content-Disposition header via HEAD request
+    try {
+        const headResponse = await fetch(url, { method: 'HEAD' });
+        const contentDisposition = headResponse.headers.get('content-disposition');
+        if (contentDisposition) {
+            // Parse filename from content-disposition
+            const filenameMatch = contentDisposition.match(/filename[^;=\n]*=(?:(\\?['"])(.*?)\1|([^;\n]*))/i);
+            if (filenameMatch) {
+                const extractedName = (filenameMatch[2] || filenameMatch[3] || '').trim().replace(/^["']|["']$/g, '');
+                if (extractedName && extractedName !== 'download') {
+                    console.log('[Slasshy Background] Using Content-Disposition filename:', extractedName);
+                    return decodeURIComponent(extractedName);
+                }
+            }
+        }
+
+        // Also check content-type to add extension if needed
+        const contentType = headResponse.headers.get('content-type');
+        if (contentType) {
+            console.log('[Slasshy Background] Content-Type:', contentType);
+        }
+    } catch (e) {
+        console.log('[Slasshy Background] HEAD request failed:', e);
+    }
+
+    // 3. Extract from URL
+    return extractFilenameFromUrl(url);
+}
+
+// Extract filename from URL with improved handling for various services
+function extractFilenameFromUrl(url) {
+    try {
+        const urlObj = new URL(url);
+        const pathname = urlObj.pathname;
+        const params = urlObj.searchParams;
+
+        // Handle Google Drive
+        if (url.includes('drive.google.com') || url.includes('drive.usercontent.google.com')) {
+            const fileId = params.get('id');
+            if (fileId) {
+                // Generate a meaningful name with timestamp
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+                return `gdrive_${fileId.substring(0, 8)}_${timestamp}`;
+            }
+        }
+
+        // Handle Dropbox
+        if (url.includes('dropbox.com')) {
+            const dlParam = params.get('dl');
+            const pathParts = pathname.split('/');
+            const lastPart = pathParts[pathParts.length - 1];
+            if (lastPart && lastPart !== 's' && !lastPart.match(/^[a-z0-9]+$/i)) {
+                return decodeURIComponent(lastPart);
+            }
+        }
+
+        // Handle OneDrive
+        if (url.includes('onedrive.live.com') || url.includes('1drv.ms')) {
+            const pathParts = pathname.split('/');
+            const lastPart = pathParts[pathParts.length - 1];
+            if (lastPart && lastPart.includes('.')) {
+                return decodeURIComponent(lastPart);
+            }
+        }
+
+        // Generic: get last path segment
+        const parts = pathname.split('/').filter(p => p.length > 0);
+        if (parts.length > 0) {
+            const lastPart = parts[parts.length - 1];
+            // Check if it looks like a filename (has extension)
+            if (lastPart.includes('.') && !lastPart.startsWith('.')) {
+                return decodeURIComponent(lastPart).substring(0, 150);
+            }
+        }
+
+        // Fallback: generate a timestamp-based name
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+        const hostname = urlObj.hostname.replace(/^www\./, '').split('.')[0];
+        return `${hostname}_download_${timestamp}`;
+    } catch (e) {
+        const timestamp = Date.now();
+        return `download_${timestamp}`;
+    }
+}
+
+// Send download to Vault via app
+async function sendToVault(url, filename, fileSize) {
+    console.log('[Slasshy Background] Sending to Vault:', { url, filename, fileSize });
+
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+        const response = await fetch(`${EXTENSION_SERVER_URL}/vault-download`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                url: url,
+                filename: filename,
+                fileSize: fileSize,
+                source: 'chrome_extension_intercept'
+            }),
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+            const data = await response.json();
+            if (data.success) {
+                showNotification('🔒 Vault Download', `"${filename}" sent to Secure Vault`);
+                return { success: true };
+            } else {
+                showNotification('Vault Error', data.message || 'Failed to send to vault');
+                return { success: false, error: data.message };
+            }
+        } else {
+            showNotification('Vault Error', 'App returned error: ' + response.status);
+            return { success: false, error: 'App error: ' + response.status };
+        }
+    } catch (e) {
+        console.error('[Slasshy Background] Vault download failed:', e);
+
+        // Try deep link fallback with vault parameter
+        return await launchAppWithVaultDeepLink(url, filename);
+    }
+}
+
+// Launch app with vault-specific deep link
+async function launchAppWithVaultDeepLink(url, filename) {
+    try {
+        const encodedUrl = encodeURIComponent(url);
+        const encodedFilename = encodeURIComponent(filename);
+        const deepLinkUrl = `slasshy://vault-download?url=${encodedUrl}&filename=${encodedFilename}`;
+
+        console.log('[Slasshy Background] Opening vault deep link:', deepLinkUrl);
+
+        const tab = await chrome.tabs.create({ url: deepLinkUrl, active: false });
+
+        setTimeout(() => {
+            chrome.tabs.remove(tab.id).catch(() => { });
+        }, 1000);
+
+        showNotification('🔒 Vault Download', 'Launching Slasshy to download to Vault...');
+
+        return { success: true, launched: true };
+    } catch (e) {
+        console.error('[Slasshy Background] Vault deep link failed:', e);
+        showNotification('App Not Running', 'Please start Slasshy OmniDownloader');
+        return { success: false, error: 'Failed to launch app' };
+    }
+}
+
+// Add message handler for vault toggle
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'toggleVaultDownload') {
+        vaultDownloadEnabled = message.enabled;
+        chrome.storage.local.set({ [STORAGE_KEYS.VAULT_DOWNLOAD_ENABLED]: vaultDownloadEnabled });
+        updateVaultBadge();
+        sendResponse({ success: true, enabled: vaultDownloadEnabled });
+        return true;
+    }
+
+    if (message.action === 'getVaultDownloadStatus') {
+        sendResponse({ enabled: vaultDownloadEnabled });
+        return true;
     }
 });
 

@@ -9,6 +9,7 @@ A Chrome extension that integrates with the Slasshy OmniDownloader desktop app t
 🎯 **Smart Detection** - Automatically detects videos/audio on popular platforms  
 🌐 **Wide Compatibility** - Works with all yt-dlp supported sites (Spotify via app directly)  
 🎨 **Beautiful UI** - Premium dark theme with modern design  
+🔒 **Vault Download Mode** - Intercept ALL browser downloads and send them directly to your encrypted Vault!  
 
 ## Installation
 
@@ -60,6 +61,21 @@ A Chrome extension that integrates with the Slasshy OmniDownloader desktop app t
 - **Button position**: Choose corner placement (bottom-right, bottom-left, etc.)
 - **Auto-detect media**: Automatically identify downloadable content
 
+### 🔒 Vault Download Mode
+
+This powerful feature intercepts ALL browser downloads and sends them directly to your encrypted Vault!
+
+1. Open the extension popup
+2. Toggle **"Vault Download Mode"** ON
+3. The extension icon will show a 🔒 badge (purple indicator)
+4. Any file you download in Chrome will be intercepted and sent to your Vault
+5. The browser download will be cancelled and the file will go to your secure Vault instead
+
+**Visual Indicators:**
+- **🔒 Purple Badge** on extension icon = Vault Mode is ACTIVE
+- **Green dot** on the toggle card = Downloads going to Vault
+- **No badge** = Normal download mode
+
 ## Supported Platforms
 
 The extension works with all yt-dlp supported sites including:
@@ -90,12 +106,14 @@ slasshy://download?url=<encoded_url>
 All settings are stored locally using Chrome's `storage.local` API:
 - `slasshy_enabled_sites` - List of enabled website domains
 - `slasshy_settings` - User preferences
+- `slasshy_vault_download_enabled` - Vault download mode state
 
 ### Required Permissions
 
 - `storage` - Save enabled sites and settings
 - `activeTab` - Access current tab URL
 - `tabs` - Tab management
+- `downloads` - Intercept downloads for Vault mode
 - `<all_urls>` - Show download button on any site
 
 ## Troubleshooting

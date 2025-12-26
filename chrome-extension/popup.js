@@ -8,7 +8,8 @@
 // ============================================
 const STORAGE_KEYS = {
     ENABLED_SITES: 'slasshy_enabled_sites',
-    SETTINGS: 'slasshy_settings'
+    SETTINGS: 'slasshy_settings',
+    VAULT_DOWNLOAD_ENABLED: 'slasshy_vault_download_enabled'
 };
 
 // Default settings
@@ -40,7 +41,11 @@ const elements = {
     settingFloatingBtn: document.getElementById('settingFloatingBtn'),
     btnResetPosition: document.getElementById('btnResetPosition'),
     settingAutoDetect: document.getElementById('settingAutoDetect'),
-    btnClearAllSites: document.getElementById('btnClearAllSites')
+    btnClearAllSites: document.getElementById('btnClearAllSites'),
+    // Vault Download Toggle
+    vaultToggleCard: document.getElementById('vaultToggleCard'),
+    vaultDownloadToggle: document.getElementById('vaultDownloadToggle'),
+    vaultStatusDot: document.getElementById('vaultStatusDot')
 };
 
 // ============================================
@@ -50,6 +55,7 @@ let currentTab = null;
 let currentDomain = null;
 let enabledSites = [];
 let settings = { ...DEFAULT_SETTINGS };
+let vaultDownloadEnabled = false;
 
 // ============================================
 // Initialization
@@ -63,9 +69,10 @@ async function init() {
 
 async function loadStoredData() {
     return new Promise((resolve) => {
-        chrome.storage.local.get([STORAGE_KEYS.ENABLED_SITES, STORAGE_KEYS.SETTINGS], (result) => {
+        chrome.storage.local.get([STORAGE_KEYS.ENABLED_SITES, STORAGE_KEYS.SETTINGS, STORAGE_KEYS.VAULT_DOWNLOAD_ENABLED], (result) => {
             enabledSites = result[STORAGE_KEYS.ENABLED_SITES] || [];
             settings = { ...DEFAULT_SETTINGS, ...(result[STORAGE_KEYS.SETTINGS] || {}) };
+            vaultDownloadEnabled = result[STORAGE_KEYS.VAULT_DOWNLOAD_ENABLED] || false;
             resolve();
         });
     });
@@ -95,6 +102,7 @@ function updateUI() {
     updateCurrentSiteCard();
     updateSitesList();
     updateSettingsUI();
+    updateVaultToggleUI();
 }
 
 function updateCurrentSiteCard() {
@@ -445,6 +453,11 @@ function setupEventListeners() {
 
     // Clear all sites
     elements.btnClearAllSites.addEventListener('click', clearAllSites);
+
+    // Vault Download Toggle
+    elements.vaultDownloadToggle.addEventListener('change', async (e) => {
+        await toggleVaultDownloadMode(e.target.checked);
+    });
 }
 
 // Reset all button positions
@@ -463,6 +476,50 @@ async function resetButtonPositions() {
         }
     } else {
         showNotification('No saved positions to reset', 'info');
+    }
+}
+
+// ============================================
+// Vault Download Toggle Management
+// ============================================
+function updateVaultToggleUI() {
+    // Update toggle checkbox state
+    elements.vaultDownloadToggle.checked = vaultDownloadEnabled;
+
+    // Update status dot indicator
+    if (vaultDownloadEnabled) {
+        elements.vaultStatusDot.classList.add('active');
+        elements.vaultToggleCard.classList.add('active');
+    } else {
+        elements.vaultStatusDot.classList.remove('active');
+        elements.vaultToggleCard.classList.remove('active');
+    }
+}
+
+async function toggleVaultDownloadMode(enabled) {
+    vaultDownloadEnabled = enabled;
+
+    // Save to storage
+    await chrome.storage.local.set({ [STORAGE_KEYS.VAULT_DOWNLOAD_ENABLED]: enabled });
+
+    // Update UI
+    updateVaultToggleUI();
+
+    // Notify background script
+    try {
+        await chrome.runtime.sendMessage({
+            action: 'toggleVaultDownload',
+            enabled: enabled
+        });
+    } catch (e) {
+        console.error('[Slasshy Popup] Failed to notify background:', e);
+    }
+
+    // Show feedback notification
+    if (enabled) {
+        showNotification('🔒 Vault Mode ON - Downloads will go to Vault', 'success');
+    } else {
+        showNotification('📥 Vault Mode OFF - Normal downloads', 'info');
     }
 }
 

@@ -496,13 +496,34 @@ export function VaultPage() {
     };
 
 
-
     // Cleanup temp files when leaving
     useEffect(() => {
         return () => {
             api.vaultCleanupTemp().catch(console.error);
         };
     }, []);
+
+    // Listen for vault file changes (from extension downloads, etc.)
+    useEffect(() => {
+        let unlistenFn: (() => void) | null = null;
+
+        const setupListener = async () => {
+            const { listen } = await import('@tauri-apps/api/event');
+            unlistenFn = await listen<{ action: string; file: any }>('vault-files-changed', async (event) => {
+                console.log('[Vault] Files changed event:', event.payload);
+                if (mode === 'unlocked') {
+                    // Reload files to show new additions
+                    await loadFiles();
+                }
+            });
+        };
+
+        setupListener().catch(console.error);
+
+        return () => {
+            if (unlistenFn) unlistenFn();
+        };
+    }, [mode]);
 
     // NOTE: Auto-unlock disabled - user must click "Unlock Vault" button manually
     // This provides a more intentional unlock experience

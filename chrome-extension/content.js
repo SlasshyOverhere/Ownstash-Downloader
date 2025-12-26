@@ -48,7 +48,37 @@ async function init() {
     }
 
     // Listen for messages from popup
-    chrome.runtime.onMessage.addListener(handleMessage);
+    try {
+        chrome.runtime.onMessage.addListener(handleMessage);
+    } catch (e) {
+        console.log('[Slasshy] Extension context invalid on init (reload needed)');
+    }
+
+    // Listen for fullscreen changes
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+}
+
+function handleFullscreenChange() {
+    const isFullscreen = document.fullscreenElement ||
+        document.webkitFullscreenElement ||
+        document.mozFullScreenElement ||
+        document.msFullscreenElement;
+
+    if (floatingButton) {
+        if (isFullscreen) {
+            floatingButton.style.display = 'none';
+        } else {
+            floatingButton.style.display = 'block'; // Or whatever visual state it should have
+            // Better to just remove the visible class or add a hidden class, 
+            // but since we manipulate style.display in hideDropdownMenu, let's respect that.
+            // Actually, the button uses class `slasshy-visible` for opacity/transform
+            // setting display:none overrides everything which is what we want.
+            // restoring to block is fine as it's a div.
+        }
+    }
 }
 
 function getCurrentDomain() {
@@ -442,6 +472,13 @@ async function handleDownloadClick(urlOverride = null) {
     // Show feedback (with auto-reset after 5 seconds as fallback)
     showFeedback('Sending...', 'info', 5000);
 
+    // Check if runtime is valid BEFORE trying to send
+    if (!isRuntimeValid()) {
+        showFeedback('Please reload page', 'error', 3000);
+        console.error('[Slasshy] Extension context is invalid. Page reload required.');
+        return;
+    }
+
     try {
         // Create a promise that times out after 5 seconds
         const timeoutPromise = new Promise((_, reject) => {
@@ -472,12 +509,24 @@ async function handleDownloadClick(urlOverride = null) {
     } catch (e) {
         // Extension error or timeout
         console.error('[Slasshy Content] Failed to send:', e);
+
+        // Handle "Extension context invalidated" specifically
+        if (e.message && e.message.includes('Extension context invalidated')) {
+            showFeedback('Please reload page', 'error', 3000);
+            return;
+        }
+
         if (e.message === 'Timeout') {
             showFeedback('Timeout', 'error', 2000);
         } else {
             showFeedback('Error', 'error', 2000);
         }
     }
+}
+
+// Check if runtime is valid
+function isRuntimeValid() {
+    return !!chrome.runtime && !!chrome.runtime.id;
 }
 
 function showFeedback(message, type = 'info', duration = 2000) {

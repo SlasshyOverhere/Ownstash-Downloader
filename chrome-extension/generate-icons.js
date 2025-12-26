@@ -6,9 +6,13 @@
  * Requires: sharp package (npm install sharp)
  */
 
-const sharp = require('sharp');
-const fs = require('fs');
-const path = require('path');
+import sharp from 'sharp';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const SOURCE_ICON = path.join(__dirname, 'icons', 'icon128.png');
 const OUTPUT_DIR = path.join(__dirname, 'icons');
@@ -51,29 +55,4 @@ async function generateIcons() {
     console.log('\nDone! Icons are in the icons/ directory.');
 }
 
-// If sharp is not installed, provide alternative
-try {
-    require.resolve('sharp');
-    generateIcons();
-} catch (e) {
-    console.log('Sharp module not found. Creating placeholder icons...');
-    console.log('\nTo generate proper icons:');
-    console.log('1. npm install sharp');
-    console.log('2. node generate-icons.js');
-    console.log('\nOr manually create:');
-    SIZES.forEach(size => {
-        console.log(`  - icons/icon${size}.png (${size}x${size} pixels)`);
-    });
-
-    // Copy the 128 icon to other sizes as fallback
-    const source = path.join(__dirname, 'icons', 'icon128.png');
-    if (fs.existsSync(source)) {
-        [16, 32, 48].forEach(size => {
-            const dest = path.join(__dirname, 'icons', `icon${size}.png`);
-            if (!fs.existsSync(dest)) {
-                fs.copyFileSync(source, dest);
-                console.log(`Copied icon128.png as icon${size}.png (placeholder)`);
-            }
-        });
-    }
-}
+generateIcons();

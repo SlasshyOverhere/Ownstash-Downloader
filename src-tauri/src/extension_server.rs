@@ -148,10 +148,51 @@ pub fn start_extension_server(app_handle: AppHandle) {
                     }
                 });
 
+            // Vault download endpoint - receives intercepted downloads from extension
+            let handle_clone3 = handle.clone();
+            let vault_download = warp::path("vault-download")
+                .and(warp::post())
+                .and(warp::body::json())
+                .map(move |body: serde_json::Value| {
+                    let url = body.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                    let filename = body.get("filename").and_then(|v| v.as_str()).unwrap_or("download");
+                    let file_size = body.get("fileSize").and_then(|v| v.as_u64()).unwrap_or(0);
+                    let source = body.get("source").and_then(|v| v.as_str()).unwrap_or("extension");
+
+                    if url.is_empty() {
+                        return warp::reply::json(&serde_json::json!({
+                            "success": false,
+                            "message": "No URL provided"
+                        }));
+                    }
+
+                    println!(
+                        "[ExtensionServer] Vault download request: {} (filename: {}, size: {}, source: {})",
+                        url, filename, file_size, source
+                    );
+
+                    // Bring the window to front
+                    bring_window_to_front(&handle_clone3);
+
+                    // Emit vault download event to frontend
+                    let _ = handle_clone3.emit("extension-vault-download-request", serde_json::json!({
+                        "url": url,
+                        "filename": filename,
+                        "fileSize": file_size,
+                        "source": source
+                    }));
+
+                    warp::reply::json(&serde_json::json!({
+                        "success": true,
+                        "message": "Download queued for vault"
+                    }))
+                });
+
             // Combine routes
             let routes = health
                 .or(download)
                 .or(download_get)
+                .or(vault_download)
                 .with(cors);
 
             println!("[ExtensionServer] Starting on port {}", EXTENSION_SERVER_PORT);
