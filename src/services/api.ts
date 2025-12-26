@@ -489,6 +489,37 @@ export const api = {
         });
     },
 
+    // ============ Vault Cloud Sync API ============
+    // Check if encrypted file exists locally
+    async vaultCheckLocalFile(encryptedName: string): Promise<boolean> {
+        return invoke('vault_check_local_file', { encryptedName });
+    },
+
+    // Get encrypted file as base64 for cloud upload
+    async vaultGetFileBase64(encryptedName: string): Promise<string> {
+        return invoke('vault_get_file_base64', { encryptedName });
+    },
+
+    // Save base64 content as encrypted file (for cloud download)
+    async vaultSaveFileBase64(encryptedName: string, base64Content: string): Promise<void> {
+        return invoke('vault_save_file_base64', { encryptedName, base64Content });
+    },
+
+    // Rename encrypted file (for extension migration)
+    async vaultRenameFile(oldName: string, newName: string): Promise<void> {
+        return invoke('vault_rename_file', { oldName, newName });
+    },
+
+    // Get vault files directory path
+    async vaultGetFilesDirPath(): Promise<string> {
+        return invoke('vault_get_files_dir_path');
+    },
+
+    // Get file size of encrypted file
+    async vaultGetFileSize(encryptedName: string): Promise<number> {
+        return invoke('vault_get_file_size', { encryptedName });
+    },
+
     // ============ Native Integration API ============
     async updateTaskbarProgress(progress: number, state: string): Promise<void> {
         return invoke('update_taskbar_progress', { progress, state });

@@ -177,7 +177,7 @@ export function isGDriveAvailable(): boolean {
 /**
  * Make an authenticated request to Google Drive API
  */
-async function driveRequest(
+export async function driveRequest(
     endpoint: string,
     options: RequestInit = {},
     useUploadBase = false
@@ -208,7 +208,7 @@ async function driveRequest(
 /**
  * Find a file in App Data folder by name
  */
-async function findFile(fileName: string): Promise<string | null> {
+export async function findFile(fileName: string): Promise<string | null> {
     const query = encodeURIComponent(`name='${fileName}' and 'appDataFolder' in parents and trashed=false`);
     const response = await driveRequest(`/files?spaces=appDataFolder&q=${query}&fields=files(id,name)`);
 

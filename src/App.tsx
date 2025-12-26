@@ -17,7 +17,7 @@ import api, { DownloadProgress, SpotifyDownloadProgress } from '@/services/api';
 export type PageType = 'home' | 'downloads' | 'history' | 'settings' | 'vault';
 
 function App() {
-    const { user, loading, isGDriveReady } = useAuth();
+    const { user, loading, isGDriveReady, isOfflineMode, setOfflineMode } = useAuth();
     const { storageType, isLoading: isDataLoading, syncWithGDrive } = useData();
     const [currentPage, setCurrentPage] = useState<PageType>('home');
     const [extensionUrl, setExtensionUrl] = useState<string | null>(null);
@@ -140,6 +140,9 @@ function App() {
         // Only check once GDrive ready state is determined and data has loaded
         if (!isGDriveReady || isDataLoading) return;
 
+        // Skip if user is already in offline mode
+        if (isOfflineMode) return;
+
         // Only show prompt if:
         // 1. User is logged in
         // 2. Storage type is local (no GDrive access)
@@ -153,17 +156,28 @@ function App() {
             }, 1000);
             return () => clearTimeout(timer);
         }
-    }, [user, storageType, isGDriveReady, isDataLoading, hasShownLoginPrompt]);
+    }, [user, storageType, isGDriveReady, isDataLoading, hasShownLoginPrompt, isOfflineMode]);
 
     // Handle successful login from modal
     const handleLoginSuccess = async () => {
         console.log('[App] Login successful, triggering GDrive sync');
+        setOfflineMode(false); // Exit offline mode on successful login
         const result = await syncWithGDrive();
         if (result.success) {
             toast.success('Google Drive sync restored!', {
                 description: result.message
             });
         }
+    };
+
+    // Handle continue without login (offline mode)
+    const handleContinueWithoutLogin = () => {
+        console.log('[App] User chose to continue without login (offline mode)');
+        setOfflineMode(true);
+        setShowLoginExpiredModal(false);
+        toast.info('Offline mode enabled', {
+            description: 'Downloads saved locally. Vault requires login.'
+        });
     };
 
     // Clear extension URL after it's been consumed
@@ -240,6 +254,7 @@ function App() {
                     setShowLoginExpiredModal(false);
                     handleLoginSuccess();
                 }}
+                onContinueWithoutLogin={handleContinueWithoutLogin}
             />
         </>
     );

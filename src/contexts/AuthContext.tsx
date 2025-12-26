@@ -9,6 +9,10 @@ interface AuthContextType {
     isGDriveReady: boolean;
     /** Indicates if GDrive token was successfully loaded from persistent storage */
     hasGDriveToken: boolean;
+    /** Indicates if user is in offline mode (no Google login) */
+    isOfflineMode: boolean;
+    /** Set offline mode (continue without login) */
+    setOfflineMode: (offline: boolean) => void;
     /** Force re-check GDrive availability (useful after manual sign-in) */
     recheckGDriveToken: () => Promise<boolean>;
     signIn: (email: string, password: string) => Promise<void>;
@@ -24,11 +28,14 @@ interface AuthProviderProps {
     children: ReactNode;
 }
 
+
 export function AuthProvider({ children }: AuthProviderProps) {
     const [user, setUser] = useState<AuthUser | null>(null);
     const [loading, setLoading] = useState(true);
     const [isGDriveReady, setIsGDriveReady] = useState(false);
     const [hasGDriveToken, setHasGDriveToken] = useState(false);
+    // Track if user is in offline mode (continue without login)
+    const [isOfflineMode, setIsOfflineMode] = useState(false);
     // Track if Firebase auth state has been resolved
     const [authResolved, setAuthResolved] = useState(false);
     // Track if GDrive token loading has been attempted
@@ -169,11 +176,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
         await authService.resetPassword(email);
     };
 
+    // Function to enable/disable offline mode
+    const setOfflineMode = useCallback((offline: boolean) => {
+        console.log('[Auth] Setting offline mode:', offline);
+        setIsOfflineMode(offline);
+    }, []);
+
     const value: AuthContextType = {
         user,
         loading,
         isGDriveReady,
         hasGDriveToken,
+        isOfflineMode,
+        setOfflineMode,
         recheckGDriveToken,
         signIn,
         signUp,

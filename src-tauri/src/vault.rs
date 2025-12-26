@@ -18,7 +18,8 @@ use tauri::{AppHandle, Manager};
 
 const VAULT_DIR_NAME: &str = "vault";
 const VAULT_CONFIG_FILE: &str = "vault_config.json";
-pub const ENCRYPTED_EXTENSION: &str = ".vault";
+pub const ENCRYPTED_EXTENSION: &str = ".slasshy";
+const LEGACY_EXTENSION: &str = ".vault"; // For backward compatibility
 const NONCE_SIZE: usize = 12;
 const KEY_SIZE: usize = 32;
 
@@ -150,6 +151,7 @@ fn load_vault_index_legacy(app_handle: &AppHandle) -> Vec<VaultFile> {
 }
 
 /// Count encrypted files in vault directory (for status without index)
+/// Supports both .slasshy (new) and .vault (legacy) extensions
 fn count_vault_files(app_handle: &AppHandle) -> (usize, u64) {
     let files_dir = get_vault_files_dir(app_handle);
     if !files_dir.exists() {
@@ -162,7 +164,8 @@ fn count_vault_files(app_handle: &AppHandle) -> (usize, u64) {
     if let Ok(entries) = fs::read_dir(&files_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "vault") {
+            // Accept both new .slasshy and legacy .vault extensions
+            if path.extension().map_or(false, |ext| ext == "slasshy" || ext == "vault") {
                 count += 1;
                 if let Ok(meta) = fs::metadata(&path) {
                     total_size += meta.len();
@@ -651,6 +654,7 @@ pub fn vault_cleanup_temp(app_handle: AppHandle) -> Result<(), String> {
 
 /// Delete a file from the vault by its encrypted filename
 /// NOTE: The frontend now passes the encrypted_name directly since it manages the index
+/// Supports both .slasshy (new) and .vault (legacy) extensions
 #[tauri::command]
 pub fn vault_delete_file(app_handle: AppHandle, file_id: String) -> Result<(), String> {
     let session = VAULT_SESSION.lock().unwrap();
@@ -659,17 +663,26 @@ pub fn vault_delete_file(app_handle: AppHandle, file_id: String) -> Result<(), S
     }
     drop(session);
 
-    // The file_id is now the UUID, construct the encrypted filename
-    let encrypted_name = format!("{}.vault", file_id);
-    let encrypted_path = get_vault_files_dir(&app_handle).join(&encrypted_name);
+    let files_dir = get_vault_files_dir(&app_handle);
+    
+    // Try both new .slasshy and legacy .vault extensions
+    let new_name = format!("{}.slasshy", file_id);
+    let legacy_name = format!("{}.vault", file_id);
+    
+    let new_path = files_dir.join(&new_name);
+    let legacy_path = files_dir.join(&legacy_name);
 
-    // Delete encrypted file
-    if encrypted_path.exists() {
-        fs::remove_file(&encrypted_path)
+    // Delete whichever exists
+    if new_path.exists() {
+        fs::remove_file(&new_path)
             .map_err(|e| format!("Failed to delete file: {}", e))?;
-        println!("[Vault] Deleted encrypted file: {}", encrypted_name);
+        println!("[Vault] Deleted encrypted file: {}", new_name);
+    } else if legacy_path.exists() {
+        fs::remove_file(&legacy_path)
+            .map_err(|e| format!("Failed to delete file: {}", e))?;
+        println!("[Vault] Deleted legacy encrypted file: {}", legacy_name);
     } else {
-        println!("[Vault] Warning: Encrypted file not found: {}", encrypted_name);
+        println!("[Vault] Warning: Encrypted file not found: {} or {}", new_name, legacy_name);
     }
 
     // NOTE: We no longer update local index - frontend manages via Google Drive
@@ -698,7 +711,7 @@ pub fn vault_change_pin(
         .verify_password(current_pin.as_bytes(), &parsed_hash)
         .map_err(|_| "Current PIN is incorrect".to_string())?;
 
-    // Scan vault directory for .vault files (no local index)
+    // Scan vault directory for .slasshy and .vault files (no local index)
     let files_dir = get_vault_files_dir(&app_handle);
     let mut vault_files: Vec<String> = Vec::new();
     
@@ -706,7 +719,8 @@ pub fn vault_change_pin(
         if let Ok(entries) = fs::read_dir(&files_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().map_or(false, |ext| ext == "vault") {
+                // Accept both new .slasshy and legacy .vault extensions
+                if path.extension().map_or(false, |ext| ext == "slasshy" || ext == "vault") {
                     if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                         vault_files.push(name.to_string());
                     }
@@ -825,4 +839,169 @@ pub fn vault_wipe_local_config(app_handle: AppHandle) -> Result<(), String> {
     let mut session = VAULT_SESSION.lock().unwrap();
     *session = None;
     Ok(())
+}
+
+// ============ Cloud Sync Commands ============
+
+/// Check if an encrypted file exists locally
+/// Supports both .slasshy (new) and .vault (legacy) extensions
+#[tauri::command]
+pub fn vault_check_local_file(app_handle: AppHandle, encrypted_name: String) -> bool {
+    let files_dir = get_vault_files_dir(&app_handle);
+    let file_path = files_dir.join(&encrypted_name);
+    
+    if file_path.exists() {
+        return true;
+    }
+    
+    // Also check for alternate extension
+    let alt_path = if encrypted_name.ends_with(".slasshy") {
+        files_dir.join(encrypted_name.replace(".slasshy", ".vault"))
+    } else if encrypted_name.ends_with(".vault") {
+        files_dir.join(encrypted_name.replace(".vault", ".slasshy"))
+    } else {
+        return false;
+    };
+    
+    alt_path.exists()
+}
+
+/// Get encrypted file content as base64 for cloud upload
+/// This reads the raw encrypted file (not decrypted)
+#[tauri::command]
+pub async fn vault_get_file_base64(
+    app_handle: AppHandle,
+    encrypted_name: String,
+) -> Result<String, String> {
+    let files_dir = get_vault_files_dir(&app_handle);
+    let mut file_path = files_dir.join(&encrypted_name);
+    
+    // Check if file exists, try alternate extension if not
+    if !file_path.exists() {
+        let alt_path = if encrypted_name.ends_with(".slasshy") {
+            files_dir.join(encrypted_name.replace(".slasshy", ".vault"))
+        } else if encrypted_name.ends_with(".vault") {
+            files_dir.join(encrypted_name.replace(".vault", ".slasshy"))
+        } else {
+            return Err(format!("File not found: {}", encrypted_name));
+        };
+        
+        if alt_path.exists() {
+            file_path = alt_path;
+        } else {
+            return Err(format!("File not found: {}", encrypted_name));
+        }
+    }
+    
+    // Read file in background thread to avoid blocking
+    let path_clone = file_path.clone();
+    let content = tokio::task::spawn_blocking(move || {
+        fs::read(&path_clone)
+    })
+    .await
+    .map_err(|e| format!("Task error: {}", e))?
+    .map_err(|e| format!("Failed to read file: {}", e))?;
+    
+    // Encode to base64
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    Ok(STANDARD.encode(&content))
+}
+
+/// Save base64 content as encrypted file (for cloud download)
+/// This writes the raw encrypted file (already encrypted by the original device)
+#[tauri::command]
+pub async fn vault_save_file_base64(
+    app_handle: AppHandle,
+    encrypted_name: String,
+    base64_content: String,
+) -> Result<(), String> {
+    let files_dir = get_vault_files_dir(&app_handle);
+    
+    // Ensure directory exists
+    fs::create_dir_all(&files_dir)
+        .map_err(|e| format!("Failed to create vault directory: {}", e))?;
+    
+    let file_path = files_dir.join(&encrypted_name);
+    
+    // Decode base64 in background thread
+    let content = tokio::task::spawn_blocking(move || {
+        use base64::{Engine, engine::general_purpose::STANDARD};
+        STANDARD.decode(&base64_content)
+    })
+    .await
+    .map_err(|e| format!("Task error: {}", e))?
+    .map_err(|e| format!("Failed to decode base64: {}", e))?;
+    
+    // Write file
+    let path_clone = file_path.clone();
+    tokio::task::spawn_blocking(move || {
+        fs::write(&path_clone, &content)
+    })
+    .await
+    .map_err(|e| format!("Task error: {}", e))?
+    .map_err(|e| format!("Failed to write file: {}", e))?;
+    
+    println!("[Vault] Saved cloud file: {}", encrypted_name);
+    Ok(())
+}
+
+/// Rename an encrypted file (for migration from .vault to .slasshy)
+#[tauri::command]
+pub fn vault_rename_file(
+    app_handle: AppHandle,
+    old_name: String,
+    new_name: String,
+) -> Result<(), String> {
+    let files_dir = get_vault_files_dir(&app_handle);
+    let old_path = files_dir.join(&old_name);
+    let new_path = files_dir.join(&new_name);
+    
+    if !old_path.exists() {
+        return Err(format!("File not found: {}", old_name));
+    }
+    
+    if new_path.exists() {
+        return Err(format!("Destination already exists: {}", new_name));
+    }
+    
+    fs::rename(&old_path, &new_path)
+        .map_err(|e| format!("Failed to rename file: {}", e))?;
+    
+    println!("[Vault] Renamed {} -> {}", old_name, new_name);
+    Ok(())
+}
+
+/// Get the vault files directory path
+#[tauri::command]
+pub fn vault_get_files_dir_path(app_handle: AppHandle) -> String {
+    get_vault_files_dir(&app_handle).to_string_lossy().to_string()
+}
+
+/// Get file size of an encrypted file
+#[tauri::command]
+pub fn vault_get_file_size(app_handle: AppHandle, encrypted_name: String) -> Result<u64, String> {
+    let files_dir = get_vault_files_dir(&app_handle);
+    let mut file_path = files_dir.join(&encrypted_name);
+    
+    // Check if file exists, try alternate extension if not
+    if !file_path.exists() {
+        let alt_path = if encrypted_name.ends_with(".slasshy") {
+            files_dir.join(encrypted_name.replace(".slasshy", ".vault"))
+        } else if encrypted_name.ends_with(".vault") {
+            files_dir.join(encrypted_name.replace(".vault", ".slasshy"))
+        } else {
+            return Err(format!("File not found: {}", encrypted_name));
+        };
+        
+        if alt_path.exists() {
+            file_path = alt_path;
+        } else {
+            return Err(format!("File not found: {}", encrypted_name));
+        }
+    }
+    
+    let metadata = fs::metadata(&file_path)
+        .map_err(|e| format!("Failed to get file metadata: {}", e))?;
+    
+    Ok(metadata.len())
 }

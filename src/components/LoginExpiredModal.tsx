@@ -4,7 +4,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     AlertCircle,
     CloudOff,
-    Loader2
+    Loader2,
+    Download,
+    Shield,
+    Wifi,
+    WifiOff
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { signInWithGoogleBrowser } from '@/services/googleAuth';
@@ -13,9 +17,10 @@ import { useAuth } from '@/contexts/AuthContext';
 interface LoginExpiredModalProps {
     isOpen: boolean;
     onLoginSuccess?: () => void;
+    onContinueWithoutLogin?: () => void;
 }
 
-export function LoginExpiredModal({ isOpen, onLoginSuccess }: LoginExpiredModalProps) {
+export function LoginExpiredModal({ isOpen, onLoginSuccess, onContinueWithoutLogin }: LoginExpiredModalProps) {
     const { recheckGDriveToken } = useAuth();
     const [isLoggingIn, setIsLoggingIn] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -43,6 +48,12 @@ export function LoginExpiredModal({ isOpen, onLoginSuccess }: LoginExpiredModalP
         } finally {
             setIsLoggingIn(false);
         }
+    };
+
+    // Handle Continue Without Login
+    const handleContinueWithoutLogin = () => {
+        console.log('[LoginExpiredModal] User chose to continue without login (offline mode)');
+        onContinueWithoutLogin?.();
     };
 
     // Prevent body scroll when modal is open
@@ -117,19 +128,8 @@ export function LoginExpiredModal({ isOpen, onLoginSuccess }: LoginExpiredModalP
 
                                 {/* Description */}
                                 <p className="text-sm text-muted-foreground text-center mb-6">
-                                    Your Google Drive sync session has expired. Please sign in again to continue using the app.
+                                    Your Google Drive sync session has expired. Sign in to sync your data or continue offline.
                                 </p>
-
-                                {/* Current Status */}
-                                <div className="flex items-center gap-3 p-3 rounded-xl bg-red-500/10 border border-red-500/20 mb-4">
-                                    <CloudOff className="w-5 h-5 text-red-400 shrink-0" />
-                                    <div>
-                                        <p className="text-sm font-medium text-red-400">Cloud Sync Required</p>
-                                        <p className="text-xs text-muted-foreground">
-                                            This app requires Google Drive to store your data securely.
-                                        </p>
-                                    </div>
-                                </div>
 
                                 {/* Error Message */}
                                 {error && (
@@ -139,7 +139,7 @@ export function LoginExpiredModal({ isOpen, onLoginSuccess }: LoginExpiredModalP
                                     </div>
                                 )}
 
-                                {/* Google Sign In Button - ONLY way to proceed */}
+                                {/* Google Sign In Button */}
                                 <button
                                     onClick={handleGoogleSignIn}
                                     disabled={isLoggingIn}
@@ -181,9 +181,55 @@ export function LoginExpiredModal({ isOpen, onLoginSuccess }: LoginExpiredModalP
                                     )}
                                 </button>
 
+                                {/* Divider */}
+                                <div className="flex items-center gap-3 my-4">
+                                    <div className="flex-1 h-px bg-white/10" />
+                                    <span className="text-xs text-muted-foreground">OR</span>
+                                    <div className="flex-1 h-px bg-white/10" />
+                                </div>
+
+                                {/* Continue Without Login Button */}
+                                <button
+                                    onClick={handleContinueWithoutLogin}
+                                    disabled={isLoggingIn}
+                                    className={cn(
+                                        'w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl',
+                                        'bg-muted/50 text-white font-medium',
+                                        'border border-white/10',
+                                        'hover:bg-muted/70 hover:border-white/20 transition-all duration-200',
+                                        'disabled:opacity-50 disabled:cursor-not-allowed'
+                                    )}
+                                >
+                                    <WifiOff className="w-5 h-5 text-muted-foreground" />
+                                    <span>Continue Without Login</span>
+                                </button>
+
+                                {/* Offline Mode Info */}
+                                <div className="mt-4 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20">
+                                    <p className="text-xs text-blue-300 font-medium mb-2">Offline Mode Features:</p>
+                                    <div className="space-y-1.5">
+                                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                            <Download className="w-3.5 h-3.5 text-green-400" />
+                                            <span>Local downloads (stored on PC)</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                            <Download className="w-3.5 h-3.5 text-green-400" />
+                                            <span>Search & download history (local SQLite)</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                            <Shield className="w-3.5 h-3.5 text-red-400" />
+                                            <span className="text-red-300">Vault requires Google login</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                            <Wifi className="w-3.5 h-3.5 text-yellow-400" />
+                                            <span className="text-yellow-300">Data syncs when you login later</span>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 {/* Footer note */}
                                 <p className="text-[10px] text-muted-foreground/70 text-center mt-4">
-                                    Your data is stored securely in your personal Google Drive.
+                                    Offline data will sync to Google Drive when you sign in.
                                 </p>
                             </div>
                         </motion.div>

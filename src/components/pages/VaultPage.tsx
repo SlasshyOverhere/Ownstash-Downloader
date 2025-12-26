@@ -22,7 +22,12 @@ import {
     Monitor,
     ExternalLink,
     HelpCircle,
-    Cloud
+    Cloud,
+    CloudOff,
+    CheckCircle2,
+    Clock,
+    AlertCircle,
+    Upload
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { staggerContainer, fadeInUp } from '@/lib/animations';
@@ -46,9 +51,45 @@ import {
     removeFromVaultIndex,
     isVaultCloudInitialized
 } from '@/services/vaultCloudService';
+import {
+    initVaultFileSync,
+    cleanupVaultFileSync,
+    enqueueUpload,
+    downloadFileFromCloud,
+    cancelDownload,
+    shouldAutoDownload,
+    getPendingFiles,
+    uploadSelectedFiles,
+    VaultFileWithSync,
+    DownloadProgress,
+    CloudSyncStatus
+} from '@/services/vaultFileSyncService';
+import { CloudDownloadPopup } from '@/components/vault/CloudDownloadPopup';
+import { CloudSyncModal, PendingFile } from '@/components/vault/CloudSyncModal';
+import { useAuth } from '@/contexts/AuthContext';
+import { signInWithGoogleBrowser } from '@/services/googleAuth';
+
 
 // Player preference types
 type PlayerPreference = 'internal' | 'external' | 'ask';
+
+// Sync status icon component
+function SyncStatusIcon({ status }: { status?: CloudSyncStatus }) {
+    switch (status) {
+        case 'synced':
+            return <span title="Synced to cloud"><CheckCircle2 className="w-3.5 h-3.5 text-green-400" /></span>;
+        case 'cloud_only':
+            return <span title="Cloud only"><Cloud className="w-3.5 h-3.5 text-blue-400" /></span>;
+        case 'pending':
+            return <span title="Pending upload"><Clock className="w-3.5 h-3.5 text-yellow-400" /></span>;
+        case 'syncing':
+            return <span title="Syncing..."><Loader2 className="w-3.5 h-3.5 text-primary animate-spin" /></span>;
+        case 'sync_failed':
+            return <span title="Sync failed"><AlertCircle className="w-3.5 h-3.5 text-red-400" /></span>;
+        default:
+            return <span title="Not synced"><CloudOff className="w-3.5 h-3.5 text-muted-foreground" /></span>;
+    }
+}
 
 
 
@@ -132,8 +173,8 @@ function PinInput({
 }
 
 
-
 export function VaultPage() {
+    const { isOfflineMode, setOfflineMode, recheckGDriveToken } = useAuth();
     const [status, setStatus] = useState<VaultStatus | null>(null);
     const [files, setFiles] = useState<VaultFile[]>([]);
     const [loading, setLoading] = useState(true);
@@ -163,6 +204,98 @@ export function VaultPage() {
     const [pendingPlayFile, setPendingPlayFile] = useState<VaultFile | null>(null);
 
     const vaultPinRef = useRef<string>(''); // Store PIN for cloud sync (in memory only)
+
+    // Cloud download popup state
+    const [showCloudDownload, setShowCloudDownload] = useState(false);
+    const [cloudDownloadProgress, setCloudDownloadProgress] = useState<DownloadProgress | null>(null);
+    const [pendingCloudPlayFile, setPendingCloudPlayFile] = useState<VaultFile | null>(null);
+
+    // Cloud sync modal state
+    const [showSyncModal, setShowSyncModal] = useState(false);
+    const [pendingSyncFiles, setPendingSyncFiles] = useState<PendingFile[]>([]);
+    const [isSyncing, setIsSyncing] = useState(false);
+
+    // Login state for offline mode
+    const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+    // Handle Google Sign In from vault when in offline mode
+    const handleVaultGoogleSignIn = async () => {
+        setIsLoggingIn(true);
+        try {
+            await signInWithGoogleBrowser();
+            // Wait a bit for the token to be available
+            await new Promise(resolve => setTimeout(resolve, 1500));
+
+            // Recheck GDrive token availability
+            const hasToken = await recheckGDriveToken();
+            if (hasToken) {
+                setOfflineMode(false); // Exit offline mode
+                toast.success('Signed in! Loading vault...');
+                // Reload vault status
+                loadStatus();
+            } else {
+                toast.error('Login completed but Google Drive access was not granted.');
+            }
+        } catch (err) {
+            console.error('[Vault] Google sign-in error:', err);
+            toast.error(err instanceof Error ? err.message : 'Failed to sign in with Google');
+        } finally {
+            setIsLoggingIn(false);
+        }
+    };
+
+
+    // Handle sync to cloud button - shows modal with pending files
+    const handleSyncToCloud = async () => {
+        setIsSyncing(true);
+        try {
+            console.log('[Vault] Getting pending files...');
+            const pending = await getPendingFiles();
+            console.log('[Vault] Pending files:', pending.length, pending);
+
+            if (pending.length === 0) {
+                // Show a toast if nothing to upload
+                toast.info('All files are already synced to cloud!');
+                setShowSyncModal(false);
+            } else {
+                setPendingSyncFiles(pending.map(f => ({
+                    id: f.id,
+                    original_name: f.original_name,
+                    encrypted_name: f.encrypted_name,
+                    size_bytes: f.size_bytes,
+                    file_type: f.file_type
+                })));
+                setShowSyncModal(true);
+            }
+        } catch (error) {
+            console.error('[Vault] Failed to get pending files:', error);
+            toast.error('Failed to check pending files');
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
+    // Handle upload from sync modal
+    const handleUploadSelected = async (fileIds: string[]) => {
+        try {
+            const result = await uploadSelectedFiles(fileIds, (current, total, fileName) => {
+                console.log(`[Vault] Uploading ${current}/${total}: ${fileName}`);
+            });
+
+            if (result.failed === 0) {
+                toast.success(`Successfully uploaded ${result.uploaded} file${result.uploaded !== 1 ? 's' : ''} to cloud!`);
+            } else {
+                toast.warning(`Uploaded ${result.uploaded}/${result.total} files. ${result.failed} failed.`);
+            }
+
+            // Refresh the files list to show updated sync status
+            await loadFiles();
+        } catch (error) {
+            console.error('[Vault] Upload failed:', error);
+            toast.error('Failed to upload files');
+            throw error;
+        }
+    };
 
     // Sync vault index to Google Drive (encrypted with PIN)
 
@@ -219,18 +352,21 @@ export function VaultPage() {
                 console.log('[Vault] Loading files from Google Drive (cloud-only mode)');
                 const cloudFiles = await loadVaultIndexFromGDrive(vaultPinRef.current);
                 if (cloudFiles && Array.isArray(cloudFiles)) {
-                    // Convert VaultFileEntry to VaultFile format
-                    const vaultFiles = cloudFiles.map((f: VaultFileEntry) => ({
+                    // Convert VaultFileEntry to VaultFile format (including sync status)
+                    const vaultFiles = cloudFiles.map((f: VaultFileEntry & { cloud_sync_status?: string; cloud_file_id?: string }) => ({
                         id: f.id,
                         original_name: f.original_name,
                         encrypted_name: f.encrypted_name,
                         size_bytes: f.size_bytes,
                         added_at: f.added_at,
                         file_type: f.file_type,
-                        thumbnail: f.thumbnail
+                        thumbnail: f.thumbnail,
+                        // Include cloud sync fields
+                        cloud_sync_status: f.cloud_sync_status,
+                        cloud_file_id: f.cloud_file_id
                     }));
                     setFiles(vaultFiles);
-                    console.log('[Vault] Loaded', vaultFiles.length, 'files from cloud');
+                    console.log('[Vault] Loaded', vaultFiles.length, 'files from cloud with sync status');
                     return;
                 }
             }
@@ -387,14 +523,17 @@ export function VaultPage() {
 
             // Set files from cloud unlock response
             if (cloudFiles && cloudFiles.length > 0) {
-                const vaultFiles = cloudFiles.map((f: VaultFileEntry) => ({
+                const vaultFiles = cloudFiles.map((f: VaultFileEntry & { cloud_sync_status?: string; cloud_file_id?: string }) => ({
                     id: f.id,
                     original_name: f.original_name,
                     encrypted_name: f.encrypted_name,
                     size_bytes: f.size_bytes,
                     added_at: f.added_at,
                     file_type: f.file_type,
-                    thumbnail: f.thumbnail
+                    thumbnail: f.thumbnail,
+                    // Include cloud sync fields
+                    cloud_sync_status: f.cloud_sync_status,
+                    cloud_file_id: f.cloud_file_id
                 }));
                 setFiles(vaultFiles);
                 console.log('[Vault] Loaded', vaultFiles.length, 'files from cloud');
@@ -404,6 +543,14 @@ export function VaultPage() {
 
             setMode('unlocked');
             setLoading(false);
+
+            // Initialize vault file sync service (background upload/download)
+            try {
+                await initVaultFileSync();
+                console.log('[Vault] File sync service initialized');
+            } catch (syncErr) {
+                console.warn('[Vault] File sync initialization failed (non-fatal):', syncErr);
+            }
 
             // Update status with local file count
             const localStatus = await api.vaultGetStatus();
@@ -423,6 +570,9 @@ export function VaultPage() {
 
     const handleLock = async () => {
         try {
+            // Cleanup cloud sync service
+            cleanupVaultFileSync();
+
             // Lock both cloud service and backend
             lockVaultCloud();
             await api.vaultLock();
@@ -489,6 +639,9 @@ export function VaultPage() {
                 return [...prev, newFile];
             });
 
+            // Queue file for background cloud upload
+            enqueueUpload(addedFile.id);
+
             console.log('[Vault] Cloud sync completed for new file via service');
         } catch (err) {
             console.error('[Vault] Failed to add file:', err);
@@ -500,7 +653,60 @@ export function VaultPage() {
     };
 
     // Handle play button click - respects player preference
+    // Now checks if file is available locally and triggers cloud download if needed
     const handlePlay = async (file: VaultFile) => {
+        // Check if file exists locally
+        const isLocal = await api.vaultCheckLocalFile(file.encrypted_name);
+
+        if (!isLocal) {
+            // File not local - check if it's in cloud
+            const fileWithSync = file as VaultFileWithSync;
+            if (fileWithSync.cloud_file_id || fileWithSync.cloud_sync_status === 'cloud_only') {
+                // Check if auto-download (small file)
+                if (shouldAutoDownload(fileWithSync)) {
+                    toast.info('Downloading from cloud...');
+                    try {
+                        await downloadFileFromCloud(file.id);
+                        toast.success('Downloaded! Playing now...');
+                        // Continue to play after download
+                    } catch (e) {
+                        toast.error('Failed to download file');
+                        return;
+                    }
+                } else {
+                    // Show download popup for larger files
+                    setPendingCloudPlayFile(file);
+                    setCloudDownloadProgress({
+                        fileId: file.id,
+                        fileName: file.original_name,
+                        progress: 0,
+                        downloadedBytes: 0,
+                        totalBytes: file.size_bytes,
+                        speed: 0,
+                        status: 'downloading'
+                    });
+                    setShowCloudDownload(true);
+
+                    try {
+                        await downloadFileFromCloud(file.id, (progress) => {
+                            setCloudDownloadProgress(progress);
+                        });
+
+                        setShowCloudDownload(false);
+                        toast.success('Downloaded! Playing now...');
+                        // Continue to play after download
+                    } catch (e) {
+                        setCloudDownloadProgress(prev => prev ? { ...prev, status: 'failed' } : null);
+                        return;
+                    }
+                }
+            } else {
+                toast.error('File not found locally or in cloud');
+                return;
+            }
+        }
+
+        // File is available locally (or just downloaded), proceed with play
         if (playerPreference === 'ask') {
             // Show choice modal
             setPendingPlayFile(file);
@@ -509,6 +715,38 @@ export function VaultPage() {
             await playWithExternalPlayer(file);
         } else {
             await playWithInternalPlayer(file);
+        }
+    };
+
+    // Cancel cloud download
+    const handleCancelCloudDownload = () => {
+        cancelDownload();
+        setCloudDownloadProgress(prev => prev ? { ...prev, status: 'cancelled' } : null);
+        setTimeout(() => {
+            setShowCloudDownload(false);
+            setCloudDownloadProgress(null);
+            setPendingCloudPlayFile(null);
+        }, 1500);
+    };
+
+    // Retry cloud download
+    const handleRetryCloudDownload = async () => {
+        if (!pendingCloudPlayFile) return;
+
+        setCloudDownloadProgress(prev => prev ? { ...prev, status: 'downloading', progress: 0 } : null);
+
+        try {
+            await downloadFileFromCloud(pendingCloudPlayFile.id, (progress) => {
+                setCloudDownloadProgress(progress);
+            });
+
+            setShowCloudDownload(false);
+            toast.success('Downloaded! Playing now...');
+
+            // Play the file
+            await handlePlay(pendingCloudPlayFile);
+        } catch (e) {
+            setCloudDownloadProgress(prev => prev ? { ...prev, status: 'failed' } : null);
         }
     };
 
@@ -699,6 +937,115 @@ export function VaultPage() {
         }
     };
 
+    // Offline mode - Vault requires login
+    if (isOfflineMode || !isGDriveAvailable()) {
+        return (
+            <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="space-y-6 p-6"
+            >
+                {/* Header */}
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <div className="p-3 rounded-xl bg-gradient-to-br from-yellow-500/20 to-orange-500/20 border border-yellow-500/30">
+                            <Shield className="w-8 h-8 text-yellow-400" />
+                        </div>
+                        <div>
+                            <h1 className="text-2xl font-bold">Secure Vault</h1>
+                            <p className="text-sm text-muted-foreground">Encrypted file storage</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Login Required Card */}
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                    className="max-w-md mx-auto mt-12"
+                >
+                    <div className="relative rounded-2xl bg-neutral-950/80 border border-white/10 p-8 text-center overflow-hidden">
+                        {/* Gradient accent */}
+                        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-yellow-500 via-orange-500 to-red-500" />
+
+                        {/* Icon */}
+                        <div className="mx-auto w-20 h-20 rounded-full bg-gradient-to-br from-yellow-500/20 to-orange-500/20 border border-yellow-500/20 flex items-center justify-center mb-6">
+                            <Lock className="w-10 h-10 text-yellow-400" />
+                        </div>
+
+                        <h2 className="text-xl font-bold text-white mb-2">Login Required</h2>
+                        <p className="text-muted-foreground mb-6">
+                            The Vault feature requires Google login to securely store your encrypted files in the cloud.
+                        </p>
+
+                        {/* Features */}
+                        <div className="text-left bg-muted/20 rounded-xl p-4 mb-6 space-y-2">
+                            <div className="flex items-center gap-3 text-sm">
+                                <ShieldCheck className="w-4 h-4 text-green-400 shrink-0" />
+                                <span className="text-muted-foreground">AES-256 encrypted storage</span>
+                            </div>
+                            <div className="flex items-center gap-3 text-sm">
+                                <Cloud className="w-4 h-4 text-blue-400 shrink-0" />
+                                <span className="text-muted-foreground">Synced to your Google Drive</span>
+                            </div>
+                            <div className="flex items-center gap-3 text-sm">
+                                <Key className="w-4 h-4 text-purple-400 shrink-0" />
+                                <span className="text-muted-foreground">PIN protected access</span>
+                            </div>
+                        </div>
+
+                        {/* Google Sign In Button */}
+                        <button
+                            onClick={handleVaultGoogleSignIn}
+                            disabled={isLoggingIn}
+                            className={cn(
+                                'w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl',
+                                'bg-white text-black font-semibold',
+                                'hover:bg-white/90 transition-all duration-200',
+                                'disabled:opacity-50 disabled:cursor-not-allowed'
+                            )}
+                        >
+                            {isLoggingIn ? (
+                                <>
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    <span>Signing in...</span>
+                                </>
+                            ) : (
+                                <>
+                                    {/* Google Icon */}
+                                    <svg className="w-5 h-5" viewBox="0 0 24 24">
+                                        <path
+                                            fill="#4285F4"
+                                            d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                                        />
+                                        <path
+                                            fill="#34A853"
+                                            d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                                        />
+                                        <path
+                                            fill="#FBBC05"
+                                            d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                                        />
+                                        <path
+                                            fill="#EA4335"
+                                            d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                                        />
+                                    </svg>
+                                    <span>Sign in with Google</span>
+                                </>
+                            )}
+                        </button>
+
+                        <p className="text-[10px] text-muted-foreground/60 mt-4">
+                            Your vault data is stored securely in your personal Google Drive.
+                        </p>
+                    </div>
+                </motion.div>
+            </motion.div>
+        );
+    }
+
     // Loading state
     if (mode === 'loading') {
         return (
@@ -707,6 +1054,7 @@ export function VaultPage() {
             </div>
         );
     }
+
 
     // Setup mode
     if (mode === 'setup') {
@@ -920,6 +1268,19 @@ export function VaultPage() {
                             Add File
                         </button>
                         <button
+                            onClick={handleSyncToCloud}
+                            disabled={isSyncing}
+                            className={cn(
+                                "p-2 rounded-xl glass-hover transition-colors",
+                                isSyncing
+                                    ? "bg-primary/20 text-primary cursor-wait"
+                                    : "hover:bg-primary/20 text-primary"
+                            )}
+                            title="Upload all to Cloud"
+                        >
+                            <Upload className={cn("w-5 h-5", isSyncing && "animate-pulse")} />
+                        </button>
+                        <button
                             onClick={async () => {
                                 toast.info('Refreshing files...');
                                 await loadFiles();
@@ -979,10 +1340,11 @@ export function VaultPage() {
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-start justify-between gap-2">
-                                            <div className="min-w-0">
+                                            <div className="min-w-0 flex-1">
                                                 <h3 className="font-semibold truncate text-sm">{file.original_name}</h3>
-                                                <p className="text-xs text-muted-foreground mt-1">
+                                                <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5">
                                                     {formatBytes(file.size_bytes)} • {file.file_type}
+                                                    <SyncStatusIcon status={(file as VaultFileWithSync).cloud_sync_status} />
                                                 </p>
                                                 <p className="text-xs text-muted-foreground">
                                                     {new Date(file.added_at * 1000).toLocaleDateString()}
@@ -1312,6 +1674,27 @@ export function VaultPage() {
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            {/* Cloud Download Popup */}
+            <CloudDownloadPopup
+                isOpen={showCloudDownload}
+                fileName={cloudDownloadProgress?.fileName || ''}
+                fileSize={cloudDownloadProgress?.totalBytes || 0}
+                progress={cloudDownloadProgress?.progress || 0}
+                downloadedBytes={cloudDownloadProgress?.downloadedBytes || 0}
+                downloadSpeed={cloudDownloadProgress?.speed || 0}
+                status={cloudDownloadProgress?.status || 'downloading'}
+                onCancel={handleCancelCloudDownload}
+                onRetry={handleRetryCloudDownload}
+            />
+
+            {/* Cloud Sync Modal */}
+            <CloudSyncModal
+                isOpen={showSyncModal}
+                pendingFiles={pendingSyncFiles}
+                onClose={() => setShowSyncModal(false)}
+                onUpload={handleUploadSelected}
+            />
         </>
     );
 }

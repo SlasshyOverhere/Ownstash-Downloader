@@ -248,6 +248,13 @@ pub fn run() {
             // Vault direct download commands
             vault_download::vault_direct_download,
             vault_download::vault_cancel_download,
+            // Vault cloud sync commands
+            vault::vault_check_local_file,
+            vault::vault_get_file_base64,
+            vault::vault_save_file_base64,
+            vault::vault_rename_file,
+            vault::vault_get_files_dir_path,
+            vault::vault_get_file_size,
             // Native integration commands
             native_integration::update_taskbar_progress,
             native_integration::clear_taskbar_progress,
