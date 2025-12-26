@@ -13,7 +13,6 @@ import {
     Play,
     FolderOpen,
     Folder,
-    FolderPlus,
     AlertTriangle,
     Loader2,
     Plus,
@@ -45,7 +44,8 @@ import { open } from '@tauri-apps/plugin-dialog';
 import {
     loadVaultIndexFromGDrive,
     isGDriveAvailable,
-    VaultFileEntry
+    VaultFileEntry,
+    gdriveService
 } from '@/services/gdriveService';
 import {
     isVaultSetup,
@@ -404,15 +404,30 @@ export function VaultPage() {
         loadPlayerPreferences();
     }, [loadStatus]);
 
-    // Load player preferences from settings
+    // Load player preferences from settings (try cloud first, then local)
     const loadPlayerPreferences = async () => {
         try {
-            const pref = await api.getSetting('vault_player_preference');
+            // Try to load from cloud first if available
+            let pref: string | null = null;
+            let playerPath: string | null = null;
+
+            if (isGDriveAvailable()) {
+                pref = await gdriveService.getSetting('', 'vault_player_preference');
+                playerPath = await gdriveService.getSetting('', 'vault_external_player_path');
+            }
+
+            // Fallback to local if cloud doesn't have it
+            if (!pref) {
+                pref = await api.getSetting('vault_player_preference');
+            }
+            if (!playerPath) {
+                playerPath = await api.getSetting('vault_external_player_path');
+            }
+
             if (pref && ['internal', 'external', 'ask'].includes(pref)) {
                 setPlayerPreference(pref as PlayerPreference);
             }
 
-            const playerPath = await api.getSetting('vault_external_player_path');
             if (playerPath) {
                 setExternalPlayerPath(playerPath);
             }
@@ -421,21 +436,35 @@ export function VaultPage() {
         }
     };
 
-    // Save player preference
+    // Save player preference - syncs to BOTH local and cloud
     const savePlayerPreference = async (pref: PlayerPreference) => {
         setPlayerPreference(pref);
         try {
+            // Save locally
             await api.saveSetting('vault_player_preference', pref);
+
+            // Also sync to cloud if available
+            if (isGDriveAvailable()) {
+                await gdriveService.saveSetting('', 'vault_player_preference', pref);
+                console.log('[Vault] Player preference synced to cloud:', pref);
+            }
         } catch (err) {
             console.error('[Vault] Failed to save player preference:', err);
         }
     };
 
-    // Save external player path
+    // Save external player path - syncs to BOTH local and cloud
     const saveExternalPlayerPath = async (path: string) => {
         setExternalPlayerPath(path);
         try {
+            // Save locally
             await api.saveSetting('vault_external_player_path', path);
+
+            // Also sync to cloud if available
+            if (isGDriveAvailable()) {
+                await gdriveService.saveSetting('', 'vault_external_player_path', path);
+                console.log('[Vault] External player path synced to cloud');
+            }
         } catch (err) {
             console.error('[Vault] Failed to save external player path:', err);
         }
@@ -724,82 +753,32 @@ export function VaultPage() {
     // Legacy handler kept for backward compatibility
     const handleAddFile = handleUpload;
 
-    // Handle folder upload
-    const handleAddFolder = async () => {
-        try {
-            const selected = await open({
-                directory: true,
-                title: 'Select folder to add to Vault',
-            });
-
-            if (!selected || typeof selected !== 'string') return;
-
-            const folderName = selected.split(/[/\\]/).pop() || 'Folder';
-
-            toast.info('Compressing and encrypting folder...');
-            console.log('[Vault] Adding folder:', folderName);
-
-            const addedFolder = await api.vaultAddFolder(selected, folderName, false);
-            console.log('[Vault] Folder added successfully:', addedFolder);
-            toast.success('Folder added to vault!');
-
-            // Update state and sync to cloud via service
-            const newFolderEntry: VaultFileEntry = {
-                id: addedFolder.id,
-                original_name: addedFolder.original_name,
-                encrypted_name: addedFolder.encrypted_name,
-                size_bytes: addedFolder.size_bytes,
-                added_at: addedFolder.added_at,
-                file_type: addedFolder.file_type,
-                thumbnail: addedFolder.thumbnail,
-                is_folder: true,
-                folder_entries: addedFolder.folder_entries
-            };
-
-            await addToVaultIndex(newFolderEntry);
-
-            // Update local state for immediate feedback
-            setFiles(prev => {
-                if (prev.some(f => f.id === addedFolder.id)) return prev;
-                return [...prev, addedFolder];
-            });
-
-            // Queue folder for background cloud upload
-            enqueueUpload(addedFolder.id);
-
-            console.log('[Vault] Cloud sync completed for new folder via service');
-        } catch (err) {
-            console.error('[Vault] Failed to add folder:', err);
-            const msg = typeof err === 'string' ? err : (err instanceof Error ? err.message : String(err));
-            toast.error(`Failed: ${msg}`);
-            await loadFiles();
-        }
-    };
-
     // Extract archive (convert to browsable folder)
+    // Note: This KEEPS the original file_type (archive) but adds is_folder and folder_entries
+    // This way if app restarts, we can re-scan the archive to rebuild folder_entries
     const handleExtractArchive = async (file: VaultFile) => {
         try {
             toast.loading('Extracting archive contents...');
 
-            // Call backend to scan ZIP structure (decrypt -> scan -> index)
+            // Call backend to scan archive structure (decrypt -> scan -> index)
             const entries = await api.vaultConvertToFolder(file.id, file.encrypted_name);
 
-            // Update local file data to match "folder" structure
+            // Update local file data - KEEP original file_type, just add folder capabilities
             const updatedFile: VaultFile = {
                 ...file,
                 is_folder: true,
                 folder_entries: entries,
-                file_type: 'folder' // Change type to folder
+                // DO NOT change file_type - keep it as 'archive' so we can rescan if needed
             };
 
-            // Update Cloud Index to reflect it's now a folder
+            // Update Cloud Index - preserve original file_type but add folder data
             const entry: VaultFileEntry = {
                 id: updatedFile.id,
                 original_name: updatedFile.original_name,
                 encrypted_name: updatedFile.encrypted_name,
                 size_bytes: updatedFile.size_bytes,
                 added_at: updatedFile.added_at,
-                file_type: 'folder', // Change type to folder
+                file_type: file.file_type, // KEEP original type (archive, not folder)
                 thumbnail: updatedFile.thumbnail || undefined,
                 is_folder: true,
                 folder_entries: entries,
@@ -828,9 +807,53 @@ export function VaultPage() {
     };
 
     // Open folder browser modal
-    const handleOpenFolder = (folder: VaultFile) => {
-        setSelectedFolder(folder);
-        setShowFolderBrowser(true);
+    // If folder_entries is missing (e.g., after app restart), rescan the archive
+    const handleOpenFolder = async (folder: VaultFile) => {
+        // Check if we need to rescan the archive for folder entries
+        if (folder.is_folder && (!folder.folder_entries || folder.folder_entries.length === 0)) {
+            try {
+                toast.loading('Scanning archive contents...');
+
+                // Rescan the archive to get folder entries
+                const entries = await api.vaultConvertToFolder(folder.id, folder.encrypted_name);
+
+                // Update the folder with entries
+                const updatedFolder: VaultFile = {
+                    ...folder,
+                    folder_entries: entries,
+                };
+
+                // Update cloud index with the rescanned entries
+                const entry: VaultFileEntry = {
+                    id: updatedFolder.id,
+                    original_name: updatedFolder.original_name,
+                    encrypted_name: updatedFolder.encrypted_name,
+                    size_bytes: updatedFolder.size_bytes,
+                    added_at: updatedFolder.added_at,
+                    file_type: updatedFolder.file_type,
+                    thumbnail: updatedFolder.thumbnail || undefined,
+                    is_folder: true,
+                    folder_entries: entries,
+                };
+
+                await addToVaultIndex(entry);
+
+                // Update local state
+                setFiles(prev => prev.map(f => f.id === folder.id ? updatedFolder : f));
+
+                toast.dismiss();
+
+                setSelectedFolder(updatedFolder);
+                setShowFolderBrowser(true);
+            } catch (err) {
+                console.error('[Vault] Failed to rescan archive:', err);
+                toast.dismiss();
+                toast.error('Failed to scan archive contents');
+            }
+        } else {
+            setSelectedFolder(folder);
+            setShowFolderBrowser(true);
+        }
     };
 
     // Play a media file from inside a folder
@@ -1521,29 +1544,24 @@ export function VaultPage() {
                         <button
                             onClick={handleUpload}
                             className="px-4 py-2 rounded-xl bg-primary/20 hover:bg-primary/30 text-primary text-sm font-medium flex items-center gap-2 transition-colors"
+                            title="Upload files or folders"
                         >
                             <Upload className="w-4 h-4" />
                             Upload
                         </button>
                         <button
-                            onClick={handleAddFolder}
-                            className="p-2 rounded-xl glass-hover hover:bg-yellow-500/20 text-yellow-400 transition-colors"
-                            title="Add Folder"
-                        >
-                            <FolderPlus className="w-5 h-5" />
-                        </button>
-                        <button
                             onClick={handleSyncToCloud}
                             disabled={isSyncing}
                             className={cn(
-                                "p-2 rounded-xl glass-hover transition-colors",
+                                "px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2 transition-colors",
                                 isSyncing
-                                    ? "bg-primary/20 text-primary cursor-wait"
-                                    : "hover:bg-primary/20 text-primary"
+                                    ? "bg-blue-500/20 text-blue-400 cursor-wait"
+                                    : "glass-hover hover:bg-blue-500/20 text-blue-400"
                             )}
-                            title="Upload all to Cloud"
+                            title="Upload all local files to Google Drive"
                         >
-                            <Upload className={cn("w-5 h-5", isSyncing && "animate-pulse")} />
+                            <Cloud className={cn("w-4 h-4", isSyncing && "animate-pulse")} />
+                            {isSyncing ? 'Syncing...' : 'Sync to Cloud'}
                         </button>
                         <button
                             onClick={async () => {
