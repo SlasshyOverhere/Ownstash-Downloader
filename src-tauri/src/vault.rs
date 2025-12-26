@@ -645,7 +645,13 @@ pub async fn vault_get_temp_playback_path(
     fs::create_dir_all(&temp_dir)
         .map_err(|e| format!("Failed to create temp directory: {}", e))?;
     
-    let temp_path = temp_dir.join(&original_name);
+    // Use UUID + extension only for temp file (no original name traces for privacy)
+    let file_extension = PathBuf::from(&original_name)
+        .extension()
+        .map(|e| format!(".{}", e.to_string_lossy()))
+        .unwrap_or_else(|| ".tmp".to_string());
+    let temp_file_id = uuid::Uuid::new_v4().to_string();
+    let temp_path = temp_dir.join(format!("{}{}", temp_file_id, file_extension));
 
     // Decrypt in background thread to avoid blocking UI
     let enc_clone = encrypted_path.clone();
@@ -1253,17 +1259,19 @@ pub async fn vault_extract_folder_file(
     fs::create_dir_all(&temp_dir)
         .map_err(|e| format!("Failed to create temp directory: {}", e))?;
     
-    // Temp path for decrypted archive
-    let temp_archive_path = temp_dir.join(format!("{}_extracted.archive", file_id));
+    // Temp path for decrypted archive (uses UUID, no original name traces)
+    let temp_archive_path = temp_dir.join(format!("{}_archive.tmp", file_id));
     
-    // Get the file name from the path
-    let file_name = PathBuf::from(&file_path_in_folder)
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "extracted_file".to_string());
+    // Get ONLY the extension from the original filename (needed for proper playback)
+    // The actual filename is NOT used to avoid leaving traces
+    let file_extension = PathBuf::from(&file_path_in_folder)
+        .extension()
+        .map(|e| format!(".{}", e.to_string_lossy()))
+        .unwrap_or_else(|| ".tmp".to_string());
     
-    // Final temp path for the extracted file
-    let temp_file_path = temp_dir.join(&file_name);
+    // Generate a random temp filename with just the extension (no original name traces)
+    let temp_file_id = uuid::Uuid::new_v4().to_string();
+    let temp_file_path = temp_dir.join(format!("{}{}", temp_file_id, file_extension));
     
     // Clone for background task
     let encrypted_clone = encrypted_path.clone();
