@@ -57,14 +57,12 @@ type PlayerPreference = 'internal' | 'external' | 'ask';
 function PinInput({
     value,
     onChange,
-    onSubmit,
     length = 8,
     error,
     disabled
 }: {
     value: string;
     onChange: (value: string) => void;
-    onSubmit?: () => void;
     length?: number;
     error?: string;
     disabled?: boolean;
@@ -76,13 +74,6 @@ function PinInput({
         onChange(newValue);
     };
 
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === 'Enter' && value.length >= 4 && onSubmit) {
-            e.preventDefault();
-            onSubmit();
-        }
-    };
-
     return (
         <div className="space-y-3">
             <div className="relative">
@@ -90,7 +81,6 @@ function PinInput({
                     type={showPin ? 'text' : 'password'}
                     value={value}
                     onChange={handleChange}
-                    onKeyDown={handleKeyDown}
                     disabled={disabled}
                     placeholder="Enter PIN"
                     className={cn(
@@ -315,17 +305,8 @@ export function VaultPage() {
         };
     }, []);
 
-    // Auto-unlock when PIN reaches required length (4+ digits)
-    useEffect(() => {
-        if (pin.length >= 4 && !loading && mode === 'locked') {
-            // Add a small delay to ensure user has finished typing
-            const timer = setTimeout(() => {
-                handleUnlock(pin);
-            }, 400); // 400ms delay to prevent triggering while typing
-
-            return () => clearTimeout(timer);
-        }
-    }, [pin, loading, mode]);
+    // NOTE: Auto-unlock disabled - user must click "Unlock Vault" button manually
+    // This provides a more intentional unlock experience
 
     const handleSetup = async () => {
         if (pin.length < 4) {
@@ -346,7 +327,8 @@ export function VaultPage() {
             setLoading(true);
             setPinError('');
 
-            // Use cloud service for setup (stores PIN hash in GDrive, not locally)
+            // Use cloud service for setup (stores PIN hash in GDrive and sets up backend)
+            // NOTE: setupVaultCloud already handles api.vaultSetup internally
             await setupVaultCloud(pin);
 
             // Store PIN for cloud sync (in memory only)
@@ -384,6 +366,7 @@ export function VaultPage() {
             setPinError('');
 
             // Use cloud service for unlock (verifies against cloud PIN hash)
+            // NOTE: unlockVaultCloud already handles unlocking the Rust backend internally
             const cloudFiles = await unlockVaultCloud(pinToUse);
 
             // Store PIN for cloud sync (in memory only)
@@ -410,6 +393,7 @@ export function VaultPage() {
             }
 
             setMode('unlocked');
+            setLoading(false);
 
             // Update status with local file count
             const localStatus = await api.vaultGetStatus();
@@ -809,34 +793,64 @@ export function VaultPage() {
                     <PinInput
                         value={pin}
                         onChange={(v) => { setPin(v); setPinError(''); }}
-                        onSubmit={() => handleUnlock()}
                         length={8}
                         error={pinError}
                         disabled={loading}
                     />
 
-                    <button
-                        onClick={() => handleUnlock()}
-                        disabled={loading || pin.length < 4}
-                        className={cn(
-                            'w-full py-3 rounded-xl font-medium transition-all',
-                            'bg-gradient-to-r from-primary to-accent text-white',
-                            'hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed',
-                            'flex items-center justify-center gap-2'
+                    <div className="space-y-3">
+                        <button
+                            onClick={() => handleUnlock()}
+                            disabled={loading || pin.length < 4}
+                            className={cn(
+                                'w-full py-3 rounded-xl font-medium transition-all',
+                                'bg-gradient-to-r from-primary to-accent text-white',
+                                'hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed',
+                                'flex items-center justify-center gap-2'
+                            )}
+                        >
+                            {loading ? (
+                                <>
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    Securing Access...
+                                </>
+                            ) : (
+                                <>
+                                    <Unlock className="w-5 h-5" />
+                                    Unlock Vault
+                                </>
+                            )}
+                        </button>
+
+                        {/* Security message during unlock */}
+                        {loading && (
+                            <motion.div
+                                initial={{ opacity: 0, y: -10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="p-4 rounded-xl bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border border-cyan-500/20"
+                            >
+                                <div className="flex items-start gap-3">
+                                    <div className="p-2 rounded-lg bg-cyan-500/20">
+                                        <Shield className="w-5 h-5 text-cyan-400" />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <p className="text-sm font-medium text-cyan-400">
+                                            Applying Security Measures
+                                        </p>
+                                        <p className="text-xs text-muted-foreground">
+                                            Verifying PIN against encrypted cloud hash...
+                                        </p>
+                                        <p className="text-xs text-muted-foreground">
+                                            Preparing AES-256-GCM decryption engine...
+                                        </p>
+                                        <p className="text-[10px] text-muted-foreground/70 mt-2">
+                                            Please be patient. This may take a moment to fully secure your files.
+                                        </p>
+                                    </div>
+                                </div>
+                            </motion.div>
                         )}
-                    >
-                        {loading ? (
-                            <>
-                                <Loader2 className="w-5 h-5 animate-spin" />
-                                Unlocking...
-                            </>
-                        ) : (
-                            <>
-                                <Unlock className="w-5 h-5" />
-                                Unlock Vault
-                            </>
-                        )}
-                    </button>
+                    </div>
                 </div>
 
                 {status && (

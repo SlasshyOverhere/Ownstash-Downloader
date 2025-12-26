@@ -130,10 +130,8 @@ export async function setupVaultCloud(pin: string): Promise<void> {
         await saveVaultConfigToGDrive(config);
         console.log('[VaultCloud] Vault config with Rust details synced to cloud');
 
-        // Ephemeral Mode: Wipe local config immediately after session is established
-        // This ensures no traces are left on disk
-        await api.vaultWipeLocalConfig();
-        console.log('[VaultCloud] Local config wiped for security (ephemeral mode)');
+        // NOTE: We do NOT wipe local config here - the backend needs it for file operations!
+        // The session remains active until vault is locked
     } catch (backendErr: unknown) {
         const errMsg = backendErr instanceof Error ? backendErr.message : String(backendErr);
         console.warn('[VaultCloud] Backend vault setup encountered issues:', errMsg);
@@ -266,9 +264,9 @@ export async function unlockVaultCloud(pin: string): Promise<VaultFileEntry[]> {
             console.log('[VaultCloud] Rust backend vault set up and unlocked');
         }
 
-        // Ephemeral Mode: Wipe local config immediately after session is established
-        await api.vaultWipeLocalConfig();
-        console.log('[VaultCloud] Local config wiped for security (ephemeral mode)');
+        // NOTE: We do NOT wipe local config here - the backend needs it for file operations!
+        // The session remains active until vault is locked
+        console.log('[VaultCloud] Vault session established - backend is ready for file operations');
     } catch (backendErr: unknown) {
         const errMsg = backendErr instanceof Error ? backendErr.message : String(backendErr);
         console.error('[VaultCloud] Backend vault initialization failed:', errMsg);

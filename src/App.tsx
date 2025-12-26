@@ -8,17 +8,22 @@ import { HistoryPage } from '@/components/pages/HistoryPage';
 import { SettingsPage } from '@/components/pages/SettingsPage';
 import { VaultPage } from '@/components/pages/VaultPage';
 import { AuthPage } from '@/components/pages/AuthPage';
+import { LoginExpiredModal } from '@/components/LoginExpiredModal';
 import { useAuth } from '@/contexts/AuthContext';
+import { useData } from '@/contexts/DataContext';
 import { Loader2 } from 'lucide-react';
 import api, { DownloadProgress, SpotifyDownloadProgress } from '@/services/api';
 
 export type PageType = 'home' | 'downloads' | 'history' | 'settings' | 'vault';
 
 function App() {
-    const { user, loading } = useAuth();
+    const { user, loading, isGDriveReady } = useAuth();
+    const { storageType, isLoading: isDataLoading, syncWithGDrive } = useData();
     const [currentPage, setCurrentPage] = useState<PageType>('home');
     const [extensionUrl, setExtensionUrl] = useState<string | null>(null);
     const [_activeDownloadCount, setActiveDownloadCount] = useState(0);
+    const [showLoginExpiredModal, setShowLoginExpiredModal] = useState(false);
+    const [hasShownLoginPrompt, setHasShownLoginPrompt] = useState(false);
 
     // Listen for URLs from Chrome extension (via deep link)
     useEffect(() => {
@@ -130,6 +135,37 @@ function App() {
         };
     }, []);
 
+    // Show login expired prompt when app is in local-only state on startup
+    useEffect(() => {
+        // Only check once GDrive ready state is determined and data has loaded
+        if (!isGDriveReady || isDataLoading) return;
+
+        // Only show prompt if:
+        // 1. User is logged in
+        // 2. Storage type is local (no GDrive access)
+        // 3. We haven't already shown the prompt this session
+        if (user && storageType === 'local' && !hasShownLoginPrompt) {
+            console.log('[App] Detected local-only state, showing login expired prompt');
+            // Small delay to let the app fully render first
+            const timer = setTimeout(() => {
+                setShowLoginExpiredModal(true);
+                setHasShownLoginPrompt(true);
+            }, 1000);
+            return () => clearTimeout(timer);
+        }
+    }, [user, storageType, isGDriveReady, isDataLoading, hasShownLoginPrompt]);
+
+    // Handle successful login from modal
+    const handleLoginSuccess = async () => {
+        console.log('[App] Login successful, triggering GDrive sync');
+        const result = await syncWithGDrive();
+        if (result.success) {
+            toast.success('Google Drive sync restored!', {
+                description: result.message
+            });
+        }
+    };
+
     // Clear extension URL after it's been consumed
     const handleExtensionUrlConsumed = () => {
         setExtensionUrl(null);
@@ -197,9 +233,18 @@ function App() {
                     },
                 }}
             />
+            {/* Login Expired Modal - shown when app starts in local-only state */}
+            <LoginExpiredModal
+                isOpen={showLoginExpiredModal}
+                onLoginSuccess={() => {
+                    setShowLoginExpiredModal(false);
+                    handleLoginSuccess();
+                }}
+            />
         </>
     );
 }
 
 export default App;
+
 
