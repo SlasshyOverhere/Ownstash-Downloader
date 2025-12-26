@@ -13,10 +13,12 @@ import {
     Loader2,
     Check,
     ChevronDown,
-    Image as ImageIcon
+    Image as ImageIcon,
+    Scissors,
+    Shield
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { MediaInfo, formatBytes, formatDuration } from '@/services/api';
+import api, { MediaInfo, formatBytes, formatDuration } from '@/services/api';
 
 interface MediaInfoModalProps {
     isOpen: boolean;
@@ -36,6 +38,8 @@ export interface DownloadOptions {
     audioQuality: string;
     audioFormat: string;
     videoFormat: string;
+    useSponsorblock: boolean;
+    saveToVault: boolean;  // Download directly into encrypted vault
 }
 
 const qualityOptions = [
@@ -108,7 +112,10 @@ export function MediaInfoModal({
     const [embedThumbnail, setEmbedThumbnail] = useState(true);
     const [embedMetadata, setEmbedMetadata] = useState(true);
     const [downloadSubtitles, setDownloadSubtitles] = useState(true); // Default ON
+    const [useSponsorblock, setUseSponsorblock] = useState(true); // Default ON
     const [showAdvanced, setShowAdvanced] = useState(false);
+    const [saveToVault, setSaveToVault] = useState(false);  // Direct vault download
+    const [vaultUnlocked, setVaultUnlocked] = useState(false);  // Track vault status
 
     // Audio & Video format options
     const [audioQuality, setAudioQuality] = useState('0'); // 320kbps default
@@ -152,6 +159,35 @@ export function MediaInfoModal({
         }
     }, [maxVideoHeight]);
 
+    // Load SponsorBlock setting
+    useEffect(() => {
+        api.getSetting('use_sponsorblock').then(val => {
+            if (val !== null) setUseSponsorblock(val === 'true');
+        });
+    }, []);
+
+    // Check vault status for "Save to Vault" option
+    useEffect(() => {
+        api.vaultGetStatus().then(status => {
+            setVaultUnlocked(status.is_unlocked);
+            // If vault was locked, disable save to vault option
+            if (!status.is_unlocked) {
+                setSaveToVault(false);
+            }
+        }).catch(() => {
+            setVaultUnlocked(false);
+        });
+    }, [isOpen]);
+
+    // Helper to find sponsor segments
+    const sponsorSegments = mediaInfo.chapters?.filter(c =>
+        c.title.includes('SponsorBlock') ||
+        c.title.toLowerCase().includes('sponsor') ||
+        c.title.toLowerCase().includes('intro') ||
+        c.title.toLowerCase().includes('outro') ||
+        c.title.toLowerCase().includes('selfpromo')
+    ) || [];
+
     // Prevent body scroll when modal is open
     useEffect(() => {
         if (isOpen) {
@@ -175,6 +211,8 @@ export function MediaInfoModal({
             audioQuality,
             audioFormat,
             videoFormat,
+            useSponsorblock,
+            saveToVault,
         });
     };
 
@@ -514,6 +552,71 @@ export function MediaInfoModal({
                                                     />
                                                 </label>
                                             )}
+                                            {downloadMode === 'video' && (
+                                                <label className="flex items-center justify-between p-2.5 rounded-lg border border-white/10 cursor-pointer hover:bg-white/5 transition-colors">
+                                                    <div className="flex flex-col">
+                                                        <span className="flex items-center gap-2 text-sm">
+                                                            <Scissors className="w-3.5 h-3.5 text-rose-400" />
+                                                            Remove Sponsors
+                                                        </span>
+                                                        <span className="text-[10px] text-muted-foreground">Skip intros, outros & ads (SponsorBlock)</span>
+                                                    </div>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={useSponsorblock}
+                                                        onChange={(e) => setUseSponsorblock(e.target.checked)}
+                                                        className="w-4 h-4 accent-rose-500"
+                                                    />
+                                                </label>
+                                            )}
+                                            {/* Save to Vault Toggle */}
+                                            <label
+                                                className={cn(
+                                                    "flex items-center justify-between p-2.5 rounded-lg border transition-colors",
+                                                    vaultUnlocked
+                                                        ? "border-cyan-500/30 cursor-pointer hover:bg-cyan-500/5 bg-cyan-500/10"
+                                                        : "border-white/5 opacity-50 cursor-not-allowed"
+                                                )}
+                                            >
+                                                <div className="flex flex-col">
+                                                    <span className="flex items-center gap-2 text-sm">
+                                                        <Shield className="w-3.5 h-3.5 text-cyan-400" />
+                                                        Save to Vault
+                                                    </span>
+                                                    <span className="text-[10px] text-muted-foreground">
+                                                        {vaultUnlocked
+                                                            ? "Download directly into encrypted vault (no trace)"
+                                                            : "Unlock vault first to enable this option"}
+                                                    </span>
+                                                </div>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={saveToVault}
+                                                    onChange={(e) => vaultUnlocked && setSaveToVault(e.target.checked)}
+                                                    disabled={!vaultUnlocked}
+                                                    className="w-4 h-4 accent-cyan-500"
+                                                />
+                                            </label>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* SponsorBlock Preview */}
+                                {useSponsorblock && sponsorSegments.length > 0 && (
+                                    <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20">
+                                        <div className="flex items-center gap-2 mb-2 text-rose-400">
+                                            <Scissors className="w-3.5 h-3.5" />
+                                            <span className="text-xs font-semibold">Segments to Remove ({sponsorSegments.length})</span>
+                                        </div>
+                                        <div className="space-y-1 max-h-24 overflow-y-auto pr-1 custom-scrollbar">
+                                            {sponsorSegments.map((seg, i) => (
+                                                <div key={i} className="flex items-center justify-between text-[10px] px-2 py-1 rounded bg-black/20 text-rose-200/80">
+                                                    <span className="truncate max-w-[70%]">{seg.title}</span>
+                                                    <span className="font-mono opacity-70">
+                                                        {formatDuration(seg.start_time)} - {formatDuration(seg.end_time)}
+                                                    </span>
+                                                </div>
+                                            ))}
                                         </div>
                                     </div>
                                 )}

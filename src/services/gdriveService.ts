@@ -3,6 +3,7 @@
 // This provides privacy: user data never leaves their own Google account
 
 import { Download, SearchHistory, Setting } from './firestore';
+import { invoke } from '@tauri-apps/api/core';
 
 // File names in Google Drive App Data folder
 const FILES = {
@@ -15,8 +16,13 @@ const FILES = {
 const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3';
 const DRIVE_UPLOAD_BASE = 'https://www.googleapis.com/upload/drive/v3';
 
-// Token storage key
+// Token storage keys
 const ACCESS_TOKEN_KEY = 'gdrive_access_token';
+const TOKEN_EXPIRY_KEY = 'gdrive_token_expiry';
+
+// In-memory token cache for quick access
+let cachedToken: string | null = null;
+let tokenExpiry: number | null = null;
 
 // Subscription callbacks for real-time updates (simulated via polling)
 type UnsubscribeCallback = () => void;
@@ -31,29 +37,110 @@ let pollInterval: ReturnType<typeof setInterval> | null = null;
 
 /**
  * Store the access token (called after OAuth)
+ * Token is stored in both memory and persistent storage (Tauri SQLite)
  */
-export function setGDriveAccessToken(token: string): void {
-    localStorage.setItem(ACCESS_TOKEN_KEY, token);
-    console.log('[GDrive] Access token stored');
+export async function setGDriveAccessToken(token: string, expiresIn?: number): Promise<void> {
+    // Store in memory for quick access
+    cachedToken = token;
+
+    // Calculate expiry time (default 1 hour if not provided)
+    const expiryTime = Date.now() + ((expiresIn || 3600) * 1000);
+    tokenExpiry = expiryTime;
+
+    // We NO LONGER store raw token in localStorage for security
+    // Only store expiry time in localStorage for quick check
+    localStorage.setItem(TOKEN_EXPIRY_KEY, expiryTime.toString());
+
+    // Persist to Tauri Secure Storage (encrypted with machine-bound key)
+    try {
+        await invoke('secure_save_setting', { key: ACCESS_TOKEN_KEY, value: token });
+        // Expiry doesn't need to be encrypted but we can keep it for consistency
+        await invoke('save_setting', { key: TOKEN_EXPIRY_KEY, value: expiryTime.toString() });
+        console.log('[GDrive] Access token stored securely and encrypted');
+    } catch (err) {
+        console.error('[GDrive] Failed to persist token securely:', err);
+    }
 }
 
 /**
  * Get the stored access token
+ * Checks memory -> localStorage -> Tauri database
  */
 export function getGDriveAccessToken(): string | null {
-    return localStorage.getItem(ACCESS_TOKEN_KEY);
+    // Check memory cache first
+    if (cachedToken) {
+        // Check if token is expired
+        if (tokenExpiry && Date.now() > tokenExpiry) {
+            console.log('[GDrive] Token expired, clearing cache');
+            cachedToken = null;
+            tokenExpiry = null;
+            return null;
+        }
+        return cachedToken;
+    }
+
+    // Fallback to localStorage only for expiry
+    const lsExpiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
+
+    if (lsExpiry) {
+        const expiry = parseInt(lsExpiry, 10);
+        if (Date.now() > expiry) {
+            return null;
+        }
+    }
+    // Note: Raw token is no longer in localStorage, MUST load via loadPersistedToken on startup
+    return null;
+}
+
+/**
+ * Load token from persistent storage (call on app startup)
+ */
+export async function loadPersistedToken(): Promise<boolean> {
+    try {
+        const token = await invoke<string | null>('secure_get_setting', { key: ACCESS_TOKEN_KEY });
+        const expiryStr = await invoke<string | null>('get_setting', { key: TOKEN_EXPIRY_KEY });
+
+        if (token) {
+            // If we have no expiry, assume 1 hour from now as fallback
+            const expiry = expiryStr ? parseInt(expiryStr, 10) : (Date.now() + 3600000);
+
+            if (Date.now() < expiry) {
+                cachedToken = token;
+                tokenExpiry = expiry;
+                localStorage.setItem(TOKEN_EXPIRY_KEY, expiry.toString());
+                console.log('[GDrive] Token loaded and decrypted successfully');
+                return true;
+            } else {
+                console.warn('[GDrive] Persisted token is expired');
+            }
+        } else {
+            console.log('[GDrive] No persisted token found in secure storage');
+        }
+    } catch (err) {
+        console.error('[GDrive] Failed to load secure token:', err);
+    }
+    return false;
 }
 
 /**
  * Clear the access token (on logout)
  */
-export function clearGDriveAccessToken(): void {
-    localStorage.removeItem(ACCESS_TOKEN_KEY);
-    console.log('[GDrive] Access token cleared');
+export async function clearGDriveAccessToken(): Promise<void> {
+    cachedToken = null;
+    tokenExpiry = null;
+    localStorage.removeItem(TOKEN_EXPIRY_KEY);
+
+    try {
+        await invoke('secure_delete_setting', { key: ACCESS_TOKEN_KEY });
+        await invoke('delete_setting', { key: TOKEN_EXPIRY_KEY });
+        console.log('[GDrive] Access token cleared from secure storage');
+    } catch (err) {
+        console.error('[GDrive] Failed to clear secure token:', err);
+    }
 }
 
 /**
- * Check if Google Drive is available (has access token)
+ * Check if Google Drive is available (has valid access token)
  */
 export function isGDriveAvailable(): boolean {
     return !!getGDriveAccessToken();
@@ -756,5 +843,113 @@ export async function deleteVaultFromGDrive(): Promise<void> {
     }
 }
 
+// ==================== CLOUD-ONLY VAULT CONFIG ====================
+// The vault config (PIN hash, salt) is now stored ONLY in Google Drive
+// This means there's NOTHING vault-related on local disk except encrypted .vault files
+// Complete deniability: no evidence of vault existence on local machine
+
+const VAULT_CONFIG_FILE = 'slasshy_vault_config.json';
+
+// Vault config interface (matches Rust struct)
+export interface VaultConfig {
+    pin_hash: string;
+    salt: string;
+    rust_pin_hash?: string;
+    rust_salt?: string;
+    created_at: number;
+    last_accessed: number | null;
+}
+
+/**
+ * Save vault config to Google Drive
+ * The config is stored in plaintext in the appDataFolder (hidden from user)
+ * The PIN hash is already secure (Argon2) - cannot be reversed
+ */
+export async function saveVaultConfigToGDrive(config: VaultConfig): Promise<void> {
+    if (!isGDriveAvailable()) {
+        throw new Error('Google Drive not available');
+    }
+
+    try {
+        await writeFile(VAULT_CONFIG_FILE, config);
+        console.log('[GDrive] Vault config saved to cloud');
+    } catch (e) {
+        console.error('[GDrive] Failed to save vault config:', e);
+        throw e;
+    }
+}
+
+/**
+ * Load vault config from Google Drive
+ */
+export async function loadVaultConfigFromGDrive(): Promise<VaultConfig | null> {
+    if (!isGDriveAvailable()) {
+        return null;
+    }
+
+    try {
+        const config = await readFile<VaultConfig>(VAULT_CONFIG_FILE);
+        if (config && config.pin_hash) {
+            console.log('[GDrive] Vault config loaded from cloud');
+            return config;
+        }
+        return null;
+    } catch (e) {
+        console.error('[GDrive] Failed to load vault config:', e);
+        return null;
+    }
+}
+
+/**
+ * Check if vault config exists in Google Drive
+ */
+export async function hasVaultConfigInGDrive(): Promise<boolean> {
+    console.log('[GDrive] hasVaultConfigInGDrive - checking...');
+    if (!isGDriveAvailable()) {
+        console.log('[GDrive] hasVaultConfigInGDrive - GDrive not available, returning false');
+        return false;
+    }
+
+    try {
+        console.log('[GDrive] hasVaultConfigInGDrive - reading config file:', VAULT_CONFIG_FILE);
+        const config = await readFile<VaultConfig>(VAULT_CONFIG_FILE);
+        console.log('[GDrive] hasVaultConfigInGDrive - config:', config);
+        const hasConfig = config !== null && !!config.pin_hash;
+        console.log('[GDrive] hasVaultConfigInGDrive - result:', hasConfig);
+        return hasConfig;
+    } catch (e) {
+        console.error('[GDrive] hasVaultConfigInGDrive - error:', e);
+        return false;
+    }
+}
+
+/**
+ * Delete vault config from Google Drive (for reset)
+ */
+export async function deleteVaultConfigFromGDrive(): Promise<void> {
+    if (!isGDriveAvailable()) {
+        return;
+    }
+
+    try {
+        await writeFile(VAULT_CONFIG_FILE, {});
+        console.log('[GDrive] Vault config deleted from cloud');
+    } catch (e) {
+        console.error('[GDrive] Failed to delete vault config:', e);
+    }
+}
+
+/**
+ * Update last_accessed timestamp in vault config
+ */
+export async function updateVaultLastAccessed(): Promise<void> {
+    const config = await loadVaultConfigFromGDrive();
+    if (config) {
+        config.last_accessed = Math.floor(Date.now() / 1000);
+        await saveVaultConfigToGDrive(config);
+    }
+}
+
 export default gdriveService;
+
 

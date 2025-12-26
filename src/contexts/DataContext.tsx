@@ -2,7 +2,7 @@
 // Now uses Google Drive as personal database instead of Firestore
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { useAuth } from './AuthContext';
-import { gdriveService, isGDriveAvailable, clearGDriveAccessToken } from '@/services/gdriveService';
+import { gdriveService, isGDriveAvailable } from '@/services/gdriveService';
 import { Download, SearchHistory, Setting } from '@/services/firestore';
 import { api } from '@/services/api';
 
@@ -34,6 +34,9 @@ interface DataContextType {
 
     // Migration
     migrateLocalData: () => Promise<void>;
+
+    // Full sync with Google Drive
+    syncWithGDrive: () => Promise<{ success: boolean; message: string }>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -43,7 +46,7 @@ interface DataProviderProps {
 }
 
 export function DataProvider({ children }: DataProviderProps) {
-    const { user } = useAuth();
+    const { user, isGDriveReady, hasGDriveToken } = useAuth();
 
     const [downloads, setDownloads] = useState<Download[]>([]);
     const [searchHistory, setSearchHistory] = useState<SearchHistory[]>([]);
@@ -51,18 +54,35 @@ export function DataProvider({ children }: DataProviderProps) {
     const [isLoading, setIsLoading] = useState(true);
     const [isSyncing, setIsSyncing] = useState(false);
     const [storageType, setStorageType] = useState<'local' | 'gdrive'>('local');
+    const [hasAutoSynced, setHasAutoSynced] = useState(false);
 
     // Subscribe to Google Drive updates when user is logged in with GDrive access
     useEffect(() => {
+        // Wait for GDrive loading to complete before making any decisions
+        if (!isGDriveReady) {
+            console.log('[DataContext] Waiting for GDrive ready state...');
+            return;
+        }
+
+        console.log('[DataContext] Ready check:', {
+            hasUser: !!user,
+            isGDriveReady,
+            hasGDriveToken,
+            isGDriveAvailable: isGDriveAvailable()
+        });
+
         if (!user) {
             // User not logged in - load from local database via Tauri
+            console.log('[DataContext] No user, using local storage');
             setStorageType('local');
             loadLocalData();
             return;
         }
 
-        // Check if Google Drive is available (user signed in with Google)
-        if (!isGDriveAvailable()) {
+        // Check if Google Drive is available - use both in-memory check AND the hasGDriveToken flag
+        const gdriveAvailable = isGDriveAvailable() || hasGDriveToken;
+
+        if (!gdriveAvailable) {
             console.log('[DataContext] User logged in but no Google Drive access, using local storage');
             setStorageType('local');
             loadLocalData();
@@ -70,11 +90,10 @@ export function DataProvider({ children }: DataProviderProps) {
         }
 
         // User logged in with Google Drive access
+        console.log('[DataContext] ✓ Google Drive available, setting up subscriptions');
         setStorageType('gdrive');
         setIsLoading(true);
         const unsubscribers: (() => void)[] = [];
-
-        console.log('[DataContext] Setting up Google Drive subscriptions');
 
         // Subscribe to downloads
         unsubscribers.push(
@@ -102,14 +121,12 @@ export function DataProvider({ children }: DataProviderProps) {
             console.log('[DataContext] Cleaning up subscriptions');
             unsubscribers.forEach(unsub => unsub());
         };
-    }, [user]);
+    }, [user, isGDriveReady, hasGDriveToken]);
 
-    // Clean up GDrive token on logout
-    useEffect(() => {
-        if (!user) {
-            clearGDriveAccessToken();
-        }
-    }, [user]);
+
+    // Note: GDrive token cleanup is now handled in AuthContext.signOut()
+    // Previously there was a useEffect here that cleared the token when user was null,
+    // but this caused issues because user is null on startup before Firebase restores auth state
 
     // Load data from local Tauri database (fallback when not logged in or no GDrive access)
     const loadLocalData = async () => {
@@ -325,6 +342,137 @@ export function DataProvider({ children }: DataProviderProps) {
         }
     }, [user]);
 
+    // Full bidirectional sync with Google Drive
+    const syncWithGDrive = useCallback(async (): Promise<{ success: boolean; message: string }> => {
+        if (!user) {
+            return { success: false, message: 'Please sign in to sync with Google Drive' };
+        }
+
+        if (!isGDriveAvailable()) {
+            console.warn('[DataContext] Sync blocked: isGDriveAvailable() returned false', {
+                hasUser: !!user,
+                isGDriveReady,
+                // Check internal gdriveService state if possible via public methods
+                hasTokenInMemory: !!gdriveService.testConnection // Just a placeholder check
+            });
+            return { success: false, message: 'Google Drive access not available. Please sign in with Google.' };
+        }
+
+        setIsSyncing(true);
+        try {
+            console.log('[DataContext] Starting full sync with Google Drive...');
+
+            // Step 1: Get all local data
+            const [localDownloads, localSearchHistory, localSettings] = await Promise.all([
+                api.getDownloads(),
+                api.getSearchHistory(1000),
+                api.getAllSettings(),
+            ]);
+
+            // Step 2: Get all data from Google Drive
+            const [gdriveDownloads, gdriveSearchHistory, gdriveSettings] = await Promise.all([
+                gdriveService.getDownloads(user.uid),
+                gdriveService.getSearchHistory(user.uid, 1000),
+                gdriveService.getAllSettings(user.uid),
+            ]);
+
+            // Step 3: Merge data (keeping unique items from both sources)
+            // Downloads: merge by id
+            const mergedDownloadsMap = new Map<string, Download>();
+            [...localDownloads, ...gdriveDownloads].forEach(d => {
+                const existing = mergedDownloadsMap.get(d.id);
+                if (!existing || (d.timestamp && existing.timestamp && d.timestamp > existing.timestamp)) {
+                    mergedDownloadsMap.set(d.id, d);
+                }
+            });
+            const mergedDownloads = Array.from(mergedDownloadsMap.values()).sort((a, b) =>
+                (b.timestamp || 0) - (a.timestamp || 0)
+            );
+
+            // Search History: merge by id
+            const mergedHistoryMap = new Map<string, SearchHistory>();
+            [...localSearchHistory, ...gdriveSearchHistory].forEach(h => {
+                const existing = mergedHistoryMap.get(h.id);
+                if (!existing || (h.timestamp && existing.timestamp && h.timestamp > existing.timestamp)) {
+                    mergedHistoryMap.set(h.id, h);
+                }
+            });
+            const mergedHistory = Array.from(mergedHistoryMap.values()).sort((a, b) =>
+                (b.timestamp || 0) - (a.timestamp || 0)
+            );
+
+            // Settings: merge by key (prefer newest or use GDrive as source of truth)
+            const mergedSettingsMap = new Map<string, Setting>();
+            [...localSettings, ...gdriveSettings].forEach(s => {
+                mergedSettingsMap.set(s.key, s);
+            });
+            const mergedSettings = Array.from(mergedSettingsMap.values());
+
+            // Step 4: Save merged data to Google Drive
+            await gdriveService.migrateLocalData(
+                user.uid,
+                mergedDownloads,
+                mergedHistory,
+                mergedSettings
+            );
+
+            // Step 5: Update local state
+            setDownloads(mergedDownloads);
+            setSearchHistory(mergedHistory);
+            setSettings(mergedSettings);
+
+            // Step 6: Also save merged data to local storage for offline access
+            // Clear and re-add to ensure sync (this is a full sync)
+            await api.clearDownloads();
+            for (const download of mergedDownloads) {
+                await api.addDownload(download);
+            }
+            await api.clearSearchHistory();
+            for (const search of mergedHistory) {
+                await api.addSearch(search.query, search.title, search.thumbnail);
+            }
+            for (const setting of mergedSettings) {
+                await api.saveSetting(setting.key, setting.value);
+            }
+
+            console.log('[DataContext] Full sync completed successfully!');
+            console.log(`[DataContext] Synced: ${mergedDownloads.length} downloads, ${mergedHistory.length} searches, ${mergedSettings.length} settings`);
+
+            return {
+                success: true,
+                message: `Synced ${mergedDownloads.length} downloads, ${mergedHistory.length} searches, ${mergedSettings.length} settings`
+            };
+        } catch (error) {
+            console.error('[DataContext] Sync failed:', error);
+            return {
+                success: false,
+                message: error instanceof Error ? error.message : 'Sync failed. Please try again.'
+            };
+        } finally {
+            setIsSyncing(false);
+        }
+    }, [user]);
+
+    // Automatic Sync on Boot
+    useEffect(() => {
+        const gdriveAvailable = isGDriveAvailable() || hasGDriveToken;
+        if (user && isGDriveReady && gdriveAvailable && !hasAutoSynced && !isLoading) {
+            console.log('[DataContext] Automated GDrive sync starting...');
+            // Delay slightly to ensure subscriptions are active and stable
+            const timer = setTimeout(() => {
+                syncWithGDrive().then((result) => {
+                    if (result.success) {
+                        console.log('[DataContext] Automated GDrive sync completed');
+                        setHasAutoSynced(true);
+                    }
+                }).catch(err => {
+                    console.error('[DataContext] Automated sync failed:', err);
+                });
+            }, 3000); // 3 second delay for stability
+            return () => clearTimeout(timer);
+        }
+    }, [user, isGDriveReady, hasGDriveToken, hasAutoSynced, isLoading, syncWithGDrive]);
+
     const value: DataContextType = {
         downloads,
         addDownload,
@@ -342,6 +490,7 @@ export function DataProvider({ children }: DataProviderProps) {
         isSyncing,
         storageType,
         migrateLocalData,
+        syncWithGDrive,
     };
 
     return (

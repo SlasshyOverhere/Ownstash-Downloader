@@ -40,6 +40,13 @@ export interface MediaInfo {
     like_count?: number;
     upload_date?: string;
     webpage_url?: string;
+    chapters?: Chapter[];
+}
+
+export interface Chapter {
+    start_time: number;
+    end_time: number;
+    title: string;
 }
 
 export interface FormatInfo {
@@ -81,6 +88,7 @@ export interface DownloadRequest {
     audio_quality: string;
     audio_format: string;
     video_format: string;
+    use_sponsorblock: boolean;
 }
 
 export interface YtDlpInfo {
@@ -171,6 +179,32 @@ export interface VaultFile {
     thumbnail?: string;
 }
 
+// Vault Direct Download types
+export interface VaultDownloadRequest {
+    id: string;
+    url: string;
+    original_name: string;
+    file_type: 'video' | 'audio';
+    thumbnail?: string;
+    audio_only: boolean;
+    quality?: string;
+    format?: string;
+    audio_format: string;
+    embed_metadata: boolean;
+    use_sponsorblock: boolean;
+}
+
+export interface VaultDownloadProgress {
+    id: string;
+    progress: number;
+    speed: string;
+    eta: string;
+    status: 'preparing' | 'downloading' | 'encrypting' | 'completed' | 'failed' | 'cancelled';
+    downloaded_bytes?: number;
+    total_bytes?: number;
+    encrypted_bytes?: number;
+}
+
 // Native integration types
 export interface NotificationClickEvent {
     type: string;
@@ -232,6 +266,19 @@ export const api = {
         return invoke('delete_setting', { key });
     },
 
+    // Secure Settings - Encrypted via Rust backend using machine-bound key
+    async secureSaveSetting(key: string, value: string): Promise<void> {
+        return invoke('secure_save_setting', { key, value });
+    },
+
+    async secureGetSetting(key: string): Promise<string | null> {
+        return invoke('secure_get_setting', { key });
+    },
+
+    async secureDeleteSetting(key: string): Promise<void> {
+        return invoke('secure_delete_setting', { key });
+    },
+
     // Utility functions - Rust backend
 
     async openFolder(path: string, fileName?: string): Promise<void> {
@@ -276,8 +323,8 @@ export const api = {
     },
 
     // Media Info & Downloading - Rust backend
-    async getMediaInfo(url: string): Promise<MediaInfo> {
-        return invoke('get_media_info', { url });
+    async getMediaInfo(url: string, enableSponsorblock?: boolean): Promise<MediaInfo> {
+        return invoke('get_media_info', { url, enableSponsorblock });
     },
 
     async probeDirectFile(url: string): Promise<DirectFileInfo> {
@@ -381,12 +428,12 @@ export const api = {
         return invoke('vault_list_files');
     },
 
-    async vaultExportFile(fileId: string, destinationPath: string): Promise<string> {
-        return invoke('vault_export_file', { fileId, destinationPath });
+    async vaultExportFile(fileId: string, encryptedName: string, originalName: string, destinationPath: string): Promise<string> {
+        return invoke('vault_export_file', { fileId, encryptedName, originalName, destinationPath });
     },
 
-    async vaultGetTempPlaybackPath(fileId: string): Promise<string> {
-        return invoke('vault_get_temp_playback_path', { fileId });
+    async vaultGetTempPlaybackPath(fileId: string, encryptedName: string, originalName: string): Promise<string> {
+        return invoke('vault_get_temp_playback_path', { fileId, encryptedName, originalName });
     },
 
     async vaultCleanupTemp(): Promise<void> {
@@ -403,6 +450,43 @@ export const api = {
 
     async vaultReset(pin: string): Promise<void> {
         return invoke('vault_reset', { pin });
+    },
+
+    async vaultGetConfig(): Promise<any> {
+        return invoke('vault_get_config');
+    },
+
+    async vaultImportConfig(config: any): Promise<void> {
+        return invoke('vault_import_config', { config });
+    },
+
+    async vaultWipeLocalConfig(): Promise<void> {
+        return invoke('vault_wipe_local_config');
+    },
+
+    // ============ Vault Direct Download API ============
+    // Downloads files directly into the vault with streaming encryption
+    // No plaintext file ever touches the disk
+    async vaultDirectDownload(request: VaultDownloadRequest): Promise<VaultFile> {
+        console.log('[Vault API] Starting direct vault download:', request.original_name);
+        try {
+            const result = await invoke<VaultFile>('vault_direct_download', { request });
+            console.log('[Vault API] Direct download completed:', result);
+            return result;
+        } catch (error) {
+            console.error('[Vault API] Direct download failed:', error);
+            throw error;
+        }
+    },
+
+    async vaultCancelDownload(id: string): Promise<void> {
+        return invoke('vault_cancel_download', { id });
+    },
+
+    onVaultDownloadProgress(callback: (progress: VaultDownloadProgress) => void): Promise<UnlistenFn> {
+        return listen<VaultDownloadProgress>('vault-download-progress', (event) => {
+            callback(event.payload);
+        });
     },
 
     // ============ Native Integration API ============
@@ -439,6 +523,49 @@ export const api = {
         return listen<NotificationClickEvent>('notification-click', (event) => {
             callback(event.payload);
         });
+    },
+
+    // ============ Plugin/Addon Management API ============
+    // These are stubs for the Secure Browser addon - will be implemented when sidecar is complete
+    async pluginCheckStatus(): Promise<'not_installed' | 'installing' | 'installed' | 'error'> {
+        // TODO: Check if secure browser sidecar is installed
+        // For now, return not_installed as default
+        try {
+            return await invoke<'not_installed' | 'installing' | 'installed' | 'error'>('plugin_check_status');
+        } catch {
+            // Command not implemented yet - return default
+            return 'not_installed';
+        }
+    },
+
+    async pluginInstall(): Promise<void> {
+        // TODO: Download and install secure browser sidecar
+        try {
+            return await invoke('plugin_install');
+        } catch (error) {
+            console.warn('[Plugin] Install command not implemented yet:', error);
+            throw new Error('Secure Browser addon installation is not yet available');
+        }
+    },
+
+    async pluginUninstall(): Promise<void> {
+        // TODO: Remove secure browser sidecar
+        try {
+            return await invoke('plugin_uninstall');
+        } catch (error) {
+            console.warn('[Plugin] Uninstall command not implemented yet:', error);
+            throw new Error('Secure Browser addon uninstallation is not yet available');
+        }
+    },
+
+    async pluginReinstall(): Promise<void> {
+        // TODO: Reinstall secure browser sidecar
+        try {
+            return await invoke('plugin_reinstall');
+        } catch (error) {
+            console.warn('[Plugin] Reinstall command not implemented yet:', error);
+            throw new Error('Secure Browser addon reinstallation is not yet available');
+        }
     },
 };
 

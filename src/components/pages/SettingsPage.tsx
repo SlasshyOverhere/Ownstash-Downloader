@@ -15,7 +15,8 @@ import {
     Sparkles,
     Cloud,
     Upload,
-    HardDrive
+    HardDrive,
+    CloudCog
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { staggerContainer, staggerItem, fadeInUp } from '@/lib/animations';
@@ -104,13 +105,15 @@ function Toggle({ checked, onChange }: ToggleProps) {
 
 export function SettingsPage() {
     const { user } = useAuth();
-    const { migrateLocalData, isSyncing, storageType } = useData();
+    const { migrateLocalData, isSyncing, storageType, syncWithGDrive } = useData();
     const [downloadPath, setDownloadPath] = useState<string>('Loading...');
     const [embedThumbnails, setEmbedThumbnails] = useState(true);
     const [embedMetadata, setEmbedMetadata] = useState(true);
     const [preferredQuality, setPreferredQuality] = useState('best');
     const [audioFormat, setAudioFormat] = useState('mp3');
     const [audioBitrate, setAudioBitrate] = useState('320');
+    const [minimizeToTray, setMinimizeToTray] = useState(false);
+    const [useSponsorblock, setUseSponsorblock] = useState(true); // Default ON
     const [ytDlpInfo, setYtDlpInfo] = useState<YtDlpInfo | null>(null);
     const [ytDlpLoading, setYtDlpLoading] = useState(true);
     const [ytDlpError, setYtDlpError] = useState<string | null>(null);
@@ -120,6 +123,7 @@ export function SettingsPage() {
     const [updateInstalling, setUpdateInstalling] = useState(false);
     const [appVersion, setAppVersion] = useState('0.1.0');
     const [isMigrating, setIsMigrating] = useState(false);
+    const [isSyncingGDrive, setIsSyncingGDrive] = useState(false);
 
     useEffect(() => {
         loadSettings();
@@ -156,6 +160,12 @@ export function SettingsPage() {
 
             const savedBitrate = await api.getSetting('audio_bitrate');
             if (savedBitrate) setAudioBitrate(savedBitrate);
+
+            const savedMinimizeToTray = await api.getSetting('minimize_to_tray');
+            if (savedMinimizeToTray !== null) setMinimizeToTray(savedMinimizeToTray === 'true');
+
+            const savedSponsorblock = await api.getSetting('use_sponsorblock');
+            if (savedSponsorblock !== null) setUseSponsorblock(savedSponsorblock === 'true');
         } catch (err) {
             console.error('Failed to load settings:', err);
         }
@@ -339,6 +349,19 @@ export function SettingsPage() {
                             />
                         }
                     />
+                    <SettingRow
+                        label="Remove Sponsors (SponsorBlock)"
+                        value="Skip intros, outros & sponsors"
+                        action={
+                            <Toggle
+                                checked={useSponsorblock}
+                                onChange={(checked) => {
+                                    setUseSponsorblock(checked);
+                                    handleSaveSetting('use_sponsorblock', String(checked));
+                                }}
+                            />
+                        }
+                    />
                 </div>
             </SettingSection>
 
@@ -494,6 +517,29 @@ export function SettingsPage() {
                 </div>
             </SettingSection>
 
+            {/* System Settings */}
+            <SettingSection
+                title="System"
+                description="Application behavior and tray options"
+                icon={CloudCog} // Reuse CloudCog or find another icon like Monitor/Power
+            >
+                <div className="space-y-3">
+                    <SettingRow
+                        label="Minimize to System Tray"
+                        value="App stays running in background when closed"
+                        action={
+                            <Toggle
+                                checked={minimizeToTray}
+                                onChange={(checked) => {
+                                    setMinimizeToTray(checked);
+                                    handleSaveSetting('minimize_to_tray', String(checked));
+                                }}
+                            />
+                        }
+                    />
+                </div>
+            </SettingSection>
+
             {/* Cloud Sync */}
             <SettingSection
                 title="Data Storage"
@@ -592,7 +638,8 @@ export function SettingsPage() {
                                     )
                                 }
                             />
-                            <div className="flex gap-2 pt-2">
+                            <div className="flex gap-2 pt-2 flex-wrap">
+                                {/* Upload Local Data Button */}
                                 <button
                                     onClick={async () => {
                                         setIsMigrating(true);
@@ -606,10 +653,10 @@ export function SettingsPage() {
                                             setIsMigrating(false);
                                         }
                                     }}
-                                    disabled={isMigrating || isSyncing}
+                                    disabled={isMigrating || isSyncing || isSyncingGDrive}
                                     className={cn(
                                         "btn-neon text-sm py-2 px-4 flex items-center gap-2",
-                                        (isMigrating || isSyncing) && "opacity-50 cursor-not-allowed"
+                                        (isMigrating || isSyncing || isSyncingGDrive) && "opacity-50 cursor-not-allowed"
                                     )}
                                 >
                                     {isMigrating ? (
@@ -619,10 +666,45 @@ export function SettingsPage() {
                                     )}
                                     {isMigrating ? 'Migrating...' : 'Upload Local Data'}
                                 </button>
+
+                                {/* Full Sync with Google Drive Button */}
+                                <button
+                                    onClick={async () => {
+                                        setIsSyncingGDrive(true);
+                                        try {
+                                            const result = await syncWithGDrive();
+                                            if (result.success) {
+                                                toast.success(`✓ ${result.message}`);
+                                            } else {
+                                                toast.error(result.message);
+                                            }
+                                        } catch (error) {
+                                            toast.error('Sync failed. Please try again.');
+                                            console.error('Sync error:', error);
+                                        } finally {
+                                            setIsSyncingGDrive(false);
+                                        }
+                                    }}
+                                    disabled={isMigrating || isSyncing || isSyncingGDrive}
+                                    className={cn(
+                                        "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium",
+                                        "bg-gradient-to-r from-blue-600 to-cyan-600 text-white",
+                                        "hover:from-blue-500 hover:to-cyan-500 transition-all",
+                                        "shadow-lg shadow-blue-500/20",
+                                        (isMigrating || isSyncing || isSyncingGDrive) && "opacity-50 cursor-not-allowed"
+                                    )}
+                                >
+                                    {isSyncingGDrive ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                        <CloudCog className="w-4 h-4" />
+                                    )}
+                                    {isSyncingGDrive ? 'Syncing...' : 'Sync with Google Drive'}
+                                </button>
                             </div>
                             <p className="text-xs text-muted-foreground">
-                                Upload your existing local downloads and history to the cloud.
-                                This merges data without deleting anything.
+                                <strong>Upload Local Data:</strong> Pushes your local data to Google Drive.<br />
+                                <strong>Sync with Google Drive:</strong> Performs a full two-way sync, merging data from both sources.
                             </p>
                         </div>
                     )}

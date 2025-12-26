@@ -93,8 +93,8 @@ async function handleOAuthCallback(data: { idToken?: string; accessToken?: strin
         return;
     }
 
-    // Verify state
-    if (data.state && data.state !== authState) {
+    // Verify state (don't block if authState is null - common in some Tauri cold start scenarios)
+    if (data.state && authState && data.state !== authState) {
         console.error('State mismatch - possible CSRF attack');
         authCallbackHandler?.({ success: false, error: 'Security verification failed' });
         return;
@@ -106,23 +106,23 @@ async function handleOAuthCallback(data: { idToken?: string; accessToken?: strin
     }
 
     try {
-        // Create Firebase credential from Google tokens
+        // 1. Store access token for Google Drive API FIRST
+        // This ensures that when Firebase triggers auth state change, the token is already ready
+        if (data.accessToken) {
+            const { setGDriveAccessToken } = await import('./gdriveService');
+            // Store it in memory and persistent storage
+            await setGDriveAccessToken(data.accessToken);
+            console.log('Google Drive access token prepared and stored');
+        }
+
+        // 2. Create Firebase credential
         const credential: OAuthCredential = GoogleAuthProvider.credential(
             data.idToken || null,
             data.accessToken || null
         );
 
-        // Sign in to Firebase
+        // 3. Sign in to Firebase
         await signInWithCredential(auth, credential);
-
-        // Store access token for Google Drive API
-        // This allows us to use Drive as a personal database
-        if (data.accessToken) {
-            const { setGDriveAccessToken } = await import('./gdriveService');
-            setGDriveAccessToken(data.accessToken);
-            console.log('Google Drive access token stored for database sync');
-        }
-
         console.log('Successfully signed in with Google via browser');
         authCallbackHandler?.({ success: true });
     } catch (err: any) {

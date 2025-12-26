@@ -24,10 +24,12 @@ import api, {
     generateDownloadId,
     SpotifyMediaInfo,
     SpotifyDownloadRequest,
-    isSpotifyUrl
+    isSpotifyUrl,
+    VaultFile
 } from '@/services/api';
 import { MediaInfoModal, DownloadOptions } from '@/components/MediaInfoModal';
 import { SpotifyInfoModal, SpotifyDownloadOptions } from '@/components/SpotifyInfoModal';
+import { addToVaultIndex, isVaultCloudInitialized } from '@/services/vaultCloudService';
 
 // Platform detection patterns
 const platformPatterns = [
@@ -283,7 +285,9 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
             setError(null);
 
             try {
-                const info = await api.getMediaInfo(targetUrl);
+                // Check if SponsorBlock is enabled (default to true)
+                const useSponsorblock = await api.getSetting('use_sponsorblock');
+                const info = await api.getMediaInfo(targetUrl, useSponsorblock !== 'false');
 
                 // For direct file hosting services, probe for accurate file size
                 const directFilePlatforms = ['googledrive', 'generic', 'onedrive', 'dropbox', 'mega', 'mediafire'];
@@ -367,7 +371,9 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
 
             try {
                 // Fetch media info first
-                const info = await api.getMediaInfo(url);
+                // Check if SponsorBlock is enabled (default to true)
+                const useSponsorblock = await api.getSetting('use_sponsorblock');
+                const info = await api.getMediaInfo(url, useSponsorblock !== 'false');
 
                 // For direct file hosting services, also probe the URL directly for accurate file size
                 const directFilePlatforms = ['googledrive', 'generic', 'onedrive', 'dropbox', 'mega', 'mediafire'];
@@ -413,55 +419,121 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
         try {
             const downloadId = generateDownloadId();
 
-            // Create download record in database
-            const download: DownloadType = {
-                id: downloadId,
-                title: mediaInfo.title,
-                url: url,
-                format: options.audioOnly ? 'mp3' : options.quality,
-                path: downloadPath,
-                timestamp: Date.now(),
-                status: 'downloading',
-                platform: mediaInfo.platform,
-                thumbnail: mediaInfo.thumbnail,
-            };
+            // Check if we should download directly to vault
+            if (options.saveToVault) {
+                // Use direct vault download - encrypts on the fly, no plaintext on disk
+                const vaultRequest = {
+                    id: downloadId,
+                    url: url,
+                    original_name: `${mediaInfo.title}.${options.audioOnly ? options.audioFormat : options.videoFormat}`,
+                    file_type: options.audioOnly ? 'audio' : 'video' as 'video' | 'audio',
+                    thumbnail: mediaInfo.thumbnail,
+                    audio_only: options.audioOnly,
+                    quality: options.quality,
+                    format: options.format,
+                    audio_format: options.audioFormat,
+                    embed_metadata: options.embedMetadata,
+                    use_sponsorblock: options.useSponsorblock,
+                };
 
-            await api.addDownload(download);
+                // Fire and forget - vault download runs in background with progress events
+                api.vaultDirectDownload(vaultRequest)
+                    .then(async (vaultFile: VaultFile) => {
+                        console.log('[HomePage] Vault download completed:', vaultFile);
 
-            // Start the actual download
-            const request: DownloadRequest = {
-                id: downloadId,
-                url: url,
-                output_path: downloadPath,
-                format: options.format,
-                audio_only: options.audioOnly,
-                quality: options.quality,
-                embed_thumbnail: options.embedThumbnail,
-                embed_metadata: options.embedMetadata,
-                download_subtitles: options.downloadSubtitles,
-                audio_quality: options.audioQuality,
-                audio_format: options.audioFormat,
-                video_format: options.videoFormat,
-            };
+                        // Add file to cloud index so it shows in vault UI
+                        if (isVaultCloudInitialized()) {
+                            try {
+                                await addToVaultIndex({
+                                    id: vaultFile.id,
+                                    original_name: vaultFile.original_name,
+                                    encrypted_name: vaultFile.encrypted_name,
+                                    size_bytes: vaultFile.size_bytes,
+                                    added_at: vaultFile.added_at,
+                                    file_type: vaultFile.file_type,
+                                    thumbnail: vaultFile.thumbnail || undefined,
+                                });
+                                console.log('[HomePage] File added to vault cloud index');
+                            } catch (indexErr) {
+                                console.error('[HomePage] Failed to add to cloud index:', indexErr);
+                            }
+                        }
 
-            // Fire and forget - don't await the download completion
-            // The download runs in background and emits progress events
-            api.startDownload(request).catch(err => {
-                console.error('[HomePage] Download error:', err);
-                // Update the download status to failed
-                api.updateDownloadStatus(downloadId, 'failed').catch(() => { });
-            });
+                        toast.success(`🔒 "${vaultFile.original_name}" saved securely to vault!`);
+                    })
+                    .catch(err => {
+                        console.error('[HomePage] Vault download error:', err);
+                        toast.error(`Vault download failed: ${err}`);
+                    });
 
-            // Immediately close modal and navigate
-            setShowModal(false);
-            setUrl('');
-            setMediaInfo(null);
-            toast.success('Download started!');
-            loadStats();
+                // Add to search history (vault downloads also get logged)
+                await api.addSearch(url, mediaInfo.title, mediaInfo.thumbnail);
 
-            // Navigate to downloads tab immediately
-            if (onNavigateToDownloads) {
-                onNavigateToDownloads();
+                // Immediately close modal and show feedback
+                setShowModal(false);
+                setUrl('');
+                setMediaInfo(null);
+                toast.success('🔒 Vault download started! Encrypting directly to vault...');
+                loadStats();
+
+                // Navigate to vault page would be ideal here
+                // For now, just navigate to downloads to see progress
+                if (onNavigateToDownloads) {
+                    onNavigateToDownloads();
+                }
+            } else {
+                // Regular download flow - file saved to download folder
+                // Create download record in database
+                const download: DownloadType = {
+                    id: downloadId,
+                    title: mediaInfo.title,
+                    url: url,
+                    format: options.audioOnly ? 'mp3' : options.quality,
+                    path: downloadPath,
+                    timestamp: Date.now(),
+                    status: 'downloading',
+                    platform: mediaInfo.platform,
+                    thumbnail: mediaInfo.thumbnail,
+                };
+
+                await api.addDownload(download);
+
+                // Start the actual download
+                const request: DownloadRequest = {
+                    id: downloadId,
+                    url: url,
+                    output_path: downloadPath,
+                    format: options.format,
+                    audio_only: options.audioOnly,
+                    quality: options.quality,
+                    embed_thumbnail: options.embedThumbnail,
+                    embed_metadata: options.embedMetadata,
+                    download_subtitles: options.downloadSubtitles,
+                    audio_quality: options.audioQuality,
+                    audio_format: options.audioFormat,
+                    video_format: options.videoFormat,
+                    use_sponsorblock: options.useSponsorblock,
+                };
+
+                // Fire and forget - don't await the download completion
+                // The download runs in background and emits progress events
+                api.startDownload(request).catch(err => {
+                    console.error('[HomePage] Download error:', err);
+                    // Update the download status to failed
+                    api.updateDownloadStatus(downloadId, 'failed').catch(() => { });
+                });
+
+                // Immediately close modal and navigate
+                setShowModal(false);
+                setUrl('');
+                setMediaInfo(null);
+                toast.success('Download started!');
+                loadStats();
+
+                // Navigate to downloads tab immediately
+                if (onNavigateToDownloads) {
+                    onNavigateToDownloads();
+                }
             }
         } catch (err) {
             const errorMsg = err instanceof Error ? err.message : 'Failed to start download';

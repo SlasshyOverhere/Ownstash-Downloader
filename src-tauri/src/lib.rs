@@ -15,12 +15,16 @@ mod updater;
 mod watchdog;
 mod media_server;
 mod vault;
+mod vault_download;
 mod native_integration;
+mod secure_storage;
 
 use commands::AppState;
 use database::Database;
 use std::sync::Mutex;
-use tauri::{Emitter, Listener, Manager};
+use tauri::{Emitter, Listener, Manager, WindowEvent};
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::TrayIconBuilder;
 
 pub fn run() {
     tauri::Builder::default()
@@ -125,7 +129,63 @@ pub fn run() {
                 }
             });
 
+            // === System Tray Setup ===
+            let quit_i = MenuItem::with_id(app.handle(), "quit", "Quit", true, None::<&str>).unwrap();
+            let show_i = MenuItem::with_id(app.handle(), "show", "Show", true, None::<&str>).unwrap();
+            let hide_i = MenuItem::with_id(app.handle(), "hide", "Hide", true, None::<&str>).unwrap();
+            let menu = Menu::with_items(app.handle(), &[&show_i, &hide_i, &quit_i]).unwrap();
+
+            let _tray = TrayIconBuilder::new()
+                .menu(&menu)
+                .icon(app.default_window_icon().unwrap().clone())
+                .on_menu_event(|app, event| {
+                    match event.id.as_ref() {
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "hide" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.hide();
+                            }
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                let app_state = window.state::<AppState>();
+                let should_minimize = if let Ok(db) = app_state.db.lock() {
+                    db.get_setting("minimize_to_tray")
+                        .unwrap_or(Some("false".to_string())) // Default to false if error/missing
+                        .unwrap_or("false".to_string()) == "true"
+                } else {
+                    false
+                };
+
+                if should_minimize {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             // Download commands
@@ -182,6 +242,12 @@ pub fn run() {
             vault::vault_delete_file,
             vault::vault_change_pin,
             vault::vault_reset,
+            vault::vault_get_config,
+            vault::vault_import_config,
+            vault::vault_wipe_local_config,
+            // Vault direct download commands
+            vault_download::vault_direct_download,
+            vault_download::vault_cancel_download,
             // Native integration commands
             native_integration::update_taskbar_progress,
             native_integration::clear_taskbar_progress,
@@ -190,6 +256,10 @@ pub fn run() {
             native_integration::notify_download_failed,
             native_integration::check_notification_permission,
             native_integration::request_notification_permission,
+            // Secure storage commands
+            secure_storage::secure_save_setting,
+            secure_storage::secure_get_setting,
+            secure_storage::secure_delete_setting,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

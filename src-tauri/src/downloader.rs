@@ -46,6 +46,7 @@ pub struct DownloadRequest {
     pub audio_quality: String,
     pub audio_format: String,
     pub video_format: String,
+    pub use_sponsorblock: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -61,6 +62,14 @@ pub struct MediaInfo {
     pub like_count: Option<i64>,
     pub upload_date: Option<String>,
     pub webpage_url: Option<String>,
+    pub chapters: Option<Vec<Chapter>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Chapter {
+    pub start_time: f64,
+    pub end_time: f64,
+    pub title: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -239,14 +248,22 @@ impl Downloader {
         })
     }
 
-    pub async fn get_media_info(&self, url: &str) -> Result<MediaInfo, String> {
+    pub async fn get_media_info(&self, url: &str, check_sponsorblock: bool) -> Result<MediaInfo, String> {
+        let mut args = vec![
+            "-j".to_string(),
+            "--no-playlist".to_string(),
+            "--no-warnings".to_string(),
+        ];
+
+        if check_sponsorblock {
+            args.push("--sponsorblock-mark".to_string());
+            args.push("all".to_string());
+        }
+
+        args.push(url.to_string());
+
         let output = Self::create_hidden_command(&self.yt_dlp_path)
-            .args([
-                "-j",
-                "--no-playlist",
-                "--no-warnings",
-                url,
-            ])
+            .args(&args)
             .output()
             .await
             .map_err(|e| format!("Failed to execute yt-dlp: {}", e))?;
@@ -311,6 +328,13 @@ impl Downloader {
             like_count: json["like_count"].as_i64(),
             upload_date: json["upload_date"].as_str().map(|s| s.to_string()),
             webpage_url: json["webpage_url"].as_str().map(|s| s.to_string()),
+            chapters: json["chapters"].as_array().map(|arr| {
+                arr.iter().map(|c| Chapter {
+                    start_time: c["start_time"].as_f64().unwrap_or(0.0),
+                    end_time: c["end_time"].as_f64().unwrap_or(0.0),
+                    title: c["title"].as_str().unwrap_or("").to_string(),
+                }).collect()
+            }),
         })
     }
 
@@ -492,6 +516,12 @@ impl Downloader {
             args.push("--embed-subs".to_string());
             args.push("--sub-langs".to_string());
             args.push("en,en-US,en-GB".to_string()); // Try multiple English variants
+        }
+
+        // SponsorBlock
+        if request.use_sponsorblock {
+            args.push("--sponsorblock-remove".to_string());
+            args.push("all".to_string());
         }
 
         // Add URL
@@ -728,9 +758,9 @@ pub async fn check_yt_dlp(app_handle: AppHandle) -> Result<YtDlpInfo, String> {
 }
 
 #[tauri::command]
-pub async fn get_media_info(app_handle: AppHandle, url: String) -> Result<MediaInfo, String> {
+pub async fn get_media_info(app_handle: AppHandle, url: String, enable_sponsorblock: Option<bool>) -> Result<MediaInfo, String> {
     let downloader = Downloader::new(&app_handle);
-    downloader.get_media_info(&url).await
+    downloader.get_media_info(&url, enable_sponsorblock.unwrap_or(false)).await
 }
 
 /// Probe a direct file URL to get size and filename without using yt-dlp

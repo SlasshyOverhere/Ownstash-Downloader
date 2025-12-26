@@ -18,7 +18,7 @@ use tauri::{AppHandle, Manager};
 
 const VAULT_DIR_NAME: &str = "vault";
 const VAULT_CONFIG_FILE: &str = "vault_config.json";
-const ENCRYPTED_EXTENSION: &str = ".vault";
+pub const ENCRYPTED_EXTENSION: &str = ".vault";
 const NONCE_SIZE: usize = 12;
 const KEY_SIZE: usize = 32;
 
@@ -60,7 +60,8 @@ struct VaultSession {
 }
 
 /// Helper to get the vault key without holding the MutexGuard across await points
-fn get_vault_key() -> Result<[u8; KEY_SIZE], String> {
+/// Made public for vault_download module
+pub fn get_vault_key() -> Result<[u8; KEY_SIZE], String> {
     let session = VAULT_SESSION.lock().unwrap();
     match &*session {
         Some(s) => Ok(s.key),
@@ -84,6 +85,11 @@ fn get_vault_files_dir(app_handle: &AppHandle) -> PathBuf {
     get_vault_dir(app_handle).join("files")
 }
 
+// NOTE: Local index.json is NO LONGER USED
+// The vault index is now stored ONLY in Google Drive (encrypted with PIN)
+// This eliminates the security weakness of having file names visible locally
+// fn get_vault_index_path is kept for migration purposes only
+#[allow(dead_code)]
 fn get_vault_index_path(app_handle: &AppHandle) -> PathBuf {
     get_vault_dir(app_handle).join("index.json")
 }
@@ -120,49 +126,61 @@ fn save_vault_config(app_handle: &AppHandle, config: &VaultConfig) -> Result<(),
     Ok(())
 }
 
-fn load_vault_index(app_handle: &AppHandle) -> Vec<VaultFile> {
+// ============ CLOUD-ONLY INDEX ============
+// The vault index is now stored ONLY in Google Drive (encrypted with user's PIN)
+// These legacy functions are kept for migration but marked as deprecated
+
+/// DEPRECATED: Load vault index from local file
+/// The index is now managed by the frontend via encrypted Google Drive
+#[allow(dead_code)]
+fn load_vault_index_legacy(app_handle: &AppHandle) -> Vec<VaultFile> {
     let index_path = get_vault_index_path(app_handle);
-    println!("[Vault] load_vault_index from: {:?}", index_path);
+    println!("[Vault] LEGACY load_vault_index from: {:?}", index_path);
     
     if !index_path.exists() {
-        println!("[Vault] Index file does not exist, returning empty");
         return Vec::new();
     }
 
     let content = match fs::read_to_string(&index_path) {
-        Ok(c) => {
-            println!("[Vault] Read index file, {} bytes", c.len());
-            c
-        },
-        Err(e) => {
-            println!("[Vault] ERROR reading index: {}", e);
-            return Vec::new();
-        }
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
     };
 
-    match serde_json::from_str::<Vec<VaultFile>>(&content) {
-        Ok(files) => {
-            println!("[Vault] Parsed {} files from index", files.len());
-            files
-        }
-        Err(e) => {
-            println!("[Vault] ERROR parsing index JSON: {}", e);
-            Vec::new()
-        }
-    }
+    serde_json::from_str::<Vec<VaultFile>>(&content).unwrap_or_default()
 }
 
-fn save_vault_index(app_handle: &AppHandle, files: &[VaultFile]) -> Result<(), String> {
+/// Count encrypted files in vault directory (for status without index)
+fn count_vault_files(app_handle: &AppHandle) -> (usize, u64) {
+    let files_dir = get_vault_files_dir(app_handle);
+    if !files_dir.exists() {
+        return (0, 0);
+    }
+
+    let mut count = 0;
+    let mut total_size: u64 = 0;
+
+    if let Ok(entries) = fs::read_dir(&files_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().map_or(false, |ext| ext == "vault") {
+                count += 1;
+                if let Ok(meta) = fs::metadata(&path) {
+                    total_size += meta.len();
+                }
+            }
+        }
+    }
+
+    (count, total_size)
+}
+
+/// Delete local index.json if it exists (for security migration)
+fn delete_local_index(app_handle: &AppHandle) {
     let index_path = get_vault_index_path(app_handle);
-    println!("[Vault] save_vault_index: saving {} files to {:?}", files.len(), index_path);
-    
-    let content = serde_json::to_string_pretty(files)
-        .map_err(|e| format!("Failed to serialize index: {}", e))?;
-    fs::write(&index_path, &content)
-        .map_err(|e| format!("Failed to write index: {}", e))?;
-    
-    println!("[Vault] Index saved successfully, {} bytes", content.len());
-    Ok(())
+    if index_path.exists() {
+        println!("[Vault] Deleting local index.json for security");
+        let _ = fs::remove_file(&index_path);
+    }
 }
 
 fn encrypt_file(key: &[u8; KEY_SIZE], input_path: &PathBuf, output_path: &PathBuf) -> Result<(), String> {
@@ -344,6 +362,8 @@ fn decrypt_file(key: &[u8; KEY_SIZE], input_path: &PathBuf, output_path: &PathBu
 // ============ Tauri Commands ============
 
 /// Check if vault is set up
+/// NOTE: file_count and total_size_bytes are now estimated from .vault files on disk
+/// The actual file metadata is stored in encrypted Google Drive index
 #[tauri::command]
 pub fn vault_get_status(app_handle: AppHandle) -> VaultStatus {
     let config = load_vault_config(&app_handle);
@@ -353,13 +373,22 @@ pub fn vault_get_status(app_handle: AppHandle) -> VaultStatus {
     let is_unlocked = session.is_some();
     drop(session);
 
-    let files = if is_setup { load_vault_index(&app_handle) } else { Vec::new() };
-    let total_size_bytes = files.iter().map(|f| f.size_bytes).sum();
+    // Count files from disk (encrypted size, not original)
+    let (file_count, total_size_bytes) = if is_setup {
+        count_vault_files(&app_handle)
+    } else {
+        (0, 0)
+    };
+
+    // Delete any legacy local index for security
+    if is_setup {
+        delete_local_index(&app_handle);
+    }
 
     VaultStatus {
         is_setup,
         is_unlocked,
-        file_count: files.len(),
+        file_count,
         total_size_bytes,
     }
 }
@@ -399,8 +428,8 @@ pub fn vault_setup(app_handle: AppHandle, pin: String) -> Result<(), String> {
     // Save config
     save_vault_config(&app_handle, &config)?;
 
-    // Initialize empty index
-    save_vault_index(&app_handle, &[])?;
+    // NOTE: We no longer create local index.json
+    // The vault index is managed by the frontend via encrypted Google Drive
 
     // Unlock the vault immediately after setup
     let salt_bytes = salt.as_str().as_bytes();
@@ -504,10 +533,9 @@ pub async fn vault_add_file(
         thumbnail,
     };
 
-    // Update index
-    let mut files = load_vault_index(&app_handle);
-    files.push(vault_file.clone());
-    save_vault_index(&app_handle, &files)?;
+    // NOTE: We no longer save to local index.json
+    // The frontend will add this file to the encrypted Google Drive index
+    println!("[Vault] File encrypted successfully: {}", vault_file.id);
 
     // Optionally delete original
     if delete_original {
@@ -518,9 +546,11 @@ pub async fn vault_add_file(
 }
 
 /// List all files in the vault
+/// NOTE: This now returns an empty list - file metadata is managed by frontend via Google Drive
+/// This function is kept for API compatibility
 #[tauri::command]
 pub fn vault_list_files(app_handle: AppHandle) -> Result<Vec<VaultFile>, String> {
-    println!("[Vault] vault_list_files called");
+    println!("[Vault] vault_list_files called (cloud-only mode)");
     
     let session = VAULT_SESSION.lock().unwrap();
     if session.is_none() {
@@ -529,37 +559,36 @@ pub fn vault_list_files(app_handle: AppHandle) -> Result<Vec<VaultFile>, String>
     }
     drop(session);
 
-    let files = load_vault_index(&app_handle);
-    println!("[Vault] vault_list_files returning {} files", files.len());
-    for (i, file) in files.iter().enumerate() {
-        println!("[Vault]   File {}: id={}, name={}", i, file.id, file.original_name);
-    }
-    
-    Ok(files)
+    // Return empty - the frontend manages the index via encrypted Google Drive
+    // This prevents any file metadata from being stored locally
+    println!("[Vault] Returning empty list (index is cloud-only)");
+    Ok(Vec::new())
 }
 
 /// Export/decrypt a file from the vault to a destination
+/// NOTE: encrypted_name and original_name are now passed from frontend (cloud index)
 #[tauri::command]
 pub async fn vault_export_file(
     app_handle: AppHandle,
     file_id: String,
+    encrypted_name: String,
+    original_name: String,
     destination_path: String,
 ) -> Result<String, String> {
-    // Get the decryption key (this doesn't hold the lock across await points)
+    // Get the decryption key
     let key = get_vault_key()?;
 
-    let files = load_vault_index(&app_handle);
-    let vault_file = files.iter()
-        .find(|f| f.id == file_id)
-        .ok_or("File not found in vault")?;
+    let encrypted_path = get_vault_files_dir(&app_handle).join(&encrypted_name);
+    let dest_path = PathBuf::from(&destination_path).join(&original_name);
 
-    let encrypted_path = get_vault_files_dir(&app_handle).join(&vault_file.encrypted_name);
-    let dest_path = PathBuf::from(&destination_path).join(&vault_file.original_name);
+    if !encrypted_path.exists() {
+        return Err(format!("Encrypted file not found: {}", file_id));
+    }
 
     // Decrypt in background thread to avoid blocking UI
     let enc_clone = encrypted_path.clone();
     let dest_clone = dest_path.clone();
-    let key_copy = key; // Copy the key for the closure
+    let key_copy = key;
     tokio::task::spawn_blocking(move || {
         decrypt_file(&key_copy, &enc_clone, &dest_clone)
     })
@@ -571,32 +600,34 @@ pub async fn vault_export_file(
 }
 
 /// Get a temporary decrypted path for playback (auto-deleted later)
+/// NOTE: encrypted_name and original_name are now passed from frontend (cloud index)
 #[tauri::command]
 pub async fn vault_get_temp_playback_path(
     app_handle: AppHandle,
     file_id: String,
+    encrypted_name: String,
+    original_name: String,
 ) -> Result<String, String> {
-    // Get the decryption key (this doesn't hold the lock across await points)
+    // Get the decryption key
     let key = get_vault_key()?;
 
-    let files = load_vault_index(&app_handle);
-    let vault_file = files.iter()
-        .find(|f| f.id == file_id)
-        .ok_or("File not found in vault")?;
-
-    let encrypted_path = get_vault_files_dir(&app_handle).join(&vault_file.encrypted_name);
+    let encrypted_path = get_vault_files_dir(&app_handle).join(&encrypted_name);
+    
+    if !encrypted_path.exists() {
+        return Err(format!("Encrypted file not found: {}", file_id));
+    }
     
     // Create temp directory inside vault (more secure than system temp)
     let temp_dir = get_vault_dir(&app_handle).join("temp");
     fs::create_dir_all(&temp_dir)
         .map_err(|e| format!("Failed to create temp directory: {}", e))?;
     
-    let temp_path = temp_dir.join(&vault_file.original_name);
+    let temp_path = temp_dir.join(&original_name);
 
     // Decrypt in background thread to avoid blocking UI
     let enc_clone = encrypted_path.clone();
     let temp_clone = temp_path.clone();
-    let key_copy = key; // Copy the key for the closure
+    let key_copy = key;
     tokio::task::spawn_blocking(move || {
         decrypt_file(&key_copy, &enc_clone, &temp_clone)
     })
@@ -618,7 +649,8 @@ pub fn vault_cleanup_temp(app_handle: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Delete a file from the vault
+/// Delete a file from the vault by its encrypted filename
+/// NOTE: The frontend now passes the encrypted_name directly since it manages the index
 #[tauri::command]
 pub fn vault_delete_file(app_handle: AppHandle, file_id: String) -> Result<(), String> {
     let session = VAULT_SESSION.lock().unwrap();
@@ -627,23 +659,20 @@ pub fn vault_delete_file(app_handle: AppHandle, file_id: String) -> Result<(), S
     }
     drop(session);
 
-    let mut files = load_vault_index(&app_handle);
-    let file_idx = files.iter()
-        .position(|f| f.id == file_id)
-        .ok_or("File not found in vault")?;
-
-    let vault_file = files.remove(file_idx);
-    let encrypted_path = get_vault_files_dir(&app_handle).join(&vault_file.encrypted_name);
+    // The file_id is now the UUID, construct the encrypted filename
+    let encrypted_name = format!("{}.vault", file_id);
+    let encrypted_path = get_vault_files_dir(&app_handle).join(&encrypted_name);
 
     // Delete encrypted file
     if encrypted_path.exists() {
         fs::remove_file(&encrypted_path)
             .map_err(|e| format!("Failed to delete file: {}", e))?;
+        println!("[Vault] Deleted encrypted file: {}", encrypted_name);
+    } else {
+        println!("[Vault] Warning: Encrypted file not found: {}", encrypted_name);
     }
 
-    // Update index
-    save_vault_index(&app_handle, &files)?;
-
+    // NOTE: We no longer update local index - frontend manages via Google Drive
     Ok(())
 }
 
@@ -669,8 +698,23 @@ pub fn vault_change_pin(
         .verify_password(current_pin.as_bytes(), &parsed_hash)
         .map_err(|_| "Current PIN is incorrect".to_string())?;
 
-    // Get all files
-    let files = load_vault_index(&app_handle);
+    // Scan vault directory for .vault files (no local index)
+    let files_dir = get_vault_files_dir(&app_handle);
+    let mut vault_files: Vec<String> = Vec::new();
+    
+    if files_dir.exists() {
+        if let Ok(entries) = fs::read_dir(&files_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().map_or(false, |ext| ext == "vault") {
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        vault_files.push(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+
     let current_key = derive_key_from_pin(&current_pin, config.salt.as_bytes());
 
     // Generate new salt and hash
@@ -688,10 +732,11 @@ pub fn vault_change_pin(
     fs::create_dir_all(&temp_dir)
         .map_err(|e| format!("Failed to create temp dir: {}", e))?;
 
-    for file in &files {
-        let encrypted_path = get_vault_files_dir(&app_handle).join(&file.encrypted_name);
-        let temp_decrypted = temp_dir.join(&file.id);
-        let temp_reencrypted = temp_dir.join(format!("{}_new", file.id));
+    for encrypted_name in &vault_files {
+        let encrypted_path = files_dir.join(encrypted_name);
+        let file_id = encrypted_name.trim_end_matches(".vault");
+        let temp_decrypted = temp_dir.join(file_id);
+        let temp_reencrypted = temp_dir.join(format!("{}_new", file_id));
 
         // Decrypt with old key
         decrypt_file(&current_key, &encrypted_path, &temp_decrypted)?;
@@ -755,5 +800,29 @@ pub fn vault_reset(app_handle: AppHandle, pin: String) -> Result<(), String> {
             .map_err(|e| format!("Failed to reset vault: {}", e))?;
     }
 
+    Ok(())
+}
+
+/// Export the local vault configuration (hash and salt) for cloud sync
+#[tauri::command]
+pub fn vault_get_config(app_handle: AppHandle) -> Result<VaultConfig, String> {
+    load_vault_config(&app_handle).ok_or("Vault is not set up".to_string())
+}
+
+/// Import a vault configuration from the cloud
+#[tauri::command]
+pub fn vault_import_config(app_handle: AppHandle, config: VaultConfig) -> Result<(), String> {
+    save_vault_config(&app_handle, &config)
+}
+
+/// Wipe the local vault configuration without deleting files
+#[tauri::command]
+pub fn vault_wipe_local_config(app_handle: AppHandle) -> Result<(), String> {
+    let config_path = get_vault_config_path(&app_handle);
+    if config_path.exists() {
+        std::fs::remove_file(config_path).map_err(|e| e.to_string())?;
+    }
+    let mut session = VAULT_SESSION.lock().unwrap();
+    *session = None;
     Ok(())
 }

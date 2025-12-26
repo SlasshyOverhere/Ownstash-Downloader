@@ -12,7 +12,8 @@ import {
     Cloud,
     CloudOff,
     Loader2,
-    Shield
+    Shield,
+    HardDrive
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { sidebarVariants, sidebarItemText } from '@/lib/animations';
@@ -37,7 +38,7 @@ const navItems = [
 export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarProps) {
     const [isExpanded, setIsExpanded] = useState(true);
     const { user, signOut } = useAuth();
-    const { isSyncing } = useData();
+    const { isSyncing, storageType } = useData();
     const [isSigningOut, setIsSigningOut] = useState(false);
 
     const handleSignOut = async () => {
@@ -151,10 +152,15 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
                                             <Loader2 className="w-3 h-3 text-white/60 animate-spin" />
                                             <span className="text-white/60">Syncing...</span>
                                         </>
+                                    ) : storageType === 'gdrive' ? (
+                                        <>
+                                            <Cloud className="w-3 h-3 text-green-400" />
+                                            <span className="text-green-400">Drive Synced</span>
+                                        </>
                                     ) : (
                                         <>
-                                            <Cloud className="w-3 h-3 text-white" />
-                                            <span className="text-white/80">Cloud Synced</span>
+                                            <HardDrive className="w-3 h-3 text-yellow-400" />
+                                            <span className="text-yellow-400">Local Only</span>
                                         </>
                                     )}
                                 </div>

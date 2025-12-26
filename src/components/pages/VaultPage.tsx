@@ -31,10 +31,21 @@ import api, { VaultStatus, VaultFile, formatBytes } from '@/services/api';
 import { MediaPlayer } from '@/components/MediaPlayer';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
-    saveVaultIndexToGDrive,
     loadVaultIndexFromGDrive,
-    isGDriveAvailable
+    isGDriveAvailable,
+    VaultFileEntry
 } from '@/services/gdriveService';
+import {
+    isVaultSetup,
+    setupVaultCloud,
+    unlockVaultCloud,
+    lockVaultCloud,
+    changeVaultPin,
+    resetVaultCloud,
+    addToVaultIndex,
+    removeFromVaultIndex,
+    isVaultCloudInitialized
+} from '@/services/vaultCloudService';
 
 // Player preference types
 type PlayerPreference = 'internal' | 'external' | 'ask';
@@ -151,42 +162,47 @@ export function VaultPage() {
     const [showPlayChoice, setShowPlayChoice] = useState(false);
     const [pendingPlayFile, setPendingPlayFile] = useState<VaultFile | null>(null);
 
-    // Google Drive cloud sync
-    const [cloudSyncing, setCloudSyncing] = useState(false);
     const vaultPinRef = useRef<string>(''); // Store PIN for cloud sync (in memory only)
 
     // Sync vault index to Google Drive (encrypted with PIN)
-    const syncToGDrive = useCallback(async (vaultFiles: VaultFile[]) => {
-        if (!isGDriveAvailable() || !vaultPinRef.current) {
-            return;
-        }
 
-        try {
-            setCloudSyncing(true);
-            await saveVaultIndexToGDrive(vaultFiles, vaultPinRef.current);
-            console.log('[Vault] Synced to Google Drive (encrypted)');
-        } catch (e) {
-            console.error('[Vault] Cloud sync failed:', e);
-            // Don't show error toast - silent background sync
-        } finally {
-            setCloudSyncing(false);
-        }
-    }, []);
 
     const loadStatus = useCallback(async () => {
         try {
             console.log('[Vault] Loading status...');
-            const vaultStatus = await api.vaultGetStatus();
-            console.log('[Vault] Status received:', JSON.stringify(vaultStatus, null, 2));
-            setStatus(vaultStatus);
 
-            if (!vaultStatus.is_setup) {
-                setMode('setup');
-            } else if (!vaultStatus.is_unlocked) {
-                setMode('locked');
+            // Check cloud status first (primary source of truth)
+            if (isGDriveAvailable()) {
+                const cloudSetup = await isVaultSetup();
+                console.log('[Vault] Cloud vault setup:', cloudSetup);
+
+                if (!cloudSetup) {
+                    setMode('setup');
+                    setLoading(false);
+                    return;
+                }
+
+                // Vault is set up in cloud - check if unlocked
+                if (isVaultCloudInitialized()) {
+                    setMode('unlocked');
+                    await loadFiles();
+                } else {
+                    setMode('locked');
+                }
+
+                // Get file count from disk for status display
+                const localStatus = await api.vaultGetStatus();
+                setStatus({
+                    is_setup: true,
+                    is_unlocked: isVaultCloudInitialized(),
+                    file_count: localStatus.file_count,
+                    total_size_bytes: localStatus.total_size_bytes
+                });
             } else {
-                setMode('unlocked');
-                await loadFiles();
+                // No GDrive - can't use vault in cloud-only mode
+                console.warn('[Vault] Google Drive not available - vault requires cloud');
+                setMode('setup');
+                toast.error('Vault requires Google Drive. Please sign in.');
             }
         } catch (err) {
             console.error('Failed to load vault status:', err);
@@ -198,13 +214,32 @@ export function VaultPage() {
 
     const loadFiles = async () => {
         try {
-            const vaultFiles = await api.vaultListFiles();
-            if (!vaultFiles || !Array.isArray(vaultFiles)) {
-                return;
+            // Cloud-only mode: Load vault index from Google Drive
+            if (isGDriveAvailable() && vaultPinRef.current) {
+                console.log('[Vault] Loading files from Google Drive (cloud-only mode)');
+                const cloudFiles = await loadVaultIndexFromGDrive(vaultPinRef.current);
+                if (cloudFiles && Array.isArray(cloudFiles)) {
+                    // Convert VaultFileEntry to VaultFile format
+                    const vaultFiles = cloudFiles.map((f: VaultFileEntry) => ({
+                        id: f.id,
+                        original_name: f.original_name,
+                        encrypted_name: f.encrypted_name,
+                        size_bytes: f.size_bytes,
+                        added_at: f.added_at,
+                        file_type: f.file_type,
+                        thumbnail: f.thumbnail
+                    }));
+                    setFiles(vaultFiles);
+                    console.log('[Vault] Loaded', vaultFiles.length, 'files from cloud');
+                    return;
+                }
             }
-            setFiles(vaultFiles);
+            // Fallback: empty list (no local index in cloud-only mode)
+            console.log('[Vault] No cloud files or GDrive unavailable');
+            setFiles([]);
         } catch (err) {
             console.error('[Vault] Failed to load vault files:', err);
+            setFiles([]);
         }
     };
 
@@ -302,10 +337,17 @@ export function VaultPage() {
             return;
         }
 
+        if (!isGDriveAvailable()) {
+            setPinError('Google Drive required. Please sign in first.');
+            return;
+        }
+
         try {
             setLoading(true);
             setPinError('');
-            await api.vaultSetup(pin);
+
+            // Use cloud service for setup (stores PIN hash in GDrive, not locally)
+            await setupVaultCloud(pin);
 
             // Store PIN for cloud sync (in memory only)
             vaultPinRef.current = pin;
@@ -314,9 +356,6 @@ export function VaultPage() {
             setPin('');
             setConfirmPin('');
             await loadStatus();
-
-            // Sync empty vault to cloud
-            syncToGDrive([]);
         } catch (err) {
             const msg = err instanceof Error ? err.message : 'Failed to setup vault';
             setPinError(msg);
@@ -335,30 +374,51 @@ export function VaultPage() {
             return;
         }
 
+        if (!isGDriveAvailable()) {
+            setPinError('Google Drive required. Please sign in.');
+            return;
+        }
+
         try {
             setLoading(true);
             setPinError('');
-            await api.vaultUnlock(pinToUse);
+
+            // Use cloud service for unlock (verifies against cloud PIN hash)
+            const cloudFiles = await unlockVaultCloud(pinToUse);
 
             // Store PIN for cloud sync (in memory only)
             vaultPinRef.current = pinToUse;
 
             toast.success('Vault unlocked!');
             setPin('');
-            await loadStatus();
 
-            // Try to load vault index from cloud if available
-            if (isGDriveAvailable()) {
-                try {
-                    const cloudVault = await loadVaultIndexFromGDrive(pinToUse);
-                    if (cloudVault && cloudVault.length > 0) {
-                        console.log('[Vault] Found cloud vault with', cloudVault.length, 'entries');
-                        // For now, just log - merge logic could be added later
-                    }
-                } catch (e) {
-                    console.log('[Vault] No cloud vault or wrong PIN');
-                }
+            // Set files from cloud unlock response
+            if (cloudFiles && cloudFiles.length > 0) {
+                const vaultFiles = cloudFiles.map((f: VaultFileEntry) => ({
+                    id: f.id,
+                    original_name: f.original_name,
+                    encrypted_name: f.encrypted_name,
+                    size_bytes: f.size_bytes,
+                    added_at: f.added_at,
+                    file_type: f.file_type,
+                    thumbnail: f.thumbnail
+                }));
+                setFiles(vaultFiles);
+                console.log('[Vault] Loaded', vaultFiles.length, 'files from cloud');
+            } else {
+                setFiles([]);
             }
+
+            setMode('unlocked');
+
+            // Update status with local file count
+            const localStatus = await api.vaultGetStatus();
+            setStatus({
+                is_setup: true,
+                is_unlocked: true,
+                file_count: localStatus.file_count,
+                total_size_bytes: localStatus.total_size_bytes
+            });
         } catch (err) {
             const msg = err instanceof Error ? err.message : 'Invalid PIN';
             setPinError(msg);
@@ -369,6 +429,8 @@ export function VaultPage() {
 
     const handleLock = async () => {
         try {
+            // Lock both cloud service and backend
+            lockVaultCloud();
             await api.vaultLock();
             await api.vaultCleanupTemp();
 
@@ -377,6 +439,7 @@ export function VaultPage() {
 
             setFiles([]);
             setMode('locked');
+            setLoading(false);
             toast.success('Vault locked');
         } catch (err) {
             toast.error('Failed to lock vault');
@@ -408,28 +471,31 @@ export function VaultPage() {
             console.log('[Vault] File added successfully:', addedFile);
             toast.success('File added to vault!');
 
-            // Optimistic update first for immediate UI feedback
+            // Update state and sync to cloud via service
+            const newFileEntry: VaultFileEntry = {
+                id: addedFile.id,
+                original_name: addedFile.original_name,
+                encrypted_name: addedFile.encrypted_name,
+                size_bytes: addedFile.size_bytes,
+                added_at: addedFile.added_at,
+                file_type: addedFile.file_type,
+                thumbnail: addedFile.thumbnail
+            };
+
+            await addToVaultIndex(newFileEntry);
+
+            // Update local state for immediate feedback
+            // Convert to VaultFile (same structure roughly, but type safety)
+            const newFile: VaultFile = {
+                ...newFileEntry
+            };
+
             setFiles(prev => {
-                // Check if file already exists (prevent duplicates)
-                if (prev.some(f => f.id === addedFile.id)) {
-                    return prev;
-                }
-                const updatedFiles = [...prev, addedFile];
-                // Sync to cloud in background
-                syncToGDrive(updatedFiles);
-                return updatedFiles;
+                if (prev.some(f => f.id === newFile.id)) return prev;
+                return [...prev, newFile];
             });
 
-            // Then force a backend reload after a short delay to ensure consistency
-            // This catches any edge cases where the optimistic update failed
-            setTimeout(async () => {
-                try {
-                    console.log('[Vault] Verifying file list from backend...');
-                    await loadFiles();
-                } catch (e) {
-                    console.error('[Vault] Failed to verify files:', e);
-                }
-            }, 500);
+            console.log('[Vault] Cloud sync completed for new file via service');
         } catch (err) {
             console.error('[Vault] Failed to add file:', err);
             const msg = typeof err === 'string' ? err : (err instanceof Error ? err.message : String(err));
@@ -456,7 +522,11 @@ export function VaultPage() {
     const playWithExternalPlayer = async (file: VaultFile) => {
         try {
             toast.info('Decrypting for playback...');
-            const tempPath = await api.vaultGetTempPlaybackPath(file.id);
+            const tempPath = await api.vaultGetTempPlaybackPath(
+                file.id,
+                file.encrypted_name,
+                file.original_name
+            );
 
             toast.info('Opening in external player...');
             await api.openWithExternalPlayer(
@@ -474,7 +544,11 @@ export function VaultPage() {
     const playWithInternalPlayer = async (file: VaultFile) => {
         try {
             toast.info('Decrypting for playback...');
-            const tempPath = await api.vaultGetTempPlaybackPath(file.id);
+            const tempPath = await api.vaultGetTempPlaybackPath(
+                file.id,
+                file.encrypted_name,
+                file.original_name
+            );
 
             // Check if format needs transcoding for web playback
             const extension = file.original_name.split('.').pop()?.toLowerCase() || '';
@@ -538,7 +612,12 @@ export function VaultPage() {
             if (!selected || typeof selected !== 'string') return;
 
             toast.info('Decrypting and exporting file...');
-            const exportedPath = await api.vaultExportFile(file.id, selected);
+            const exportedPath = await api.vaultExportFile(
+                file.id,
+                file.encrypted_name,
+                file.original_name,
+                selected
+            );
             toast.success(`Exported to: ${exportedPath}`);
         } catch (err) {
             const msg = err instanceof Error ? err.message : 'Failed to export file';
@@ -553,15 +632,15 @@ export function VaultPage() {
 
         try {
             await api.vaultDeleteFile(file.id);
-            setFiles(prev => {
-                const updatedFiles = prev.filter(f => f.id !== file.id);
-                // Sync to cloud in background
-                syncToGDrive(updatedFiles);
-                return updatedFiles;
-            });
+
+            // Remove from cloud index via service
+            await removeFromVaultIndex(file.id);
+
+            setFiles(prev => prev.filter(f => f.id !== file.id));
             toast.success('File deleted');
         } catch (err) {
             toast.error('Failed to delete file');
+            await loadFiles(); // Reload on error
         }
     };
 
@@ -577,7 +656,12 @@ export function VaultPage() {
 
         try {
             setLoading(true);
-            await api.vaultChangePin(currentPin, newPin);
+            // Use cloud service to change PIN (handles syncing everywhere)
+            await changeVaultPin(currentPin, newPin);
+
+            // Update local ref
+            vaultPinRef.current = newPin;
+
             toast.success('PIN changed successfully!');
             setShowSettings(false);
             setCurrentPin('');
@@ -597,11 +681,24 @@ export function VaultPage() {
         }
 
         try {
-            await api.vaultReset(currentPin);
+            // Use cloud service to reset (deletes cloud data)
+            await resetVaultCloud(currentPin);
+
+            // Also invoke backend reset to clear local files if any
+            try {
+                await api.vaultReset(currentPin);
+            } catch (e) {
+                console.warn('[Vault] Backend reset warning (non-fatal):', e);
+            }
+
             toast.success('Vault reset. You can set up a new one.');
             setShowSettings(false);
             setCurrentPin('');
-            await loadStatus();
+
+            // Clear local state
+            setFiles([]);
+            setMode('setup');
+            vaultPinRef.current = '';
         } catch (err) {
             const msg = err instanceof Error ? err.message : 'Failed to reset vault';
             toast.error(msg);
@@ -773,14 +870,9 @@ export function VaultPage() {
                                     Unlocked
                                 </span>
                                 {isGDriveAvailable() && (
-                                    <span className={cn(
-                                        "px-2 py-0.5 text-xs font-medium rounded-full flex items-center gap-1",
-                                        cloudSyncing
-                                            ? "bg-blue-500/20 text-blue-400"
-                                            : "bg-purple-500/20 text-purple-400"
-                                    )}>
+                                    <span className="px-2 py-0.5 text-xs font-medium bg-purple-500/20 text-purple-400 rounded-full flex items-center gap-1">
                                         <Cloud className="w-3 h-3" />
-                                        {cloudSyncing ? 'Syncing...' : 'Cloud'}
+                                        Cloud
                                     </span>
                                 )}
                             </h1>
