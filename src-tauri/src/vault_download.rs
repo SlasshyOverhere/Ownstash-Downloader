@@ -333,13 +333,215 @@ pub async fn vault_direct_download(
     Ok(vault_file)
 }
 
+/// Check if URL should use direct HTTP download (not a media streaming site)
+/// Returns true for EVERYTHING except known media streaming sites that require yt-dlp
+fn is_direct_file_url(url: &str) -> bool {
+    let url_lower = url.to_lowercase();
+    
+    // Known media streaming sites that REQUIRE yt-dlp for extraction
+    // These sites don't provide direct file downloads
+    let yt_dlp_required_patterns = [
+        // YouTube
+        "youtube.com", "youtu.be",
+        // Video platforms
+        "vimeo.com", "dailymotion.com",
+        // Social media (video posts)
+        "twitter.com/", "x.com/",  // Note: /status/ patterns
+        "instagram.com/p/", "instagram.com/reel/", "instagram.com/tv/",
+        "tiktok.com/@",
+        // Streaming
+        "twitch.tv/videos", "clips.twitch.tv",
+        // Audio platforms
+        "soundcloud.com", "bandcamp.com",
+        // Other
+        "spotify.com", "open.spotify.com",
+        "facebook.com/watch", "fb.watch",
+        "bilibili.com/video", "nicovideo.jp/watch",
+    ];
+    
+    for pattern in yt_dlp_required_patterns.iter() {
+        if url_lower.contains(pattern) {
+            return false; // This URL needs yt-dlp
+        }
+    }
+    
+    // EVERYTHING ELSE gets direct download attempt first
+    // This includes: Google Drive, Dropbox, OneDrive, direct file URLs,
+    // CDN links, file hosting services, any URL with downloadable content
+    true
+}
+
+/// Download a direct URL via HTTP with progress tracking
+async fn download_direct_url(
+    app_handle: &AppHandle,
+    request: &VaultDownloadRequest,
+    temp_path: &PathBuf,
+    cancel_flag: Arc<AtomicBool>,
+) -> Result<(), String> {
+    use tokio::io::AsyncWriteExt;
+    use std::time::Instant;
+    
+    println!("[VaultDownload] Starting direct HTTP download for: {}", request.url);
+    
+    // Create HTTP client
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        .timeout(std::time::Duration::from_secs(3600)) // 1 hour timeout
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    
+    // Start request
+    let response = client.get(&request.url)
+        .send()
+        .await
+        .map_err(|e| format!("HTTP request failed: {}", e))?;
+    
+    if !response.status().is_success() {
+        return Err(format!("HTTP error: {}", response.status()));
+    }
+    
+    // Get content length for progress
+    let total_size = response.content_length().unwrap_or(0);
+    
+    // Emit downloading status
+    let _ = app_handle.emit("vault-download-progress", VaultDownloadProgress {
+        id: request.id.clone(),
+        progress: 0.0,
+        speed: String::new(),
+        eta: String::new(),
+        status: "downloading".to_string(),
+        downloaded_bytes: Some(0),
+        total_bytes: if total_size > 0 { Some(total_size as i64) } else { None },
+        encrypted_bytes: None,
+    });
+    
+    // Create output file
+    let mut file = tokio::fs::File::create(temp_path)
+        .await
+        .map_err(|e| format!("Failed to create temp file: {}", e))?;
+    
+    // Download with progress
+    let mut downloaded: u64 = 0;
+    let mut stream = response.bytes_stream();
+    let start_time = Instant::now();
+    let mut last_update = Instant::now();
+    
+    use futures_util::StreamExt;
+    
+    while let Some(chunk_result) = stream.next().await {
+        // Check for cancellation
+        if cancel_flag.load(Ordering::Relaxed) {
+            let _ = file.shutdown().await;
+            let _ = tokio::fs::remove_file(temp_path).await;
+            return Err("Download cancelled".to_string());
+        }
+        
+        let chunk = chunk_result
+            .map_err(|e| format!("Failed to read chunk: {}", e))?;
+        
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| format!("Failed to write chunk: {}", e))?;
+        
+        downloaded += chunk.len() as u64;
+        
+        // Update progress (throttled to every 100ms)
+        if last_update.elapsed().as_millis() >= 100 {
+            let progress = if total_size > 0 {
+                (downloaded as f64 / total_size as f64) * 100.0
+            } else {
+                0.0
+            };
+            
+            // Calculate speed
+            let elapsed = start_time.elapsed().as_secs_f64();
+            let speed = if elapsed > 0.0 {
+                format_speed(downloaded as f64 / elapsed)
+            } else {
+                String::new()
+            };
+            
+            // Calculate ETA
+            let eta = if total_size > 0 && elapsed > 0.0 {
+                let remaining = total_size - downloaded;
+                let speed_bps = downloaded as f64 / elapsed;
+                if speed_bps > 0.0 {
+                    let eta_secs = (remaining as f64 / speed_bps) as u64;
+                    format_eta(eta_secs)
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            };
+            
+            let _ = app_handle.emit("vault-download-progress", VaultDownloadProgress {
+                id: request.id.clone(),
+                progress,
+                speed,
+                eta,
+                status: "downloading".to_string(),
+                downloaded_bytes: Some(downloaded as i64),
+                total_bytes: if total_size > 0 { Some(total_size as i64) } else { None },
+                encrypted_bytes: None,
+            });
+            
+            last_update = Instant::now();
+        }
+    }
+    
+    // Flush and close file
+    file.flush().await
+        .map_err(|e| format!("Failed to flush file: {}", e))?;
+    
+    println!("[VaultDownload] Direct download complete: {} bytes", downloaded);
+    
+    Ok(())
+}
+
+/// Format download speed
+fn format_speed(bytes_per_sec: f64) -> String {
+    if bytes_per_sec >= 1_000_000.0 {
+        format!("{:.2}MB/s", bytes_per_sec / 1_000_000.0)
+    } else if bytes_per_sec >= 1_000.0 {
+        format!("{:.2}KB/s", bytes_per_sec / 1_000.0)
+    } else {
+        format!("{:.0}B/s", bytes_per_sec)
+    }
+}
+
+/// Format ETA
+fn format_eta(seconds: u64) -> String {
+    if seconds >= 3600 {
+        format!("{:02}:{:02}:{:02}", seconds / 3600, (seconds % 3600) / 60, seconds % 60)
+    } else {
+        format!("{:02}:{:02}", seconds / 60, seconds % 60)
+    }
+}
+
 /// Download file to temp using yt-dlp with full processing
+/// Also supports direct HTTP downloads for simple file links
 async fn download_to_temp(
     app_handle: &AppHandle,
     request: &VaultDownloadRequest,
     temp_path: &PathBuf,
     cancel_flag: Arc<AtomicBool>,
 ) -> Result<(), String> {
+    // Check if this looks like a direct file URL (not a media site)
+    let is_direct_url = is_direct_file_url(&request.url);
+    
+    if is_direct_url {
+        // Try direct HTTP download first
+        match download_direct_url(app_handle, request, temp_path, cancel_flag.clone()).await {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                println!("[VaultDownload] Direct download failed, falling back to yt-dlp: {}", e);
+                // Fall through to yt-dlp
+            }
+        }
+    }
+
+    // Use yt-dlp for media sites or if direct download failed
     let yt_dlp_path = find_yt_dlp(app_handle)
         .ok_or("yt-dlp not found")?;
 
@@ -398,6 +600,7 @@ async fn download_to_temp(
         total_bytes: None,
         encrypted_bytes: None,
     });
+
 
     // Run yt-dlp
     let mut child = create_hidden_command(&yt_dlp_path)

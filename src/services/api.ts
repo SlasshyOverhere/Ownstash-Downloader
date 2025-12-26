@@ -196,7 +196,7 @@ export interface VaultDownloadRequest {
     id: string;
     url: string;
     original_name: string;
-    file_type: 'video' | 'audio';
+    file_type: string; // "video" | "audio" | "file" | "archive" | "image" | etc.
     thumbnail?: string;
     audio_only: boolean;
     quality?: string;

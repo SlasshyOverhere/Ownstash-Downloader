@@ -74,6 +74,7 @@ import {
 import { CloudDownloadPopup } from '@/components/vault/CloudDownloadPopup';
 import { CloudSyncModal, PendingFile } from '@/components/vault/CloudSyncModal';
 import { FolderBrowserModal } from '@/components/vault/FolderBrowserModal';
+import { VaultDownloadModal } from '@/components/vault/VaultDownloadModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { signInWithGoogleBrowser } from '@/services/googleAuth';
 
@@ -234,6 +235,9 @@ export function VaultPage() {
     const [showImageViewer, setShowImageViewer] = useState(false);
     const [viewerImagePath, setViewerImagePath] = useState('');
     const [viewerImageName, setViewerImageName] = useState('');
+
+    // Vault download modal state
+    const [showDownloadModal, setShowDownloadModal] = useState(false);
 
     // Handle Google Sign In from vault when in offline mode
     const handleVaultGoogleSignIn = async () => {
@@ -1550,6 +1554,14 @@ export function VaultPage() {
                             Upload
                         </button>
                         <button
+                            onClick={() => setShowDownloadModal(true)}
+                            className="px-4 py-2 rounded-xl bg-gradient-to-r from-primary/20 to-accent/20 hover:from-primary/30 hover:to-accent/30 text-white text-sm font-medium flex items-center gap-2 transition-all border border-primary/30"
+                            title="Download from URL to Vault"
+                        >
+                            <Download className="w-4 h-4" />
+                            Download
+                        </button>
+                        <button
                             onClick={handleSyncToCloud}
                             disabled={isSyncing}
                             className={cn(
@@ -2080,6 +2092,20 @@ export function VaultPage() {
                     </>
                 )}
             </AnimatePresence>
+
+            {/* Vault Download Modal */}
+            <VaultDownloadModal
+                isOpen={showDownloadModal}
+                onClose={() => setShowDownloadModal(false)}
+                onDownloadComplete={(file) => {
+                    // Add the new file to the list
+                    setFiles(prev => {
+                        if (prev.some(f => f.id === file.id)) return prev;
+                        return [...prev, file];
+                    });
+                    setShowDownloadModal(false);
+                }}
+            />
         </>
     );
 }
