@@ -185,7 +185,7 @@ export function CloudDownloadPopup({
                                     onClick={onRetry}
                                     className={cn(
                                         'flex-1 py-3 rounded-xl font-medium transition-all',
-                                        'bg-gradient-to-r from-primary to-accent text-white',
+                                        'bg-gradient-to-r from-primary to-accent text-black',
                                         'hover:opacity-90',
                                         'flex items-center justify-center gap-2'
                                     )}

@@ -173,37 +173,37 @@ export function AddonsPage() {
   const getStatusConfig = (status: PluginStatus) => {
     switch (status) {
       case 'not_installed':
-        return { 
-          text: 'Not Installed', 
-          color: 'text-red-400', 
+        return {
+          text: 'Not Installed',
+          color: 'text-red-400',
           bg: 'bg-red-500/10',
           icon: <AlertCircle className="w-4 h-4" />
         };
       case 'installing':
-        return { 
-          text: 'Installing...', 
-          color: 'text-yellow-400', 
+        return {
+          text: 'Installing...',
+          color: 'text-yellow-400',
           bg: 'bg-yellow-500/10',
           icon: <Loader2 className="w-4 h-4 animate-spin" />
         };
       case 'installed':
-        return { 
-          text: 'Installed', 
-          color: 'text-green-400', 
+        return {
+          text: 'Installed',
+          color: 'text-green-400',
           bg: 'bg-green-500/10',
           icon: <CheckCircle className="w-4 h-4" />
         };
       case 'error':
-        return { 
-          text: 'Error', 
-          color: 'text-red-400', 
+        return {
+          text: 'Error',
+          color: 'text-red-400',
           bg: 'bg-red-500/10',
           icon: <X className="w-4 h-4" />
         };
       default:
-        return { 
-          text: 'Unknown', 
-          color: 'text-gray-400', 
+        return {
+          text: 'Unknown',
+          color: 'text-gray-400',
           bg: 'bg-gray-500/10',
           icon: <X className="w-4 h-4" />
         };
@@ -244,7 +244,7 @@ export function AddonsPage() {
                 <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center flex-shrink-0">
                   {addon.icon}
                 </div>
-                
+
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-4">
                     <div>
@@ -261,7 +261,7 @@ export function AddonsPage() {
                         )}
                       </div>
                     </div>
-                    
+
                     <div className={cn(
                       "flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium",
                       statusConfig.bg,
@@ -281,7 +281,7 @@ export function AddonsPage() {
                     disabled={isLoading}
                     className={cn(
                       'w-full py-2.5 rounded-xl font-medium transition-all flex items-center justify-center gap-2',
-                      'bg-gradient-to-r from-primary to-accent text-white',
+                      'bg-gradient-to-r from-primary to-accent text-black',
                       'hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed'
                     )}
                   >
@@ -344,7 +344,7 @@ export function AddonsPage() {
                     disabled={isLoading}
                     className={cn(
                       'w-full py-2.5 rounded-xl font-medium transition-all flex items-center justify-center gap-2',
-                      'bg-gradient-to-r from-primary to-accent text-white',
+                      'bg-gradient-to-r from-primary to-accent text-black',
                       'hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed'
                     )}
                   >

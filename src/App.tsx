@@ -14,7 +14,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useData } from '@/contexts/DataContext';
 import { Loader2 } from 'lucide-react';
 import api, { DownloadProgress, SpotifyDownloadProgress } from '@/services/api';
-import { addToVaultIndex, isVaultCloudInitialized } from '@/services/vaultCloudService';
+import { addToVaultIndex, isVaultCloudInitialized, lockVaultCloud } from '@/services/vaultCloudService';
 import { VaultFileEntry } from '@/services/gdriveService';
 import { enqueueUpload } from '@/services/vaultFileSyncService';
 
@@ -24,6 +24,7 @@ function App() {
     const { user, loading, isGDriveReady, isOfflineMode, setOfflineMode } = useAuth();
     const { storageType, isLoading: isDataLoading, syncWithGDrive } = useData();
     const [currentPage, setCurrentPage] = useState<PageType>('home');
+    const [previousPage, setPreviousPage] = useState<PageType>('home');
     const [extensionUrl, setExtensionUrl] = useState<string | null>(null);
     const [_activeDownloadCount, setActiveDownloadCount] = useState(0);
     const [showLoginExpiredModal, setShowLoginExpiredModal] = useState(false);
@@ -236,6 +237,22 @@ function App() {
             api.clearTaskbarProgress().catch(console.error);
         };
     }, []);
+
+    // Auto-lock vault when navigating away from vault tab
+    useEffect(() => {
+        // If we were on vault page and now we're not, lock the vault
+        if (previousPage === 'vault' && currentPage !== 'vault') {
+            console.log('[App] Navigating away from vault, auto-locking...');
+            if (isVaultCloudInitialized()) {
+                lockVaultCloud();
+                // Also lock the backend
+                api.vaultLock().catch(console.error);
+                api.vaultCleanupTemp().catch(console.error);
+            }
+        }
+        // Update previousPage to track page changes
+        setPreviousPage(currentPage);
+    }, [currentPage, previousPage]);
 
     // Show login expired prompt when app is in local-only state on startup
     useEffect(() => {

@@ -529,7 +529,7 @@ export function VaultDownloadModal({ isOpen, onClose, onDownloadComplete }: Vaul
                                     disabled={!url.trim() || status === 'fetching'}
                                     className={cn(
                                         "w-full py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2",
-                                        "bg-gradient-to-r from-primary to-accent text-white",
+                                        "bg-gradient-to-r from-primary to-accent text-black",
                                         "hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                                     )}
                                 >
@@ -724,7 +724,7 @@ export function VaultDownloadModal({ isOpen, onClose, onDownloadComplete }: Vaul
                                     </button>
                                     <button
                                         onClick={handleStartDownload}
-                                        className="flex-1 py-3 rounded-xl bg-gradient-to-r from-primary to-accent text-white text-sm font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+                                        className="flex-1 py-3 rounded-xl bg-gradient-to-r from-primary to-accent text-black text-sm font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
                                     >
                                         <Download className="w-4 h-4" />
                                         Download to Vault
@@ -808,7 +808,7 @@ export function VaultDownloadModal({ isOpen, onClose, onDownloadComplete }: Vaul
                                 </div>
                                 <button
                                     onClick={onClose}
-                                    className="w-full py-3 rounded-xl bg-gradient-to-r from-primary to-accent text-white text-sm font-medium hover:opacity-90 transition-opacity"
+                                    className="w-full py-3 rounded-xl bg-gradient-to-r from-primary to-accent text-black text-sm font-medium hover:opacity-90 transition-opacity"
                                 >
                                     Done
                                 </button>

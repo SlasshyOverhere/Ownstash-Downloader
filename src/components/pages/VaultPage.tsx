@@ -15,7 +15,6 @@ import {
     Folder,
     AlertTriangle,
     Loader2,
-    Plus,
     Settings,
     Key,
     RefreshCw,
@@ -238,6 +237,11 @@ export function VaultPage() {
 
     // Vault download modal state
     const [showDownloadModal, setShowDownloadModal] = useState(false);
+
+    // Delete confirmation modal state
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [fileToDelete, setFileToDelete] = useState<VaultFile | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     // Handle Google Sign In from vault when in offline mode
     const handleVaultGoogleSignIn = async () => {
@@ -1163,23 +1167,39 @@ export function VaultPage() {
         }
     };
 
-    const handleDelete = async (file: VaultFile) => {
-        if (!confirm(`Are you sure you want to delete "${file.original_name}"? This cannot be undone.`)) {
-            return;
-        }
+    // Open delete confirmation modal (step 1)
+    const handleDeleteClick = (file: VaultFile) => {
+        setFileToDelete(file);
+        setShowDeleteConfirm(true);
+    };
 
+    // Actually perform the delete (step 2 - only called after user confirms)
+    const handleConfirmDelete = async () => {
+        if (!fileToDelete) return;
+
+        setIsDeleting(true);
         try {
-            await api.vaultDeleteFile(file.id);
+            await api.vaultDeleteFile(fileToDelete.id);
 
             // Remove from cloud index via service
-            await removeFromVaultIndex(file.id);
+            await removeFromVaultIndex(fileToDelete.id);
 
-            setFiles(prev => prev.filter(f => f.id !== file.id));
+            setFiles(prev => prev.filter(f => f.id !== fileToDelete.id));
             toast.success('File deleted');
         } catch (err) {
             toast.error('Failed to delete file');
             await loadFiles(); // Reload on error
+        } finally {
+            setIsDeleting(false);
+            setShowDeleteConfirm(false);
+            setFileToDelete(null);
         }
+    };
+
+    // Cancel delete
+    const handleCancelDelete = () => {
+        setShowDeleteConfirm(false);
+        setFileToDelete(null);
     };
 
     const handleChangePin = async () => {
@@ -1409,7 +1429,7 @@ export function VaultPage() {
                         disabled={loading || pin.length < 4 || confirmPin.length < 4}
                         className={cn(
                             'w-full py-3 rounded-xl font-medium transition-all',
-                            'bg-gradient-to-r from-primary to-accent text-white',
+                            'bg-gradient-to-r from-primary to-accent text-black',
                             'hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed',
                             'flex items-center justify-center gap-2'
                         )}
@@ -1741,7 +1761,7 @@ export function VaultPage() {
                                                     <Download className="w-4 h-4" />
                                                 </button>
                                                 <button
-                                                    onClick={() => handleDelete(file)}
+                                                    onClick={() => handleDeleteClick(file)}
                                                     className="p-2 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors"
                                                     title="Delete"
                                                 >
@@ -1778,7 +1798,7 @@ export function VaultPage() {
                                 </button>
                                 <button
                                     onClick={() => setShowDownloadModal(true)}
-                                    className="px-6 py-3 rounded-xl bg-gradient-to-r from-primary to-accent text-white font-medium flex items-center gap-2 hover:opacity-90 transition-opacity"
+                                    className="px-6 py-3 rounded-xl bg-gradient-to-r from-primary to-accent text-black font-medium flex items-center gap-2 hover:opacity-90 transition-opacity"
                                 >
                                     <Download className="w-5 h-5" />
                                     Download from URL
@@ -2155,6 +2175,80 @@ export function VaultPage() {
                     setShowDownloadModal(false);
                 }}
             />
+
+            {/* Delete Confirmation Modal */}
+            <AnimatePresence>
+                {showDeleteConfirm && fileToDelete && (
+                    <>
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
+                            onClick={handleCancelDelete}
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                            className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[400px] max-w-[90vw] bg-card border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
+                        >
+                            {/* Header */}
+                            <div className="bg-gradient-to-r from-red-500/20 to-red-600/20 px-6 py-4 border-b border-white/10">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center">
+                                        <AlertTriangle className="w-5 h-5 text-red-400" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-semibold text-lg">Delete File</h3>
+                                        <p className="text-sm text-muted-foreground">This action cannot be undone</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Content */}
+                            <div className="p-6">
+                                <p className="text-sm text-muted-foreground mb-4">
+                                    Are you sure you want to delete this file?
+                                </p>
+                                <div className="p-4 rounded-xl bg-muted/20 border border-white/5">
+                                    <p className="font-medium truncate" title={fileToDelete.original_name}>
+                                        "{fileToDelete.original_name}"
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="px-6 pb-6 flex gap-3">
+                                <button
+                                    onClick={handleCancelDelete}
+                                    disabled={isDeleting}
+                                    className="flex-1 py-3 rounded-xl font-medium bg-muted/30 hover:bg-muted/50 transition-colors disabled:opacity-50"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleConfirmDelete}
+                                    disabled={isDeleting}
+                                    className="flex-1 py-3 rounded-xl font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                                >
+                                    {isDeleting ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                            Deleting...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Trash2 className="w-4 h-4" />
+                                            Delete
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </motion.div>
+                    </>
+                )}
+            </AnimatePresence>
         </>
     );
 }

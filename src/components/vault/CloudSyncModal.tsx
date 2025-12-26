@@ -265,7 +265,7 @@ export function CloudSyncModal({
                                 disabled={selectedIds.size === 0 || isUploading}
                                 className={cn(
                                     "flex-1 py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2",
-                                    "bg-gradient-to-r from-primary to-accent text-white",
+                                    "bg-gradient-to-r from-primary to-accent text-black",
                                     "disabled:opacity-50 disabled:cursor-not-allowed",
                                     !isUploading && "hover:opacity-90"
                                 )}
