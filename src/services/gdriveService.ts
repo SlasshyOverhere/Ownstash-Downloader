@@ -47,6 +47,9 @@ export async function setGDriveAccessToken(token: string, expiresIn?: number): P
     const expiryTime = Date.now() + ((expiresIn || 3600) * 1000);
     tokenExpiry = expiryTime;
 
+    const expiryDate = new Date(expiryTime);
+    console.log(`[GDrive] Storing token (${token.length} chars), expires at: ${expiryDate.toLocaleString()}`);
+
     // We NO LONGER store raw token in localStorage for security
     // Only store expiry time in localStorage for quick check
     localStorage.setItem(TOKEN_EXPIRY_KEY, expiryTime.toString());
@@ -56,9 +59,9 @@ export async function setGDriveAccessToken(token: string, expiresIn?: number): P
         await invoke('secure_save_setting', { key: ACCESS_TOKEN_KEY, value: token });
         // Expiry doesn't need to be encrypted but we can keep it for consistency
         await invoke('save_setting', { key: TOKEN_EXPIRY_KEY, value: expiryTime.toString() });
-        console.log('[GDrive] Access token stored securely and encrypted');
+        console.log('[GDrive] ✓ Access token stored securely in SQLite (encrypted with AES-256-GCM)');
     } catch (err) {
-        console.error('[GDrive] Failed to persist token securely:', err);
+        console.error('[GDrive] ✗ Failed to persist token securely:', err);
     }
 }
 
@@ -96,25 +99,50 @@ export function getGDriveAccessToken(): string | null {
  * Load token from persistent storage (call on app startup)
  */
 export async function loadPersistedToken(): Promise<boolean> {
+    console.log('[GDrive] Loading persisted token from secure storage...');
     try {
         const token = await invoke<string | null>('secure_get_setting', { key: ACCESS_TOKEN_KEY });
         const expiryStr = await invoke<string | null>('get_setting', { key: TOKEN_EXPIRY_KEY });
 
+        console.log('[GDrive] Token retrieval result:', {
+            hasToken: !!token,
+            tokenLength: token?.length || 0,
+            expiryStr
+        });
+
         if (token) {
             // If we have no expiry, assume 1 hour from now as fallback
             const expiry = expiryStr ? parseInt(expiryStr, 10) : (Date.now() + 3600000);
+            const now = Date.now();
+            const remainingMs = expiry - now;
+            const remainingMinutes = Math.round(remainingMs / 60000);
 
-            if (Date.now() < expiry) {
+            console.log('[GDrive] Token expiry check:', {
+                now,
+                expiry,
+                remainingMinutes,
+                isValid: now < expiry
+            });
+
+            if (now < expiry) {
                 cachedToken = token;
                 tokenExpiry = expiry;
                 localStorage.setItem(TOKEN_EXPIRY_KEY, expiry.toString());
-                console.log('[GDrive] Token loaded and decrypted successfully');
+                console.log(`[GDrive] ✓ Token restored successfully! Valid for ${remainingMinutes} more minutes`);
                 return true;
             } else {
-                console.warn('[GDrive] Persisted token is expired');
+                console.warn(`[GDrive] ✗ Token expired ${-remainingMinutes} minutes ago. User needs to re-authenticate.`);
+                // Clear the expired token from storage
+                try {
+                    await invoke('secure_delete_setting', { key: ACCESS_TOKEN_KEY });
+                    await invoke('delete_setting', { key: TOKEN_EXPIRY_KEY });
+                    console.log('[GDrive] Expired token cleared from storage');
+                } catch (clearErr) {
+                    console.error('[GDrive] Failed to clear expired token:', clearErr);
+                }
             }
         } else {
-            console.log('[GDrive] No persisted token found in secure storage');
+            console.log('[GDrive] No persisted token found in secure storage (fresh install or logged out)');
         }
     } catch (err) {
         console.error('[GDrive] Failed to load secure token:', err);

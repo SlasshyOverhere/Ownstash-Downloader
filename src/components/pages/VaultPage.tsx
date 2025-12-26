@@ -59,19 +59,28 @@ function PinInput({
     onChange,
     length = 8,
     error,
-    disabled
+    disabled,
+    onEnterPress
 }: {
     value: string;
     onChange: (value: string) => void;
     length?: number;
     error?: string;
     disabled?: boolean;
+    onEnterPress?: () => void;
 }) {
     const [showPin, setShowPin] = useState(false);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const newValue = e.target.value.replace(/\D/g, '').slice(0, length);
         onChange(newValue);
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter' && onEnterPress) {
+            e.preventDefault();
+            onEnterPress();
+        }
     };
 
     return (
@@ -81,6 +90,7 @@ function PinInput({
                     type={showPin ? 'text' : 'password'}
                     value={value}
                     onChange={handleChange}
+                    onKeyDown={handleKeyDown}
                     disabled={disabled}
                     placeholder="Enter PIN"
                     className={cn(
@@ -796,6 +806,11 @@ export function VaultPage() {
                         length={8}
                         error={pinError}
                         disabled={loading}
+                        onEnterPress={() => {
+                            if (pin.length >= 4 && !loading) {
+                                handleUnlock();
+                            }
+                        }}
                     />
 
                     <div className="space-y-3">
@@ -804,8 +819,9 @@ export function VaultPage() {
                             disabled={loading || pin.length < 4}
                             className={cn(
                                 'w-full py-3 rounded-xl font-medium transition-all',
-                                'bg-gradient-to-r from-primary to-accent text-white',
-                                'hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed',
+                                'bg-gradient-to-r from-yellow-500 to-amber-600 text-black',
+                                'hover:from-yellow-400 hover:to-amber-500 hover:shadow-lg hover:shadow-yellow-500/20',
+                                'disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none',
                                 'flex items-center justify-center gap-2'
                             )}
                         >
