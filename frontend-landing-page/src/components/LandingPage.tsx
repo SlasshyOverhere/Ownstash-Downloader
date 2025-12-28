@@ -232,7 +232,7 @@ const InfiniteMarquee = () => {
 };
 
 // --- Hero Section ---
-const Hero = ({ onLoginClick }: { onLoginClick: () => void }) => {
+const Hero = () => {
     const { scrollY } = useScroll();
     const y = useTransform(scrollY, [0, 500], [0, 150]);
     const opacity = useTransform(scrollY, [0, 300], [1, 0]);
@@ -318,7 +318,14 @@ const Hero = ({ onLoginClick }: { onLoginClick: () => void }) => {
                     className="flex flex-col sm:flex-row gap-4"
                 >
                     <motion.button
-                        onClick={onLoginClick}
+                        onClick={() => {
+                            const downloadLink = import.meta.env.VITE_DOWNLOAD_LINK;
+                            if (downloadLink) {
+                                window.location.href = downloadLink;
+                            } else {
+                                document.getElementById('download')?.scrollIntoView();
+                            }
+                        }}
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
                         className="group relative inline-flex h-14 items-center justify-center overflow-hidden rounded-xl bg-white px-10 font-semibold text-black transition-all hover:shadow-[0_0_40px_rgba(255,255,255,0.3)]"
@@ -906,7 +913,7 @@ export default function LandingPage() {
                 </div>
             </motion.nav>
 
-            <Hero onLoginClick={() => setShowLogin(true)} />
+            <Hero />
             <InfiniteMarquee />
             <TerminalDemo />
             <FeaturesSection />
