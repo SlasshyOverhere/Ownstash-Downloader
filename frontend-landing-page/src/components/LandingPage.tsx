@@ -4,7 +4,7 @@ import {
     ArrowRight, Shield, Zap, Download, Lock, Smartphone, Globe,
     Chrome, Youtube, Music, Video, HardDrive, Cpu, Gauge,
     CloudLightning, Fingerprint, Server, Waves, Play, CheckCircle2,
-    Sparkles, ArrowDown, Terminal, Command, Hash, Network, Code2
+    Sparkles, ArrowDown, Terminal, Hash, Network, Code2
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { GlowingEffect } from './ui/glowing-effect';
@@ -32,7 +32,7 @@ const useMousePosition = () => {
 const MouseSpotlight = () => {
     const { x, y } = useMousePosition();
     return (
-        <div 
+        <div
             className="pointer-events-none fixed inset-0 z-30 transition-opacity duration-300"
             style={{
                 background: `radial-gradient(600px circle at ${x}px ${y}px, rgba(255,255,255,0.06), transparent 40%)`
@@ -146,7 +146,7 @@ const TerminalDemo = () => {
         <section className="py-20 relative z-10">
             <div className="container px-4 md:px-6">
                 <div className="flex flex-col items-center">
-                    <motion.div 
+                    <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         whileInView={{ opacity: 1, y: 0 }}
                         viewport={{ once: true }}
@@ -175,7 +175,7 @@ const TerminalDemo = () => {
                             </div>
                             <div className="flex-1 text-center text-xs font-mono text-zinc-500">slasshy-cli — rust — 80x24</div>
                         </div>
-                        
+
                         {/* Terminal Body */}
                         <div className="p-6 font-mono text-sm h-[300px] flex flex-col justify-end bg-black/50">
                             {lines.map((line, i) => (
@@ -208,8 +208,8 @@ const InfiniteMarquee = () => {
         <div className="py-10 border-y border-white/5 bg-white/[0.02] overflow-hidden relative group">
             <div className="absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-black to-transparent z-10" />
             <div className="absolute inset-y-0 right-0 w-32 bg-gradient-to-l from-black to-transparent z-10" />
-            
-            <motion.div 
+
+            <motion.div
                 className="flex gap-16 items-center whitespace-nowrap min-w-full"
                 animate={{ x: "-50%" }}
                 transition={{ duration: 30, repeat: Infinity, ease: "linear" }}
@@ -853,15 +853,15 @@ export default function LandingPage() {
     return (
         <div className="min-h-screen bg-black text-white selection:bg-white/20 overflow-x-hidden cursor-default relative">
             <MouseSpotlight />
-            
+
             {/* Navbar */}
             <motion.nav
                 initial={{ y: -100 }}
                 animate={{ y: 0 }}
                 className={cn(
                     "fixed top-0 w-full z-50 transition-all duration-300",
-                    isScrolled 
-                        ? "bg-black/80 backdrop-blur-xl border-b border-white/5 py-3" 
+                    isScrolled
+                        ? "bg-black/80 backdrop-blur-xl border-b border-white/5 py-3"
                         : "bg-transparent py-6"
                 )}
             >
@@ -879,7 +879,7 @@ export default function LandingPage() {
                             </span>
                         </div>
                     </div>
-                    
+
                     <div className="flex items-center gap-1 md:gap-2">
                         <div className="hidden md:flex items-center bg-white/5 rounded-full p-1 border border-white/5 backdrop-blur-md mr-4">
                             {[
@@ -887,7 +887,7 @@ export default function LandingPage() {
                                 { name: 'Specs', href: '#specs' },
                                 { name: 'FAQ', href: '#faq' }
                             ].map((item) => (
-                                <a 
+                                <a
                                     key={item.name}
                                     href={item.href}
                                     className="px-5 py-2 rounded-full text-sm font-medium text-zinc-400 hover:text-white hover:bg-white/10 transition-all duration-200"
@@ -896,7 +896,7 @@ export default function LandingPage() {
                                 </a>
                             ))}
                         </div>
-                        
+
                         <button
                             onClick={() => {
                                 const downloadLink = import.meta.env.VITE_DOWNLOAD_LINK;
@@ -910,7 +910,7 @@ export default function LandingPage() {
                         >
                             Get App
                         </button>
-                        
+
                         <button
                             onClick={() => setShowLogin(true)}
                             className="text-sm font-semibold px-6 py-2.5 rounded-full bg-white text-black hover:bg-zinc-200 transition-colors shadow-[0_0_20px_rgba(255,255,255,0.4)] ml-2"
