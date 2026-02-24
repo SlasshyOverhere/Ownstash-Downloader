@@ -76,7 +76,7 @@ jobs:
           [ "$CARGO_VERSION" = "$VERSION" ]
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: Ensure bundled binaries are available
         run: npm run download-binaries
