@@ -64,7 +64,7 @@ jobs:
           VERSION="${RELEASE_TAG#v}"
           PACKAGE_VERSION="$(node -e "console.log(JSON.parse(require('fs').readFileSync('package.json','utf8')).version)")"
           TAURI_VERSION="$(node -e "console.log(JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json','utf8')).version)")"
-          CARGO_VERSION="$(grep -m1 '^version = ' src-tauri/Cargo.toml | cut -d'\"' -f2)"
+          CARGO_VERSION="$(awk -F'\"' '/^version = / { print $2; exit }' src-tauri/Cargo.toml)"
 
           echo "Tag version      : $VERSION"
           echo "package.json     : $PACKAGE_VERSION"
