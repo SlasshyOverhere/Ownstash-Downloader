@@ -15,13 +15,10 @@ import {
     AccordionTrigger,
 } from './ui/accordion';
 
-const DEFAULT_WINDOWS_DOWNLOAD_URL =
-    'https://github.com/SlasshyOverhere/Ownstash-Downloader/releases/latest/download/ownstash-downloader-windows-x86_64-setup.exe';
+const LATEST_WINDOWS_DOWNLOAD_URL =
+    'https://github.com/SlasshyOverhere/Ownstash-Downloader/releases/latest/download/ownstash-downloader-windows-x64-setup.exe';
 
-const resolveDownloadLink = (): string => {
-    const configuredLink = import.meta.env.VITE_DOWNLOAD_LINK?.trim();
-    return configuredLink || DEFAULT_WINDOWS_DOWNLOAD_URL;
-};
+const resolveDownloadLink = (): string => LATEST_WINDOWS_DOWNLOAD_URL;
 
 // --- Utility: Mouse Position for Spotlight ---
 const useMousePosition = () => {
