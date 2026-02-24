@@ -80,9 +80,10 @@ jobs:
 
       - name: Ensure bundled binaries are available
         shell: pwsh
+        working-directory: src-tauri
         run: |
-          if (Test-Path "./src-tauri/download-binaries.ps1") {
-            powershell -ExecutionPolicy Bypass -File ./src-tauri/download-binaries.ps1
+          if (Test-Path "./download-binaries.ps1") {
+            powershell -ExecutionPolicy Bypass -File ./download-binaries.ps1
           } else {
             Write-Host "download-binaries.ps1 not found; assuming binaries are already present."
           }
@@ -106,9 +107,9 @@ jobs:
           generateReleaseNotes: true
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
-          uploadUpdaterJson: true
+          includeUpdaterJson: true
           updaterJsonPreferNsis: true
-          releaseAssetNamePattern: ownstash-downloader-[platform]-[arch][setup][ext]
+          assetNamePattern: ownstash-downloader-[platform]-[arch][setup][ext]
           retryAttempts: 2
 
       - name: Mark release as latest

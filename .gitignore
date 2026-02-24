@@ -17,6 +17,7 @@ target/
 src-tauri/target/
 **/*.rs.bk
 Cargo.lock
+!src-tauri/Cargo.lock
 
 # Tauri
 src-tauri/gen/schemas
@@ -101,4 +102,5 @@ public/New folder/
 # Scripts (dev/setup tools)
 **/*.ps1
 **/*.py
+!src-tauri/download-binaries.ps1
 
