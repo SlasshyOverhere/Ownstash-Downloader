@@ -1,6 +1,6 @@
-// Auto-update functionality for Slasshy OmniDownloader
+// Auto-update functionality for Ownstash Downloader
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use tauri_plugin_updater::UpdaterExt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,7 +46,22 @@ pub async fn check_for_updates(app: AppHandle) -> Result<UpdateInfo, String> {
                 available: false,
             })
         }
-        Err(e) => Err(format!("Failed to check for updates: {}", e)),
+        Err(e) => {
+            let message = e.to_string();
+
+            // Treat missing release feed as "no update" instead of hard failure.
+            if message.contains("404") || message.to_lowercase().contains("not found") {
+                return Ok(UpdateInfo {
+                    version: current_version.clone(),
+                    current_version,
+                    date: None,
+                    body: None,
+                    available: false,
+                });
+            }
+
+            Err(format!("Failed to check for updates: {}", message))
+        }
     }
 }
 

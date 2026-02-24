@@ -53,6 +53,8 @@ export interface FormatInfo {
     format_id: string;
     ext: string;
     resolution?: string;
+    height?: number;
+    width?: number;
     filesize?: number;
     filesize_approx?: number;
     vcodec?: string;
@@ -95,6 +97,8 @@ export interface YtDlpInfo {
     version: string;
     path: string;
     is_embedded: boolean;
+    latest_version?: string | null;
+    update_available?: boolean;
 }
 
 export interface UpdateInfo {
@@ -159,6 +163,8 @@ export interface SpotDlInfo {
     version: string;
     path: string;
     is_available: boolean;
+    latest_version?: string | null;
+    update_available?: boolean;
 }
 
 // Vault types
@@ -309,8 +315,8 @@ export const api = {
         return invoke('find_best_media_match', { path, title });
     },
 
-    async transcodeForPlayback(inputPath: string): Promise<TranscodeResult> {
-        return invoke('transcode_for_playback', { inputPath });
+    async transcodeForPlayback(inputPath: string, force: boolean = false): Promise<TranscodeResult> {
+        return invoke('transcode_for_playback', { inputPath, force });
     },
 
     async getMediaStreamUrl(filePath: string): Promise<string> {
@@ -318,8 +324,12 @@ export const api = {
     },
 
     // yt-dlp Management - Rust backend
-    async checkYtDlp(): Promise<YtDlpInfo> {
-        return invoke('check_yt_dlp');
+    async checkYtDlp(includeLatest: boolean = false): Promise<YtDlpInfo> {
+        return invoke('check_yt_dlp', { includeLatest });
+    },
+
+    async updateYtDlp(): Promise<YtDlpInfo> {
+        return invoke('update_yt_dlp');
     },
 
     async getDefaultDownloadPath(): Promise<string> {
@@ -372,8 +382,12 @@ export const api = {
     },
 
     // SpotDL (Spotify) Management - Rust backend
-    async checkSpotDl(): Promise<SpotDlInfo> {
-        return invoke('check_spotdl');
+    async checkSpotDl(includeLatest: boolean = false): Promise<SpotDlInfo> {
+        return invoke('check_spotdl', { includeLatest });
+    },
+
+    async updateSpotDl(): Promise<SpotDlInfo> {
+        return invoke('update_spotdl');
     },
 
     async getSpotifyInfo(url: string): Promise<SpotifyMediaInfo> {
@@ -709,6 +723,19 @@ export const api = {
             console.warn('[Plugin] Reinstall command not implemented yet:', error);
             throw new Error('Secure Browser addon reinstallation is not yet available');
         }
+    },
+
+    // ============ Autostart API ============
+    async autostartEnable(): Promise<void> {
+        return invoke('plugin:autostart|enable');
+    },
+
+    async autostartDisable(): Promise<void> {
+        return invoke('plugin:autostart|disable');
+    },
+
+    async autostartIsEnabled(): Promise<boolean> {
+        return invoke('plugin:autostart|is_enabled');
     },
 };
 

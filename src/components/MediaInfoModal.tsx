@@ -14,11 +14,10 @@ import {
     Check,
     ChevronDown,
     Image as ImageIcon,
-    Scissors,
-    Shield
+    Scissors
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import api, { MediaInfo, formatBytes, formatDuration } from '@/services/api';
+import api, { FormatInfo, MediaInfo, formatBytes, formatDuration } from '@/services/api';
 
 interface MediaInfoModalProps {
     isOpen: boolean;
@@ -39,7 +38,6 @@ export interface DownloadOptions {
     audioFormat: string;
     videoFormat: string;
     useSponsorblock: boolean;
-    saveToVault: boolean;  // Download directly into encrypted vault
 }
 
 const qualityOptions = [
@@ -71,32 +69,145 @@ const videoFormatOptions = [
     { value: 'webm', label: 'WebM', desc: 'Web optimized' },
 ];
 
+function extractHeightFromText(value?: string): number {
+    if (!value) return 0;
+
+    const resolutionMatch = value.match(/(\d{3,5})x(\d{3,5})/);
+    if (resolutionMatch) {
+        return parseInt(resolutionMatch[2], 10);
+    }
+
+    const qualityMatch = value.match(/(\d{3,4})p/i);
+    if (qualityMatch) {
+        return parseInt(qualityMatch[1], 10);
+    }
+
+    return 0;
+}
+
+function getFormatHeight(format: FormatInfo): number {
+    return Math.max(
+        format.height || 0,
+        extractHeightFromText(format.resolution),
+        extractHeightFromText(format.quality_label),
+        extractHeightFromText(format.format_note)
+    );
+}
+
+function isVideoFormat(format: FormatInfo): boolean {
+    if (format.vcodec && format.vcodec !== 'none') return true;
+
+    // Fallback: sometimes codec fields are incomplete, but quality text still indicates video.
+    const textHints = [format.resolution, format.quality_label, format.format_note];
+    return textHints.some((value) => extractHeightFromText(value) > 0);
+}
+
+function isAudioOnlyFormat(format: FormatInfo): boolean {
+    const hasAudio = !!format.acodec && format.acodec !== 'none';
+    const hasVideo = isVideoFormat(format);
+    return hasAudio && !hasVideo;
+}
+
 // Helper function to extract max video height from formats
-function getMaxVideoHeight(formats: { resolution?: string; vcodec?: string }[]): number {
+function getMaxVideoHeight(formats: FormatInfo[]): number {
     let maxHeight = 0;
 
     for (const format of formats) {
         // Skip audio-only formats
-        if (!format.vcodec || format.vcodec === 'none') continue;
+        if (!isVideoFormat(format)) continue;
 
-        // Try to extract height from resolution string (e.g., "1920x1080" or "1080p")
-        if (format.resolution) {
-            const match = format.resolution.match(/(\d+)x(\d+)/);
-            if (match) {
-                const height = parseInt(match[2], 10);
-                if (height > maxHeight) maxHeight = height;
-            } else {
-                // Try format like "1080p"
-                const pMatch = format.resolution.match(/(\d+)p/i);
-                if (pMatch) {
-                    const height = parseInt(pMatch[1], 10);
-                    if (height > maxHeight) maxHeight = height;
-                }
-            }
+        const height = getFormatHeight(format);
+        if (height > maxHeight) {
+            maxHeight = height;
         }
     }
 
     return maxHeight;
+}
+
+function getBestAudioFormatId(formats: FormatInfo[]): string | null {
+    const audioFormats = formats.filter(isAudioOnlyFormat);
+    if (audioFormats.length === 0) return null;
+
+    const sorted = [...audioFormats].sort((a, b) => {
+        const aRate = a.tbr || 0;
+        const bRate = b.tbr || 0;
+        return bRate - aRate;
+    });
+
+    return sorted[0].format_id;
+}
+
+function getTargetHeightForQuality(quality: string): number | null {
+    switch (quality) {
+        case '4k':
+        case '2160p':
+            return 2160;
+        case '1080p':
+            return 1080;
+        case '720p':
+            return 720;
+        case '480p':
+            return 480;
+        case '360p':
+            return 360;
+        default:
+            return null;
+    }
+}
+
+function selectBestVideoFormatForQuality(formats: FormatInfo[], quality: string): FormatInfo | null {
+    const videos = formats
+        .filter(isVideoFormat)
+        .map((format) => ({ format, height: getFormatHeight(format) }))
+        .filter((entry) => entry.height > 0);
+
+    if (videos.length === 0) return null;
+
+    const targetHeight = getTargetHeightForQuality(quality);
+    let candidates = videos;
+
+    if (targetHeight === 2160) {
+        candidates = videos.filter((entry) => entry.height >= 2160);
+    } else if (targetHeight) {
+        const capped = videos.filter((entry) => entry.height <= targetHeight);
+        if (capped.length > 0) {
+            candidates = capped;
+        }
+    }
+
+    const sorted = [...candidates].sort((a, b) => {
+        if (b.height !== a.height) return b.height - a.height;
+        const fpsA = a.format.fps || 0;
+        const fpsB = b.format.fps || 0;
+        if (fpsB !== fpsA) return fpsB - fpsA;
+        const tbrA = a.format.tbr || 0;
+        const tbrB = b.format.tbr || 0;
+        return tbrB - tbrA;
+    });
+
+    return sorted.length > 0 ? sorted[0].format : null;
+}
+
+function buildAutoFormatSelector(formats: FormatInfo[], quality: string): string | undefined {
+    const selectedVideo = selectBestVideoFormatForQuality(formats, quality);
+    if (!selectedVideo) return undefined;
+
+    const hasAudioInVideo = !!selectedVideo.acodec && selectedVideo.acodec !== 'none';
+    if (hasAudioInVideo) {
+        return selectedVideo.format_id;
+    }
+
+    const audioFormatId = getBestAudioFormatId(formats);
+    if (audioFormatId) {
+        return `${selectedVideo.format_id}+${audioFormatId}`;
+    }
+
+    return selectedVideo.format_id;
+}
+
+function isQualityAvailable(formats: FormatInfo[], quality: string): boolean {
+    return buildAutoFormatSelector(formats, quality) !== undefined;
 }
 
 export function MediaInfoModal({
@@ -112,10 +223,8 @@ export function MediaInfoModal({
     const [embedThumbnail, setEmbedThumbnail] = useState(true);
     const [embedMetadata, setEmbedMetadata] = useState(true);
     const [downloadSubtitles, setDownloadSubtitles] = useState(true); // Default ON
-    const [useSponsorblock, setUseSponsorblock] = useState(true); // Default ON
+    const [useSponsorblock, setUseSponsorblock] = useState(false); // Default OFF
     const [showAdvanced, setShowAdvanced] = useState(false);
-    const [saveToVault, setSaveToVault] = useState(false);  // Direct vault download
-    const [vaultUnlocked, setVaultUnlocked] = useState(false);  // Track vault status
 
     // Audio & Video format options
     const [audioQuality, setAudioQuality] = useState('0'); // 320kbps default
@@ -151,13 +260,13 @@ export function MediaInfoModal({
     // Auto-select the highest available quality
     useEffect(() => {
         if (maxVideoHeight > 0) {
-            // Find the highest quality option that's available
-            const availableOption = qualityOptions.find(opt => opt.height <= maxVideoHeight);
+            // Find the highest quality option that's actually available.
+            const availableOption = qualityOptions.find((opt) => isQualityAvailable(mediaInfo.formats, opt.value));
             if (availableOption) {
                 setSelectedQuality(availableOption.value);
             }
         }
-    }, [maxVideoHeight]);
+    }, [maxVideoHeight, mediaInfo.formats]);
 
     // Load SponsorBlock setting
     useEffect(() => {
@@ -165,19 +274,6 @@ export function MediaInfoModal({
             if (val !== null) setUseSponsorblock(val === 'true');
         });
     }, []);
-
-    // Check vault status for "Save to Vault" option
-    useEffect(() => {
-        api.vaultGetStatus().then(status => {
-            setVaultUnlocked(status.is_unlocked);
-            // If vault was locked, disable save to vault option
-            if (!status.is_unlocked) {
-                setSaveToVault(false);
-            }
-        }).catch(() => {
-            setVaultUnlocked(false);
-        });
-    }, [isOpen]);
 
     // Helper to find sponsor segments
     const sponsorSegments = mediaInfo.chapters?.filter(c =>
@@ -200,9 +296,18 @@ export function MediaInfoModal({
         };
     }, [isOpen]);
 
+    const autoFormatSelector = !isDirectFile && downloadMode === 'video' && !showAdvanced
+        ? buildAutoFormatSelector(mediaInfo.formats, selectedQuality)
+        : undefined;
+    const qualityUnavailable = !isDirectFile && downloadMode === 'video' && !showAdvanced && !autoFormatSelector;
+
     const handleDownload = () => {
+        if (qualityUnavailable) {
+            return;
+        }
+
         onDownload({
-            format: showAdvanced ? selectedFormat : undefined,
+            format: showAdvanced ? selectedFormat : autoFormatSelector,
             audioOnly: downloadMode === 'audio',
             quality: selectedQuality,
             embedThumbnail,
@@ -212,7 +317,6 @@ export function MediaInfoModal({
             audioFormat,
             videoFormat,
             useSponsorblock,
-            saveToVault,
         });
     };
 
@@ -398,8 +502,7 @@ export function MediaInfoModal({
                                         </div>
                                         <div className="grid grid-cols-3 gap-2">
                                             {qualityOptions.map((option) => {
-                                                // Disable quality options higher than max available
-                                                const isDisabled = option.height > 0 && maxVideoHeight > 0 && option.height > maxVideoHeight;
+                                                const isDisabled = !isQualityAvailable(mediaInfo.formats, option.value);
 
                                                 return (
                                                     <button
@@ -569,34 +672,6 @@ export function MediaInfoModal({
                                                     />
                                                 </label>
                                             )}
-                                            {/* Save to Vault Toggle */}
-                                            <label
-                                                className={cn(
-                                                    "flex items-center justify-between p-2.5 rounded-lg border transition-colors",
-                                                    vaultUnlocked
-                                                        ? "border-cyan-500/30 cursor-pointer hover:bg-cyan-500/5 bg-cyan-500/10"
-                                                        : "border-white/5 opacity-50 cursor-not-allowed"
-                                                )}
-                                            >
-                                                <div className="flex flex-col">
-                                                    <span className="flex items-center gap-2 text-sm">
-                                                        <Shield className="w-3.5 h-3.5 text-cyan-400" />
-                                                        Save to Vault
-                                                    </span>
-                                                    <span className="text-[10px] text-muted-foreground">
-                                                        {vaultUnlocked
-                                                            ? "Download directly into encrypted vault (no trace)"
-                                                            : "Unlock vault first to enable this option"}
-                                                    </span>
-                                                </div>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={saveToVault}
-                                                    onChange={(e) => vaultUnlocked && setSaveToVault(e.target.checked)}
-                                                    disabled={!vaultUnlocked}
-                                                    className="w-4 h-4 accent-cyan-500"
-                                                />
-                                            </label>
                                         </div>
                                     </div>
                                 )}
@@ -682,10 +757,10 @@ export function MediaInfoModal({
                                 {/* Download Button */}
                                 <button
                                     onClick={handleDownload}
-                                    disabled={isDownloading}
+                                    disabled={isDownloading || qualityUnavailable}
                                     className={cn(
                                         'w-full btn-neon flex items-center justify-center gap-2 py-3 text-base',
-                                        isDownloading && 'opacity-70 cursor-not-allowed'
+                                        (isDownloading || qualityUnavailable) && 'opacity-70 cursor-not-allowed'
                                     )}
                                 >
                                     {isDownloading ? (

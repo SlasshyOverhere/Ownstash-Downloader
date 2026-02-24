@@ -14,7 +14,7 @@ use std::fs;
 const NONCE_SIZE: usize = 12;
 const KEY_SIZE: usize = 32;
 const SECURE_STORAGE_SALT_FILE: &str = "ss_salt.bin";
-const APP_SECRET: &[u8] = b"slasshy_secure_token_vault_2025_v1";
+const APP_SECRET: &[u8] = b"ownstash_secure_token_vault_2025_v1";
 
 /// Helper to convert bytes to hex string
 fn to_hex(bytes: &[u8]) -> String {

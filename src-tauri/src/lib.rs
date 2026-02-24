@@ -21,32 +21,97 @@ mod secure_storage;
 
 use commands::AppState;
 use database::Database;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use tauri::{Emitter, Listener, Manager, WindowEvent};
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, Listener, Manager, RunEvent, WindowEvent};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
+use tauri_plugin_autostart::ManagerExt;
+
+const MAIN_WINDOW_LABEL: &str = "main";
+
+fn is_minimize_to_tray_enabled(app: &AppHandle) -> bool {
+    let app_state = app.state::<AppState>();
+    if let Ok(db) = app_state.db.lock() {
+        return db
+            .get_setting("minimize_to_tray")
+            .unwrap_or(Some("false".to_string()))
+            .unwrap_or("false".to_string())
+            == "true";
+    }
+    false
+}
+
+fn ensure_main_window(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        return Ok(window);
+    }
+
+    tauri::WebviewWindowBuilder::new(
+        app,
+        MAIN_WINDOW_LABEL,
+        tauri::WebviewUrl::App("index.html".into()),
+    )
+    .title("Ownstash Downloader")
+    .inner_size(1280.0, 800.0)
+    .min_inner_size(900.0, 600.0)
+    .resizable(true)
+    .fullscreen(false)
+    .decorations(true)
+    .transparent(false)
+    .center()
+    .visible(false)
+    .build()
+    .map_err(|e| format!("Failed to create main window: {}", e))
+}
+
+pub(crate) fn show_main_window(app: &AppHandle) {
+    match ensure_main_window(app) {
+        Ok(window) => {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+        Err(err) => {
+            println!("[WindowLifecycle] {}", err);
+        }
+    }
+}
+
+fn close_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        let _ = window.close();
+    }
+}
 
 pub fn run() {
+    let background_mode = Arc::new(AtomicBool::new(false));
+    let allow_exit = Arc::new(AtomicBool::new(false));
+    let background_mode_for_single_instance = background_mode.clone();
+    let background_mode_for_setup = background_mode.clone();
+    let background_mode_for_window_event = background_mode.clone();
+    let background_mode_for_run_event = background_mode.clone();
+    let allow_exit_for_setup = allow_exit.clone();
+    let allow_exit_for_run_event = allow_exit.clone();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--minimized"])))
         // Single instance plugin - prevents multiple app instances
-        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(move |app, argv, _cwd| {
             println!("[SingleInstance] Received argv: {:?}", argv);
-            
-            // Focus the main window
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+
+            background_mode_for_single_instance.store(false, Ordering::SeqCst);
+            show_main_window(app);
             
             // Check if any argument is an OAuth callback URL
             for arg in argv.iter() {
-                if arg.contains("slasshy://auth") || arg.contains("oauth") || arg.contains("callback") {
+                if arg.contains("ownstash://auth") || arg.contains("oauth") || arg.contains("callback") {
                     println!("[SingleInstance] Found OAuth callback: {}", arg);
                     // Emit the OAuth callback to the frontend
                     let _ = app.emit("oauth-deep-link", arg.clone());
@@ -57,7 +122,9 @@ pub fn run() {
                 }
             }
         }))
-        .setup(|app| {
+        .setup(move |app| {
+            let app_handle = app.handle().clone();
+
             // Get app data directory
             let app_data_dir = app
                 .path()
@@ -75,14 +142,35 @@ pub fn run() {
             // Store in app state
             app.manage(AppState { db: Mutex::new(db) });
 
+            // Handle autostart by default (if not already set)
+            let app_state = app.state::<AppState>();
+            if let Ok(db) = app_state.db.lock() {
+                if db.get_setting("autostart_initialized").unwrap_or(None).is_none() {
+                    let autostart_manager = app.autolaunch();
+                    let _ = autostart_manager.enable();
+                    let _ = db.save_setting("autostart_initialized", "true");
+                    let _ = db.save_setting("autostart_enabled", "true");
+                }
+            }
+
+            // Check if started with --minimized flag
+            let args: Vec<String> = std::env::args().collect();
+            if args.contains(&"--minimized".to_string()) {
+                background_mode_for_setup.store(true, Ordering::SeqCst);
+                close_main_window(&app_handle);
+            } else {
+                background_mode_for_setup.store(false, Ordering::SeqCst);
+                show_main_window(&app_handle);
+            }
+
             // Start the extension server for Chrome extension communication
-            extension_server::start_extension_server(app.handle().clone());
+            extension_server::start_extension_server(app_handle.clone());
 
             // Initialize native integration (taskbar progress, notifications)
-            native_integration::init(app.handle());
+            native_integration::init(&app_handle);
 
             // Start the media server for video playback
-            media_server::start_media_server(app.handle().clone());
+            media_server::start_media_server(app_handle.clone());
 
             // Handle deep links from Chrome extension (for installed app)
             #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
@@ -92,7 +180,8 @@ pub fn run() {
             }
 
             // Listen for deep link events using the deep-link plugin
-            let handle = app.handle().clone();
+            let handle = app_handle.clone();
+            let background_mode_for_deep_link = background_mode_for_setup.clone();
             app.listen("deep-link://new-url", move |event: tauri::Event| {
                 // Get the payload as a string
                 let payload = event.payload();
@@ -101,28 +190,21 @@ pub fn run() {
                 // Check for OAuth callback first
                 if payload.contains("auth") || payload.contains("callback") || payload.contains("access_token") {
                     println!("[DeepLink] OAuth callback detected");
+
+                    background_mode_for_deep_link.store(false, Ordering::SeqCst);
+                    show_main_window(&handle);
+
                     let _ = handle.emit("oauth-deep-link", payload);
-                    
-                    // Bring window to front
-                    if let Some(window) = handle.get_webview_window("main") {
-                        let _ = window.unminimize();
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
                     return;
                 }
                 
                 // Parse the URL and extract the download URL
                 if let Some(download_url) = parse_deep_link(payload) {
                     println!("[DeepLink] Parsed download URL: {}", download_url);
-                    
-                    // Bring window to front
-                    if let Some(window) = handle.get_webview_window("main") {
-                        let _ = window.unminimize();
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                        println!("[DeepLink] Window brought to front");
-                    }
+
+                    background_mode_for_deep_link.store(false, Ordering::SeqCst);
+                    show_main_window(&handle);
+                    println!("[DeepLink] Window brought to front");
                     
                     // Emit to frontend
                     let _ = handle.emit("extension-download-request", &download_url);
@@ -135,55 +217,55 @@ pub fn run() {
             let hide_i = MenuItem::with_id(app.handle(), "hide", "Hide", true, None::<&str>).unwrap();
             let menu = Menu::with_items(app.handle(), &[&show_i, &hide_i, &quit_i]).unwrap();
 
+            let background_mode_for_menu = background_mode_for_setup.clone();
+            let allow_exit_for_menu = allow_exit_for_setup.clone();
+            let background_mode_for_tray_click = background_mode_for_setup.clone();
+
             let _tray = TrayIconBuilder::new()
                 .menu(&menu)
                 .icon(app.default_window_icon().unwrap().clone())
-                .on_menu_event(|app, event| {
+                .on_menu_event(move |app, event| {
                     match event.id.as_ref() {
                         "quit" => {
+                            allow_exit_for_menu.store(true, Ordering::SeqCst);
+                            background_mode_for_menu.store(false, Ordering::SeqCst);
                             app.exit(0);
                         }
                         "show" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
+                            background_mode_for_menu.store(false, Ordering::SeqCst);
+                            show_main_window(app);
                         }
                         "hide" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.hide();
-                            }
+                            background_mode_for_menu.store(true, Ordering::SeqCst);
+                            close_main_window(app);
                         }
                         _ => {}
                     }
                 })
-                .on_tray_icon_event(|tray, event| {
+                .on_tray_icon_event(move |tray, event| {
                     if let tauri::tray::TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
                         let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
+                        background_mode_for_tray_click.store(false, Ordering::SeqCst);
+                        show_main_window(&app);
                     }
                 })
                 .build(app)?;
 
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                let app_state = window.state::<AppState>();
-                let should_minimize = if let Ok(db) = app_state.db.lock() {
-                    db.get_setting("minimize_to_tray")
-                        .unwrap_or(Some("false".to_string())) // Default to false if error/missing
-                        .unwrap_or("false".to_string()) == "true"
-                } else {
-                    false
-                };
+        .on_window_event(move |window, event| {
+            if window.label() != MAIN_WINDOW_LABEL {
+                return;
+            }
 
-                if should_minimize {
-                    api.prevent_close();
-                    let _ = window.hide();
+            if let WindowEvent::CloseRequested { .. } = event {
+                let should_minimize = is_minimize_to_tray_enabled(&window.app_handle());
+                let force_background = background_mode_for_window_event.load(Ordering::SeqCst);
+
+                if should_minimize || force_background {
+                    background_mode_for_window_event.store(true, Ordering::SeqCst);
+                } else {
+                    background_mode_for_window_event.store(false, Ordering::SeqCst);
                 }
             }
         })
@@ -213,6 +295,7 @@ pub fn run() {
             commands::transcode_for_playback,
             // Downloader commands
             downloader::check_yt_dlp,
+            downloader::update_yt_dlp,
             downloader::get_media_info,
             downloader::probe_direct_file,
             downloader::start_download,
@@ -222,6 +305,7 @@ pub fn run() {
             downloader::get_download_folder_size,
             // SpotDL (Spotify) commands
             spotify_downloader::check_spotdl,
+            spotify_downloader::update_spotdl,
             spotify_downloader::get_spotify_info,
             spotify_downloader::start_spotify_download,
             spotify_downloader::cancel_spotify_download,
@@ -274,11 +358,21 @@ pub fn run() {
             secure_storage::secure_get_setting,
             secure_storage::secure_delete_setting,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(move |_app, event| {
+            if let RunEvent::ExitRequested { api, .. } = event {
+                let should_stay_alive = background_mode_for_run_event.load(Ordering::SeqCst)
+                    && !allow_exit_for_run_event.load(Ordering::SeqCst);
+
+                if should_stay_alive {
+                    api.prevent_exit();
+                }
+            }
+        });
 }
 
-/// Parse a deep link URL like slasshy://download?url=<encoded_url>
+/// Parse a deep link URL like ownstash://download?url=<encoded_url>
 fn parse_deep_link(deep_link: &str) -> Option<String> {
     // Remove quotes if present
     let clean = deep_link.trim().trim_matches('"').trim_matches('[').trim_matches(']');

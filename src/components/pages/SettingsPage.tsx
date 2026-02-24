@@ -22,7 +22,7 @@ import { cn } from '@/lib/utils';
 import { staggerContainer, staggerItem, fadeInUp } from '@/lib/animations';
 import { toast } from 'sonner';
 import { open } from '@tauri-apps/plugin-dialog';
-import api, { YtDlpInfo, UpdateInfo } from '@/services/api';
+import api, { SpotDlInfo, YtDlpInfo, UpdateInfo } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useData } from '@/contexts/DataContext';
 import { UserAvatar } from '@/components/ui/UserAvatar';
@@ -113,14 +113,21 @@ export function SettingsPage() {
     const [audioFormat, setAudioFormat] = useState('mp3');
     const [audioBitrate, setAudioBitrate] = useState('320');
     const [minimizeToTray, setMinimizeToTray] = useState(false);
-    const [useSponsorblock, setUseSponsorblock] = useState(true); // Default ON
+    const [autostartEnabled, setAutostartEnabled] = useState(true);
+    const [useSponsorblock, setUseSponsorblock] = useState(false); // Default OFF
     const [ytDlpInfo, setYtDlpInfo] = useState<YtDlpInfo | null>(null);
     const [ytDlpLoading, setYtDlpLoading] = useState(true);
     const [ytDlpError, setYtDlpError] = useState<string | null>(null);
+    const [ytDlpUpdating, setYtDlpUpdating] = useState(false);
+    const [spotDlInfo, setSpotDlInfo] = useState<SpotDlInfo | null>(null);
+    const [spotDlLoading, setSpotDlLoading] = useState(true);
+    const [spotDlError, setSpotDlError] = useState<string | null>(null);
+    const [spotDlUpdating, setSpotDlUpdating] = useState(false);
     const [supportedPlatforms, setSupportedPlatforms] = useState<string[]>([]);
     const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
     const [updateChecking, setUpdateChecking] = useState(false);
     const [updateInstalling, setUpdateInstalling] = useState(false);
+    const [autoCheckAppUpdates, setAutoCheckAppUpdates] = useState(true);
     const [appVersion, setAppVersion] = useState('0.1.0');
     const [isMigrating, setIsMigrating] = useState(false);
     const [isSyncingGDrive, setIsSyncingGDrive] = useState(false);
@@ -128,14 +135,15 @@ export function SettingsPage() {
     useEffect(() => {
         loadSettings();
         checkYtDlp();
+        checkSpotDl();
         loadPlatforms();
         loadAppVersion();
-        // Check for updates on startup
-        checkForUpdates(true);
     }, []);
 
     const loadSettings = async () => {
         try {
+            let shouldAutoCheckUpdates = true;
+
             // Load download path
             const savedPath = await api.getSetting('download_path');
             if (savedPath) {
@@ -166,23 +174,108 @@ export function SettingsPage() {
 
             const savedSponsorblock = await api.getSetting('use_sponsorblock');
             if (savedSponsorblock !== null) setUseSponsorblock(savedSponsorblock === 'true');
+
+            const savedAutoCheckUpdates = await api.getSetting('auto_check_app_updates');
+            if (savedAutoCheckUpdates === null) {
+                // Default to enabled on first run
+                await api.saveSetting('auto_check_app_updates', 'true');
+                setAutoCheckAppUpdates(true);
+            } else {
+                shouldAutoCheckUpdates = savedAutoCheckUpdates === 'true';
+                setAutoCheckAppUpdates(shouldAutoCheckUpdates);
+            }
+
+            // Load autostart status from plugin directly for accuracy
+            try {
+                const isAutostart = await api.autostartIsEnabled();
+                setAutostartEnabled(isAutostart);
+            } catch (e) {
+                console.warn('Failed to check autostart status:', e);
+                // Fallback to setting if plugin fails
+                const savedAutostart = await api.getSetting('autostart_enabled');
+                if (savedAutostart !== null) setAutostartEnabled(savedAutostart === 'true');
+            }
+
+            if (shouldAutoCheckUpdates) {
+                checkForUpdates(true);
+            }
         } catch (err) {
             console.error('Failed to load settings:', err);
         }
     };
 
-    const checkYtDlp = async () => {
+    const checkYtDlp = async (notifyIfOutdated: boolean = false) => {
         setYtDlpLoading(true);
         setYtDlpError(null);
         try {
-            const info = await api.checkYtDlp();
+            const info = await api.checkYtDlp(true);
             setYtDlpInfo(info);
+            if (notifyIfOutdated && info.update_available) {
+                toast.warning(`yt-dlp is outdated (current: ${info.version}, latest: ${info.latest_version}). Click Update Engine.`);
+            }
         } catch (err) {
+            setYtDlpInfo(null);
             setYtDlpError(err instanceof Error ? err.message : 'yt-dlp not found');
         } finally {
             setYtDlpLoading(false);
         }
     };
+
+    const updateYtDlp = async () => {
+        setYtDlpUpdating(true);
+        setYtDlpError(null);
+        try {
+            toast.info('Downloading latest yt-dlp release...');
+            const info = await api.updateYtDlp();
+            setYtDlpInfo(info);
+            toast.success(`yt-dlp updated to ${info.version}`);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to update yt-dlp';
+            setYtDlpError(message);
+            toast.error(message);
+        } finally {
+            setYtDlpUpdating(false);
+            setYtDlpLoading(false);
+        }
+    };
+
+    const checkSpotDl = async (notifyIfOutdated: boolean = false) => {
+        setSpotDlLoading(true);
+        setSpotDlError(null);
+        try {
+            const info = await api.checkSpotDl(true);
+            setSpotDlInfo(info);
+            if (notifyIfOutdated && info.update_available) {
+                toast.warning(`SpotDL is outdated (current: ${info.version}, latest: ${info.latest_version}). Click Update Engine.`);
+            }
+        } catch (err) {
+            setSpotDlInfo(null);
+            setSpotDlError(err instanceof Error ? err.message : 'SpotDL not found');
+        } finally {
+            setSpotDlLoading(false);
+        }
+    };
+
+    const updateSpotDl = async () => {
+        setSpotDlUpdating(true);
+        setSpotDlError(null);
+        try {
+            toast.info('Downloading latest SpotDL release...');
+            const info = await api.updateSpotDl();
+            setSpotDlInfo(info);
+            toast.success(`SpotDL updated to ${info.version}`);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to update SpotDL';
+            setSpotDlError(message);
+            toast.error(message);
+        } finally {
+            setSpotDlUpdating(false);
+            setSpotDlLoading(false);
+        }
+    };
+
+    const formatBinaryPath = (path: string) =>
+        path.length > 40 ? `...${path.slice(-37)}` : path;
 
     const loadPlatforms = async () => {
         try {
@@ -431,7 +524,7 @@ export function SettingsPage() {
                                 <AlertCircle className="w-5 h-5 text-red-400" />
                                 <div>
                                     <p className="text-sm font-medium text-red-400">yt-dlp Not Found</p>
-                                    <p className="text-xs text-muted-foreground">Install with: winget install yt-dlp</p>
+                                    <p className="text-xs text-muted-foreground">Use the Update Engine button below to install it.</p>
                                 </div>
                             </div>
                         ) : ytDlpInfo ? (
@@ -440,9 +533,19 @@ export function SettingsPage() {
                                 <div>
                                     <p className="text-sm font-medium text-white">yt-dlp Ready</p>
                                     <p className="text-xs text-muted-foreground">
-                                        Version: {ytDlpInfo.version}
+                                        Current: {ytDlpInfo.version}
                                         {ytDlpInfo.is_embedded && ' (embedded)'}
                                     </p>
+                                    <p className="text-xs text-muted-foreground">
+                                        Latest: {ytDlpInfo.latest_version ?? 'Unable to check'}
+                                    </p>
+                                    {ytDlpInfo.update_available ? (
+                                        <p className="text-xs text-amber-300 mt-1">
+                                            Update available. Download latest engine.
+                                        </p>
+                                    ) : ytDlpInfo.latest_version ? (
+                                        <p className="text-xs text-green-300 mt-1">Your engine is up to date.</p>
+                                    ) : null}
                                 </div>
                             </div>
                         ) : null}
@@ -451,23 +554,130 @@ export function SettingsPage() {
                     {ytDlpInfo && (
                         <SettingRow
                             label="Path"
-                            value={ytDlpInfo.path.length > 40
-                                ? '...' + ytDlpInfo.path.slice(-37)
-                                : ytDlpInfo.path}
+                            value={formatBinaryPath(ytDlpInfo.path)}
                         />
                     )}
 
                     <div className="flex gap-2">
                         <button
-                            onClick={checkYtDlp}
-                            disabled={ytDlpLoading}
+                            onClick={() => checkYtDlp(true)}
+                            disabled={ytDlpLoading || ytDlpUpdating}
                             className={cn(
                                 "btn-neon text-sm py-2 px-4 flex items-center gap-2",
-                                ytDlpLoading && "opacity-50 cursor-not-allowed"
+                                (ytDlpLoading || ytDlpUpdating) && "opacity-50 cursor-not-allowed"
                             )}
                         >
                             <RefreshCw className={cn('w-4 h-4', ytDlpLoading && 'animate-spin')} />
                             Check Status
+                        </button>
+                        <button
+                            onClick={updateYtDlp}
+                            disabled={ytDlpLoading || ytDlpUpdating}
+                            className={cn(
+                                "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium",
+                                "bg-white text-black hover:bg-white/90 transition-all",
+                                (ytDlpLoading || ytDlpUpdating) && "opacity-50 cursor-not-allowed"
+                            )}
+                        >
+                            {ytDlpUpdating ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    Updating...
+                                </>
+                            ) : (
+                                <>
+                                    <Download className="w-4 h-4" />
+                                    {ytDlpInfo?.update_available ? 'Update to Latest' : 'Update Engine'}
+                                </>
+                            )}
+                        </button>
+                    </div>
+                </div>
+            </SettingSection>
+
+            {/* SpotDL Settings */}
+            <SettingSection
+                title="SpotDL Engine"
+                description="Spotify downloader backend configuration"
+                icon={Music}
+            >
+                <div className="space-y-3">
+                    <div className="p-4 rounded-xl bg-muted/30 border border-white/10">
+                        {spotDlLoading ? (
+                            <div className="flex items-center gap-3">
+                                <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                                <span className="text-sm">Checking SpotDL...</span>
+                            </div>
+                        ) : spotDlError ? (
+                            <div className="flex items-center gap-3">
+                                <AlertCircle className="w-5 h-5 text-red-400" />
+                                <div>
+                                    <p className="text-sm font-medium text-red-400">SpotDL Not Found</p>
+                                    <p className="text-xs text-muted-foreground">Use the Update Engine button below to install it.</p>
+                                </div>
+                            </div>
+                        ) : spotDlInfo ? (
+                            <div className="flex items-center gap-3">
+                                <CheckCircle className="w-5 h-5 text-white" />
+                                <div>
+                                    <p className="text-sm font-medium text-white">SpotDL Ready</p>
+                                    <p className="text-xs text-muted-foreground">
+                                        Current: {spotDlInfo.version}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                        Latest: {spotDlInfo.latest_version ?? 'Unable to check'}
+                                    </p>
+                                    {spotDlInfo.update_available ? (
+                                        <p className="text-xs text-amber-300 mt-1">
+                                            Update available. Download latest engine.
+                                        </p>
+                                    ) : spotDlInfo.latest_version ? (
+                                        <p className="text-xs text-green-300 mt-1">Your engine is up to date.</p>
+                                    ) : null}
+                                </div>
+                            </div>
+                        ) : null}
+                    </div>
+
+                    {spotDlInfo && (
+                        <SettingRow
+                            label="Path"
+                            value={formatBinaryPath(spotDlInfo.path)}
+                        />
+                    )}
+
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => checkSpotDl(true)}
+                            disabled={spotDlLoading || spotDlUpdating}
+                            className={cn(
+                                "btn-neon text-sm py-2 px-4 flex items-center gap-2",
+                                (spotDlLoading || spotDlUpdating) && "opacity-50 cursor-not-allowed"
+                            )}
+                        >
+                            <RefreshCw className={cn('w-4 h-4', spotDlLoading && 'animate-spin')} />
+                            Check Status
+                        </button>
+                        <button
+                            onClick={updateSpotDl}
+                            disabled={spotDlLoading || spotDlUpdating}
+                            className={cn(
+                                "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium",
+                                "bg-white text-black hover:bg-white/90 transition-all",
+                                (spotDlLoading || spotDlUpdating) && "opacity-50 cursor-not-allowed"
+                            )}
+                        >
+                            {spotDlUpdating ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    Updating...
+                                </>
+                            ) : (
+                                <>
+                                    <Download className="w-4 h-4" />
+                                    {spotDlInfo?.update_available ? 'Update to Latest' : 'Update Engine'}
+                                </>
+                            )}
                         </button>
                     </div>
                 </div>
@@ -533,6 +743,30 @@ export function SettingsPage() {
                                 onChange={(checked) => {
                                     setMinimizeToTray(checked);
                                     handleSaveSetting('minimize_to_tray', String(checked));
+                                }}
+                            />
+                        }
+                    />
+                    <SettingRow
+                        label="Start on Startup"
+                        value="Launch app automatically when your PC starts"
+                        action={
+                            <Toggle
+                                checked={autostartEnabled}
+                                onChange={async (checked) => {
+                                    setAutostartEnabled(checked);
+                                    try {
+                                        if (checked) {
+                                            await api.autostartEnable();
+                                        } else {
+                                            await api.autostartDisable();
+                                        }
+                                        await api.saveSetting('autostart_enabled', String(checked));
+                                        toast.success(checked ? 'Autostart enabled' : 'Autostart disabled');
+                                    } catch (e) {
+                                        toast.error('Failed to update autostart setting');
+                                        console.error(e);
+                                    }
                                 }}
                             />
                         }
@@ -718,6 +952,20 @@ export function SettingsPage() {
                 icon={Sparkles}
             >
                 <div className="space-y-4">
+                    <SettingRow
+                        label="Auto-check updates on startup"
+                        value={autoCheckAppUpdates ? 'Enabled' : 'Disabled'}
+                        action={
+                            <Toggle
+                                checked={autoCheckAppUpdates}
+                                onChange={(checked) => {
+                                    setAutoCheckAppUpdates(checked);
+                                    handleSaveSetting('auto_check_app_updates', String(checked));
+                                }}
+                            />
+                        }
+                    />
+
                     {/* Update status */}
                     <div className="p-4 rounded-xl bg-muted/30 border border-white/10">
                         {updateChecking ? (

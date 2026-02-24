@@ -1,7 +1,7 @@
 // Authentication Context - Provides auth state throughout the app
-// Authentication is REQUIRED - all features require sign-in
+// Uses backend OAuth - no Firebase dependency
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { authService, AuthUser } from '@/services/auth';
+import { authService, AuthUser, initializeAuthState } from '@/services/auth';
 
 interface AuthContextType {
     user: AuthUser | null;
@@ -36,7 +36,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const [hasGDriveToken, setHasGDriveToken] = useState(false);
     // Track if user is in offline mode (continue without login)
     const [isOfflineMode, setIsOfflineMode] = useState(false);
-    // Track if Firebase auth state has been resolved
+    // Track if auth state has been resolved
     const [authResolved, setAuthResolved] = useState(false);
     // Track if GDrive token loading has been attempted
     const [tokenLoadAttempted, setTokenLoadAttempted] = useState(false);
@@ -75,9 +75,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
         let isMounted = true;
 
         const initializeAuth = async () => {
-            // Step 1: Load persisted Google Drive token FIRST
-            // This ensures the token is in memory before Firebase auth triggers DataContext
-            console.log('[Auth] Step 1: Loading persisted GDrive token...');
+            // Step 1: Initialize auth state from stored user
+            console.log('[Auth] Step 1: Initializing auth state from storage...');
+            const storedUser = initializeAuthState();
+            if (storedUser && isMounted) {
+                setUser(storedUser);
+                console.log('[Auth] Found stored user:', storedUser.email);
+            }
+
+            // Step 2: Load persisted Google Drive token
+            console.log('[Auth] Step 2: Loading persisted GDrive token...');
             try {
                 const tokenLoaded = await recheckGDriveToken();
                 if (isMounted) {
@@ -91,8 +98,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 }
             }
 
-            // Step 2: Initialize Google browser auth listener for deep link callbacks
-            console.log('[Auth] Step 2: Initializing Google auth listener...');
+            // Step 3: Initialize Google browser auth listener for deep link callbacks
+            console.log('[Auth] Step 3: Initializing Google auth listener...');
             try {
                 const { initGoogleAuthListener } = await import('@/services/googleAuth');
                 await initGoogleAuthListener();
@@ -100,17 +107,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 console.log('[Auth] Google auth listener init error (non-fatal):', err);
             }
 
-            // Step 3: Check for redirect result (for Google auth fallback)
-            console.log('[Auth] Step 3: Checking redirect result...');
-            try {
-                const redirectUser = await authService.checkRedirectResult();
-                if (redirectUser && isMounted) {
-                    setUser(redirectUser);
-                    setLoading(false);
-                    setAuthResolved(true);
-                }
-            } catch (err) {
-                console.log('[Auth] Redirect check error (non-fatal):', err);
+            // Mark as resolved
+            if (isMounted) {
+                setLoading(false);
+                setAuthResolved(true);
             }
         };
 

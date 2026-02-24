@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
@@ -14,6 +16,8 @@ use crate::snde::{SNDEEngine, SNDERequest, SNDE_ENGINE};
 // Track active download processes for cancellation
 lazy_static::lazy_static! {
     static ref ACTIVE_DOWNLOADS: Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>> = 
+        Arc::new(Mutex::new(HashMap::new()));
+    static ref MEDIA_INFO_CACHE: Arc<Mutex<HashMap<String, (Instant, MediaInfo)>>> =
         Arc::new(Mutex::new(HashMap::new()));
 }
 
@@ -77,6 +81,8 @@ pub struct FormatInfo {
     pub format_id: String,
     pub ext: String,
     pub resolution: Option<String>,
+    pub height: Option<i64>,
+    pub width: Option<i64>,
     pub filesize: Option<i64>,
     pub filesize_approx: Option<i64>,
     pub vcodec: Option<String>,
@@ -92,6 +98,13 @@ pub struct YtDlpInfo {
     pub version: String,
     pub path: String,
     pub is_embedded: bool,
+    pub latest_version: Option<String>,
+    pub update_available: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct GithubLatestRelease {
+    tag_name: String,
 }
 
 pub struct Downloader {
@@ -122,8 +135,216 @@ impl Downloader {
         Self { yt_dlp_path, ffmpeg_path }
     }
 
+    fn binaries_dir(app_handle: &AppHandle) -> Result<PathBuf, String> {
+        let app_data_dir = app_handle
+            .path()
+            .app_data_dir()
+            .map_err(|e| format!("Failed to access app data directory: {}", e))?;
+        Ok(app_data_dir.join("binaries"))
+    }
+
+    fn managed_yt_dlp_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
+        let binary_name = if cfg!(windows) { "yt-dlp.exe" } else { "yt-dlp" };
+        Ok(Self::binaries_dir(app_handle)?.join(binary_name))
+    }
+
+    fn preferred_yt_dlp_asset_name() -> &'static str {
+        #[cfg(all(target_os = "windows", target_arch = "x86"))]
+        {
+            "yt-dlp_x86.exe"
+        }
+        #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
+        {
+            "yt-dlp_arm64.exe"
+        }
+        #[cfg(all(target_os = "windows", not(any(target_arch = "x86", target_arch = "aarch64"))))]
+        {
+            "yt-dlp.exe"
+        }
+        #[cfg(target_os = "macos")]
+        {
+            "yt-dlp_macos"
+        }
+        #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+        {
+            "yt-dlp_linux_aarch64"
+        }
+        #[cfg(all(target_os = "linux", not(target_arch = "aarch64")))]
+        {
+            "yt-dlp_linux"
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+        {
+            "yt-dlp"
+        }
+    }
+
+    async fn fetch_latest_yt_dlp_version() -> Result<String, String> {
+        let client = reqwest::Client::builder()
+            .user_agent("OwnstashDownloader/1.0")
+            .timeout(std::time::Duration::from_secs(20))
+            .build()
+            .map_err(|e| format!("Failed to initialize HTTP client: {}", e))?;
+
+        let release: GithubLatestRelease = client
+            .get("https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest")
+            .send()
+            .await
+            .map_err(|e| format!("Failed to check latest yt-dlp version: {}", e))?
+            .error_for_status()
+            .map_err(|e| format!("Latest yt-dlp version request failed: {}", e))?
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse yt-dlp release metadata: {}", e))?;
+
+        Ok(release.tag_name.trim().to_string())
+    }
+
+    fn normalize_version_token(version: &str) -> String {
+        let cleaned = version.trim().trim_start_matches('v');
+
+        for token in cleaned.split(|c: char| c.is_whitespace() || c == '(' || c == ')' || c == ',') {
+            let token = token
+                .trim()
+                .trim_start_matches('v')
+                .trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '.');
+
+            if token.contains('.') && token.chars().any(|c| c.is_ascii_digit()) {
+                return token.to_string();
+            }
+        }
+
+        cleaned.to_string()
+    }
+
+    fn parse_version_segments(version: &str) -> Option<Vec<u32>> {
+        let normalized = Self::normalize_version_token(version);
+        let mut segments = Vec::new();
+
+        for part in normalized.split('.') {
+            let digits: String = part.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if digits.is_empty() {
+                return None;
+            }
+            segments.push(digits.parse::<u32>().ok()?);
+        }
+
+        if segments.is_empty() {
+            None
+        } else {
+            Some(segments)
+        }
+    }
+
+    fn is_update_available(current_version: &str, latest_version: &str) -> bool {
+        let current_segments = Self::parse_version_segments(current_version);
+        let latest_segments = Self::parse_version_segments(latest_version);
+
+        if let (Some(current), Some(latest)) = (current_segments, latest_segments) {
+            let max_len = current.len().max(latest.len());
+            for idx in 0..max_len {
+                let current_value = *current.get(idx).unwrap_or(&0);
+                let latest_value = *latest.get(idx).unwrap_or(&0);
+
+                if latest_value > current_value {
+                    return true;
+                }
+                if latest_value < current_value {
+                    return false;
+                }
+            }
+            return false;
+        }
+
+        Self::normalize_version_token(current_version)
+            != Self::normalize_version_token(latest_version)
+    }
+
+    async fn download_binary(url: &str, target_path: &Path) -> Result<(), String> {
+        let client = reqwest::Client::builder()
+            .user_agent("OwnstashDownloader/1.0")
+            .timeout(std::time::Duration::from_secs(180))
+            .build()
+            .map_err(|e| format!("Failed to initialize HTTP client: {}", e))?;
+
+        let response = client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to download binary: {}", e))?;
+
+        if !response.status().is_success() {
+            return Err(format!(
+                "Failed to download binary (HTTP {})",
+                response.status()
+            ));
+        }
+
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| format!("Failed to read downloaded binary: {}", e))?;
+
+        let parent = target_path
+            .parent()
+            .ok_or_else(|| "Invalid binary destination path".to_string())?;
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| format!("Failed to prepare binaries directory: {}", e))?;
+
+        let temp_path = target_path.with_extension("download.tmp");
+        tokio::fs::write(&temp_path, bytes)
+            .await
+            .map_err(|e| format!("Failed to write temporary binary: {}", e))?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            tokio::fs::set_permissions(&temp_path, std::fs::Permissions::from_mode(0o755))
+                .await
+                .map_err(|e| format!("Failed to set executable permissions: {}", e))?;
+        }
+
+        if target_path.exists() {
+            tokio::fs::remove_file(target_path)
+                .await
+                .map_err(|e| format!("Failed to replace existing binary: {}", e))?;
+        }
+
+        tokio::fs::rename(&temp_path, target_path)
+            .await
+            .map_err(|e| format!("Failed to finalize binary update: {}", e))?;
+
+        Ok(())
+    }
+
+    pub async fn update_yt_dlp(app_handle: &AppHandle) -> Result<YtDlpInfo, String> {
+        let target_path = Self::managed_yt_dlp_path(app_handle)?;
+        let asset_name = Self::preferred_yt_dlp_asset_name();
+        let download_url = format!(
+            "https://github.com/yt-dlp/yt-dlp/releases/latest/download/{}",
+            asset_name
+        );
+
+        println!("[Downloader] Updating yt-dlp from: {}", download_url);
+        println!("[Downloader] Target path: {:?}", target_path);
+
+        Self::download_binary(&download_url, &target_path).await?;
+
+        let downloader = Downloader::new(app_handle);
+        downloader.check_yt_dlp(true).await
+    }
+
 
     fn find_yt_dlp(app_handle: &AppHandle) -> String {
+        // App-managed binaries have priority so in-app updates are used immediately
+        if let Ok(managed_path) = Self::managed_yt_dlp_path(app_handle) {
+            if managed_path.exists() {
+                println!("[Downloader] Found managed yt-dlp in app data: {:?}", managed_path);
+                return managed_path.to_string_lossy().to_string();
+            }
+        }
+
         // Try multiple possible locations for bundled yt-dlp
         if let Ok(resource_dir) = app_handle.path().resource_dir() {
             let possible_paths = if cfg!(windows) {
@@ -159,17 +380,6 @@ impl Downloader {
             println!("[Downloader] yt-dlp not found in resource dir. Checked paths:");
             for path in &possible_paths {
                 println!("  - {:?}", path);
-            }
-        }
-
-        // Try app data directory (for development or copied binaries)
-        if let Ok(app_data_dir) = app_handle.path().app_data_dir() {
-            let binary_name = if cfg!(windows) { "yt-dlp.exe" } else { "yt-dlp" };
-            let data_path = app_data_dir.join("binaries").join(binary_name);
-            
-            if data_path.exists() {
-                println!("[Downloader] Found yt-dlp in app data: {:?}", data_path);
-                return data_path.to_string_lossy().to_string();
             }
         }
 
@@ -227,7 +437,11 @@ impl Downloader {
 
 
 
-    pub async fn check_yt_dlp(&self) -> Result<YtDlpInfo, String> {
+    pub async fn check_yt_dlp(&self, include_latest: bool) -> Result<YtDlpInfo, String> {
+        if self.yt_dlp_path.is_empty() {
+            return Err("yt-dlp not found. Use the updater in Settings to install it.".to_string());
+        }
+
         let output = Self::create_hidden_command(&self.yt_dlp_path)
             .arg("--version")
             .output()
@@ -239,21 +453,63 @@ impl Downloader {
         }
 
         let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let latest_version = if include_latest {
+            match Self::fetch_latest_yt_dlp_version().await {
+                Ok(version) => Some(version),
+                Err(err) => {
+                    println!("[Downloader] Failed to fetch latest yt-dlp version: {}", err);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let update_available = latest_version
+            .as_ref()
+            .map(|latest| Self::is_update_available(&version, latest))
+            .unwrap_or(false);
         let is_embedded = self.yt_dlp_path.contains("binaries");
 
         Ok(YtDlpInfo {
             version,
             path: self.yt_dlp_path.clone(),
             is_embedded,
+            latest_version,
+            update_available,
         })
     }
 
     pub async fn get_media_info(&self, url: &str, check_sponsorblock: bool) -> Result<MediaInfo, String> {
+        let cache_key = format!("{}::{}", url.trim(), check_sponsorblock);
+        {
+            let cache = MEDIA_INFO_CACHE.lock().unwrap();
+            if let Some((cached_at, cached_info)) = cache.get(&cache_key) {
+                if cached_at.elapsed() < Duration::from_secs(300) {
+                    return Ok(cached_info.clone());
+                }
+            }
+        }
+
+        let is_youtube_url = url.contains("youtube.com") || url.contains("youtu.be");
+
         let mut args = vec![
-            "-j".to_string(),
+            "--dump-single-json".to_string(),
+            "--skip-download".to_string(),
             "--no-playlist".to_string(),
             "--no-warnings".to_string(),
+            "--extractor-retries".to_string(),
+            "1".to_string(),
+            "--retries".to_string(),
+            "2".to_string(),
+            "--socket-timeout".to_string(),
+            "15".to_string(),
         ];
+
+        // Keep non-YouTube extraction lightweight, but avoid suppressing format checks
+        // on YouTube so high-res (1440p/4K) variants are consistently discovered.
+        if !is_youtube_url {
+            args.push("--no-check-formats".to_string());
+        }
 
         if check_sponsorblock {
             args.push("--sponsorblock-mark".to_string());
@@ -296,6 +552,8 @@ impl Downloader {
                                         _ => None
                                     }
                                 }),
+                            height: f["height"].as_i64(),
+                            width: f["width"].as_i64(),
                             filesize: f["filesize"].as_i64(),
                             filesize_approx: f["filesize_approx"].as_i64(),
                             vcodec: f["vcodec"].as_str()
@@ -314,7 +572,7 @@ impl Downloader {
             })
             .unwrap_or_default();
 
-        Ok(MediaInfo {
+        let media_info = MediaInfo {
             title: json["title"].as_str().unwrap_or("Unknown").to_string(),
             duration: json["duration"].as_i64().or_else(|| json["duration"].as_f64().map(|f| f as i64)),
             thumbnail: json["thumbnail"].as_str().map(|s| s.to_string()),
@@ -335,7 +593,17 @@ impl Downloader {
                     title: c["title"].as_str().unwrap_or("").to_string(),
                 }).collect()
             }),
-        })
+        };
+
+        {
+            let mut cache = MEDIA_INFO_CACHE.lock().unwrap();
+            cache.insert(cache_key, (Instant::now(), media_info.clone()));
+            if cache.len() > 64 {
+                cache.retain(|_, (timestamp, _)| timestamp.elapsed() < Duration::from_secs(300));
+            }
+        }
+
+        Ok(media_info)
     }
 
     pub async fn start_download(
@@ -454,6 +722,18 @@ impl Downloader {
             "download:%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s".to_string(),
         ];
 
+        let concurrent_fragments = routing_decision.recommended_connections.clamp(2, 8);
+        args.extend([
+            "--concurrent-fragments".to_string(),
+            concurrent_fragments.to_string(),
+            "--retries".to_string(),
+            "4".to_string(),
+            "--fragment-retries".to_string(),
+            "4".to_string(),
+            "--socket-timeout".to_string(),
+            "20".to_string(),
+        ]);
+
         // Add ffmpeg location if available
         if let Some(ffmpeg) = &self.ffmpeg_path {
             // Get the directory containing ffmpeg, not the full path to the binary
@@ -549,6 +829,13 @@ impl Downloader {
         tokio::spawn(async move {
             let engine_badge = engine_badge_for_spawn; // Move into spawn
             let mut last_progress = 0.0_f64;
+            let mut last_emitted_progress = 0.0_f64;
+            let mut smoothed_speed_bps: Option<f64> = None;
+            let mut last_speed_label = String::new();
+            let mut last_eta_label = String::new();
+            let mut last_emit_at = Instant::now()
+                .checked_sub(Duration::from_secs(1))
+                .unwrap_or_else(Instant::now);
             let mut error_output = String::new();
 
             loop {
@@ -573,51 +860,18 @@ impl Downloader {
                         match result {
                             Ok(Some(line)) => {
                                 println!("[yt-dlp stdout] {}", line);
-                                
-                                // Try to parse progress from various formats
-                                if let Some(progress) = parse_progress_template(&line) {
-                                    last_progress = progress.0;
-                                    let event = DownloadProgress {
-                                        id: id.clone(),
-                                        progress: progress.0,
-                                        speed: progress.1,
-                                        eta: progress.2,
-                                        status: "downloading".to_string(),
-                                        downloaded_bytes: None,
-                                        total_bytes: None,
-                                        filename: None,
-                                        engine_badge: Some(engine_badge.clone()),
-                                    };
-                                    let _ = app.emit("download-progress", event);
-                                } else if let Some(progress) = parse_progress(&line) {
-                                    last_progress = progress.0;
-                                    let event = DownloadProgress {
-                                        id: id.clone(),
-                                        progress: progress.0,
-                                        speed: progress.1,
-                                        eta: progress.2,
-                                        status: "downloading".to_string(),
-                                        downloaded_bytes: None,
-                                        total_bytes: None,
-                                        filename: None,
-                                        engine_badge: Some(engine_badge.clone()),
-                                    };
-                                    let _ = app.emit("download-progress", event);
-                                } else if line.contains("[Merger]") || line.contains("[ExtractAudio]") || line.contains("[ffmpeg]") {
-                                    // During merging/post-processing, show 99% progress
-                                    let event = DownloadProgress {
-                                        id: id.clone(),
-                                        progress: 99.0,
-                                        speed: "Merging...".to_string(),
-                                        eta: "".to_string(),
-                                        status: "downloading".to_string(),
-                                        downloaded_bytes: None,
-                                        total_bytes: None,
-                                        filename: None,
-                                        engine_badge: Some(engine_badge.clone()),
-                                    };
-                                    let _ = app.emit("download-progress", event);
-                                }
+                                let _ = handle_download_output_line(
+                                    &line,
+                                    &app,
+                                    &id,
+                                    &engine_badge,
+                                    &mut last_progress,
+                                    &mut last_emitted_progress,
+                                    &mut smoothed_speed_bps,
+                                    &mut last_speed_label,
+                                    &mut last_eta_label,
+                                    &mut last_emit_at,
+                                );
                             }
                             Ok(None) => break,
                             Err(_) => break,
@@ -626,8 +880,24 @@ impl Downloader {
                     result = stderr_reader.next_line() => {
                         match result {
                             Ok(Some(line)) => {
-                                error_output.push_str(&line);
-                                error_output.push('\n');
+                                println!("[yt-dlp stderr] {}", line);
+                                let handled = handle_download_output_line(
+                                    &line,
+                                    &app,
+                                    &id,
+                                    &engine_badge,
+                                    &mut last_progress,
+                                    &mut last_emitted_progress,
+                                    &mut smoothed_speed_bps,
+                                    &mut last_speed_label,
+                                    &mut last_eta_label,
+                                    &mut last_emit_at,
+                                );
+
+                                if !handled {
+                                    error_output.push_str(&line);
+                                    error_output.push('\n');
+                                }
                             }
                             Ok(None) => {},
                             Err(_) => {},
@@ -688,35 +958,193 @@ impl Downloader {
     }
 }
 
-fn parse_progress_template(line: &str) -> Option<(f64, String, String)> {
+fn handle_download_output_line(
+    line: &str,
+    app: &AppHandle,
+    id: &str,
+    engine_badge: &str,
+    last_progress: &mut f64,
+    last_emitted_progress: &mut f64,
+    smoothed_speed_bps: &mut Option<f64>,
+    last_speed_label: &mut String,
+    last_eta_label: &mut String,
+    last_emit_at: &mut Instant,
+) -> bool {
+    // Try to parse progress from various formats
+    if let Some(progress) = parse_progress_template(line).or_else(|| parse_progress(line)) {
+        let mut stabilized_progress = progress.progress.clamp(0.0, 100.0);
+        if !stabilized_progress.is_finite() {
+            stabilized_progress = *last_progress;
+        }
+
+        // Keep 100% reserved for final completion event.
+        // yt-dlp can emit temporary 100% for intermediate streams (audio/video),
+        // so never jump directly to 99 from normal progress lines.
+        if stabilized_progress >= 100.0 {
+            stabilized_progress = (*last_progress + 0.6).min(98.0);
+        }
+
+        // Keep progress monotonic, but allow a genuine phase reset when yt-dlp
+        // moves from one stream to another (high -> very low).
+        if stabilized_progress < *last_progress {
+            let is_stream_phase_reset = *last_progress >= 85.0 && stabilized_progress <= 5.0;
+            if !is_stream_phase_reset {
+                stabilized_progress = *last_progress;
+            }
+        }
+
+        *last_progress = stabilized_progress;
+
+        if let Some(raw_speed_bps) = progress.speed_bps {
+            *smoothed_speed_bps = Some(match *smoothed_speed_bps {
+                Some(previous) => previous + (raw_speed_bps - previous) * 0.30,
+                None => raw_speed_bps,
+            });
+        }
+
+        let speed_label = smoothed_speed_bps
+            .as_ref()
+            .map(|speed| format_transfer_speed(*speed))
+            .or_else(|| {
+                if progress.speed.is_empty() {
+                    None
+                } else {
+                    Some(progress.speed.clone())
+                }
+            })
+            .unwrap_or_default();
+        let eta_label = progress.eta;
+
+        let should_emit = last_emit_at.elapsed() >= Duration::from_millis(180)
+            || (stabilized_progress - *last_emitted_progress).abs() >= 0.5
+            || speed_label != *last_speed_label
+            || eta_label != *last_eta_label;
+
+        if should_emit {
+            let event = DownloadProgress {
+                id: id.to_string(),
+                progress: stabilized_progress,
+                speed: speed_label.clone(),
+                eta: eta_label.clone(),
+                status: "downloading".to_string(),
+                downloaded_bytes: None,
+                total_bytes: None,
+                filename: None,
+                engine_badge: Some(engine_badge.to_string()),
+            };
+            let _ = app.emit("download-progress", event);
+            *last_emit_at = Instant::now();
+            *last_emitted_progress = stabilized_progress;
+            *last_speed_label = speed_label;
+            *last_eta_label = eta_label;
+        }
+        return true;
+    }
+
+    if is_post_processing_line(line) {
+        // During merging/post-processing, show 99% progress
+        // Only jump to near-complete when we've already reached late download phase.
+        let merge_progress = if *last_progress >= 90.0 {
+            99.0
+        } else {
+            *last_progress
+        };
+        *last_progress = merge_progress;
+        let event = DownloadProgress {
+            id: id.to_string(),
+            progress: merge_progress,
+            speed: "Merging...".to_string(),
+            eta: "".to_string(),
+            status: "downloading".to_string(),
+            downloaded_bytes: None,
+            total_bytes: None,
+            filename: None,
+            engine_badge: Some(engine_badge.to_string()),
+        };
+        let _ = app.emit("download-progress", event);
+        *last_emit_at = Instant::now();
+        *last_emitted_progress = merge_progress;
+        *last_speed_label = "Merging...".to_string();
+        last_eta_label.clear();
+        return true;
+    }
+
+    false
+}
+
+fn is_post_processing_line(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    lower.contains("[merger]")
+        || lower.contains("merging formats into")
+        || lower.contains("[extractaudio]")
+        || lower.contains("post-process")
+        || lower.contains("[embedthumbnail]")
+        || lower.contains("[embedsubtitles]")
+        || lower.contains("[embedmetadata]")
+}
+
+#[derive(Debug, Clone)]
+struct ParsedProgress {
+    progress: f64,
+    speed: String,
+    speed_bps: Option<f64>,
+    eta: String,
+}
+
+fn parse_progress_template(line: &str) -> Option<ParsedProgress> {
     // Parse our custom progress template: percent|speed|eta|downloaded|total
     // yt-dlp outputs like: "50.0%|10.5MiB/s|00:05|52.5MiB|105.0MiB"
     let parts: Vec<&str> = line.split('|').collect();
-    if parts.len() >= 3 {
-        // Clean the percent string - remove spaces, %, and any other characters
-        let percent_str = parts[0]
-            .trim()
-            .replace('%', "")
-            .replace(' ', "")
-            .chars()
-            .filter(|c| c.is_ascii_digit() || *c == '.' || *c == '-')
-            .collect::<String>();
-        
-        let progress = percent_str.parse::<f64>().ok()?;
-        
-        // Clean speed and eta strings
-        let speed = parts[1].trim().replace("N/A", "").to_string();
-        let eta = parts[2].trim().replace("N/A", "").to_string();
-        
-        // Log for debugging
-        println!("[Progress] {}% | {} | {}", progress, speed, eta);
-        
-        return Some((progress, speed, eta));
+    if parts.len() < 3 {
+        return None;
     }
-    None
+
+    // Clean the percent string - remove spaces, %, and any other characters
+    let percent_str = parts[0]
+        .trim()
+        .replace('%', "")
+        .replace(' ', "")
+        .chars()
+        .filter(|c| c.is_ascii_digit() || *c == '.' || *c == '-')
+        .collect::<String>();
+
+    let progress_from_percent = percent_str.parse::<f64>().ok();
+    let progress_from_bytes = if let (Some(downloaded), Some(total)) = (
+        parts.get(3).and_then(|value| parse_size_to_bytes(value)),
+        parts.get(4).and_then(|value| parse_size_to_bytes(value)),
+    ) {
+        if total > 0.0 {
+            Some((downloaded / total) * 100.0)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let progress = progress_from_bytes.or(progress_from_percent)?;
+
+    let speed_raw = sanitize_metric(parts[1]);
+    let speed_bps = parse_speed_to_bps(&speed_raw);
+    let speed = if speed_raw.is_empty() {
+        String::new()
+    } else {
+        speed_raw
+    };
+    let eta = sanitize_metric(parts[2]);
+
+    // Log for debugging
+    println!("[Progress] {}% | {} | {}", progress, speed, eta);
+
+    Some(ParsedProgress {
+        progress,
+        speed,
+        speed_bps,
+        eta,
+    })
 }
 
-fn parse_progress(line: &str) -> Option<(f64, String, String)> {
+fn parse_progress(line: &str) -> Option<ParsedProgress> {
     // Parse yt-dlp progress output like:
     // [download]  50.0% of 100.00MiB at 10.00MiB/s ETA 00:05
     if !line.contains("[download]") {
@@ -730,7 +1158,7 @@ fn parse_progress(line: &str) -> Option<(f64, String, String)> {
         .parse::<f64>()
         .ok()?;
 
-    let speed = line
+    let speed_raw = line
         .split("at ")
         .nth(1)
         .and_then(|s| s.split_whitespace().next())
@@ -741,20 +1169,110 @@ fn parse_progress(line: &str) -> Option<(f64, String, String)> {
         .split("ETA ")
         .nth(1)
         .unwrap_or("")
-        .trim()
-        .to_string();
+        .trim();
+
+    let speed = sanitize_metric(&speed_raw);
+    let speed_bps = parse_speed_to_bps(&speed);
+    let eta = sanitize_metric(eta);
 
     // Log for debugging
     println!("[Progress Fallback] {}% | {} | {}", progress, speed, eta);
 
-    Some((progress, speed, eta))
+    Some(ParsedProgress {
+        progress,
+        speed,
+        speed_bps,
+        eta,
+    })
+}
+
+fn sanitize_metric(value: &str) -> String {
+    let cleaned = value
+        .trim()
+        .replace("N/A", "")
+        .replace("n/a", "")
+        .replace('~', "");
+    cleaned.trim().to_string()
+}
+
+fn parse_speed_to_bps(value: &str) -> Option<f64> {
+    let mut normalized = value.trim().to_string();
+    if normalized.is_empty() {
+        return None;
+    }
+    if let Some(stripped) = normalized.strip_suffix("/s") {
+        normalized = stripped.to_string();
+    }
+    parse_size_to_bytes(&normalized)
+}
+
+fn parse_size_to_bytes(value: &str) -> Option<f64> {
+    let compact = value
+        .trim()
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '~' && *c != ',')
+        .collect::<String>();
+    if compact.is_empty() {
+        return None;
+    }
+
+    let split_index = compact
+        .char_indices()
+        .find(|(_, c)| !c.is_ascii_digit() && *c != '.')
+        .map(|(idx, _)| idx)
+        .unwrap_or(compact.len());
+
+    if split_index == 0 {
+        return None;
+    }
+
+    let number = compact[..split_index].parse::<f64>().ok()?;
+    let unit = compact[split_index..].to_ascii_lowercase();
+
+    let multiplier = match unit.as_str() {
+        "" | "b" | "byte" | "bytes" => 1.0,
+        "kb" => 1_000.0,
+        "kib" => 1_024.0,
+        "mb" => 1_000_000.0,
+        "mib" => 1_048_576.0,
+        "gb" => 1_000_000_000.0,
+        "gib" => 1_073_741_824.0,
+        "tb" => 1_000_000_000_000.0,
+        "tib" => 1_099_511_627_776.0,
+        _ => return None,
+    };
+
+    Some(number * multiplier)
+}
+
+fn format_transfer_speed(speed_bps: f64) -> String {
+    if !speed_bps.is_finite() || speed_bps <= 0.0 {
+        return String::new();
+    }
+
+    if speed_bps >= 1_073_741_824.0 {
+        return format!("{:.2} GiB/s", speed_bps / 1_073_741_824.0);
+    }
+    if speed_bps >= 1_048_576.0 {
+        return format!("{:.2} MiB/s", speed_bps / 1_048_576.0);
+    }
+    if speed_bps >= 1_024.0 {
+        return format!("{:.1} KiB/s", speed_bps / 1_024.0);
+    }
+
+    format!("{:.0} B/s", speed_bps)
 }
 
 // Tauri commands for downloading
 #[tauri::command]
-pub async fn check_yt_dlp(app_handle: AppHandle) -> Result<YtDlpInfo, String> {
+pub async fn check_yt_dlp(app_handle: AppHandle, include_latest: Option<bool>) -> Result<YtDlpInfo, String> {
     let downloader = Downloader::new(&app_handle);
-    downloader.check_yt_dlp().await
+    downloader.check_yt_dlp(include_latest.unwrap_or(false)).await
+}
+
+#[tauri::command]
+pub async fn update_yt_dlp(app_handle: AppHandle) -> Result<YtDlpInfo, String> {
+    Downloader::update_yt_dlp(&app_handle).await
 }
 
 #[tauri::command]
@@ -904,8 +1422,8 @@ pub async fn get_supported_platforms() -> Result<Vec<String>, String> {
 pub async fn get_default_download_path(app_handle: AppHandle) -> Result<String, String> {
     // Try to get user's Downloads folder
     if let Some(download_dir) = dirs::download_dir() {
-        let slasshy_dir = download_dir.join("Slasshy Downloads");
-        return Ok(slasshy_dir.to_string_lossy().to_string());
+        let ownstash_dir = download_dir.join("Ownstash Downloads");
+        return Ok(ownstash_dir.to_string_lossy().to_string());
     }
     
     // Fallback to app data directory

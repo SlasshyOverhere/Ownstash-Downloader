@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    slasshy_omnidownloader_lib::run()
+    ownstash_downloader_lib::run()
 }

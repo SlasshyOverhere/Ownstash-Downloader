@@ -146,7 +146,7 @@ pub async fn vault_direct_download(
     let output_path = vault_files_dir.join(&encrypted_name);
 
     // Create temp directory path with random name
-    let temp_dir = std::env::temp_dir().join("slasshy_vault_temp");
+    let temp_dir = std::env::temp_dir().join("ownstash_vault_temp");
     tokio::fs::create_dir_all(&temp_dir).await
         .map_err(|e| format!("Failed to create temp directory: {}", e))?;
     

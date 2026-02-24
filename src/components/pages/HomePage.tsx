@@ -9,7 +9,6 @@ import {
     Video,
     Loader2,
     AlertCircle,
-    CheckCircle,
     Instagram,
     Twitter
 } from 'lucide-react';
@@ -24,12 +23,10 @@ import api, {
     generateDownloadId,
     SpotifyMediaInfo,
     SpotifyDownloadRequest,
-    isSpotifyUrl,
-    VaultFile
+    isSpotifyUrl
 } from '@/services/api';
 import { MediaInfoModal, DownloadOptions } from '@/components/MediaInfoModal';
 import { SpotifyInfoModal, SpotifyDownloadOptions } from '@/components/SpotifyInfoModal';
-import { addToVaultIndex, isVaultCloudInitialized } from '@/services/vaultCloudService';
 
 // Platform detection patterns
 const platformPatterns = [
@@ -96,18 +93,13 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
     const [spotifyMediaInfo, setSpotifyMediaInfo] = useState<SpotifyMediaInfo | null>(null);
     const [showModal, setShowModal] = useState(false);
     const [showSpotifyModal, setShowSpotifyModal] = useState(false);
-    const [ytDlpStatus, setYtDlpStatus] = useState<'checking' | 'ready' | 'error'>('checking');
-    const [spotDlStatus, setSpotDlStatus] = useState<'checking' | 'ready' | 'error'>('checking');
     const [stats, setStats] = useState({ downloads: 0, storage: '0 MB', platforms: 0 });
     const [downloadPath, setDownloadPath] = useState<string>('');
 
     const detectedPlatform = detectPlatform(url);
     const isSpotify = isSpotifyUrl(url);
 
-    // Check yt-dlp and spotdl availability on mount
     useEffect(() => {
-        checkYtDlp();
-        checkSpotDl();
         loadStats();
         loadDownloadPath();
 
@@ -136,8 +128,6 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
     // Handle URL received from Chrome extension via deep link
     useEffect(() => {
         if (extensionUrl && extensionUrl.trim()) {
-            console.log('[Extension] Auto-filling URL:', extensionUrl);
-
             // Clear any previous state to avoid showing stale data
             setMediaInfo(null);
             setSpotifyMediaInfo(null);
@@ -158,36 +148,10 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
             // Use the extensionUrl directly, not the state which might be stale
             const urlToFetch = extensionUrl;
             setTimeout(() => {
-                const isSpotifyLink = isSpotifyUrl(urlToFetch);
-                if ((!isSpotifyLink && ytDlpStatus === 'ready') || (isSpotifyLink && spotDlStatus === 'ready')) {
-                    // Trigger fetch with the specific URL
-                    fetchMediaForUrl(urlToFetch);
-                }
+                fetchMediaForUrl(urlToFetch);
             }, 300);
         }
     }, [extensionUrl]);
-
-    const checkYtDlp = async () => {
-        try {
-            const info = await api.checkYtDlp();
-            setYtDlpStatus('ready');
-            console.log('yt-dlp ready:', info);
-        } catch (err) {
-            setYtDlpStatus('error');
-            toast.error('yt-dlp not found. Please install yt-dlp to enable downloads.');
-        }
-    };
-
-    const checkSpotDl = async () => {
-        try {
-            const info = await api.checkSpotDl();
-            setSpotDlStatus('ready');
-            console.log('SpotDL ready:', info);
-        } catch (err) {
-            setSpotDlStatus('error');
-            console.log('SpotDL not available:', err);
-        }
-    };
 
     const loadStats = async () => {
         try {
@@ -250,11 +214,6 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
 
         // Check if it's a Spotify URL
         if (isSpotifyLink) {
-            if (spotDlStatus !== 'ready') {
-                toast.error('SpotDL is not available. Please install it with: pip install spotdl');
-                return;
-            }
-
             setIsLoading(true);
             setError(null);
 
@@ -276,18 +235,12 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                 setIsLoading(false);
             }
         } else {
-            if (ytDlpStatus !== 'ready') {
-                toast.error('yt-dlp is not available. Please install it first.');
-                return;
-            }
-
             setIsLoading(true);
             setError(null);
 
             try {
-                // Check if SponsorBlock is enabled (default to true)
-                const useSponsorblock = await api.getSetting('use_sponsorblock');
-                const info = await api.getMediaInfo(targetUrl, useSponsorblock !== 'false');
+                // Fast metadata path: skip SponsorBlock chapter probing during info fetch.
+                const info = await api.getMediaInfo(targetUrl, false);
 
                 // For direct file hosting services, probe for accurate file size
                 const directFilePlatforms = ['googledrive', 'generic', 'onedrive', 'dropbox', 'mega', 'mediafire'];
@@ -329,11 +282,6 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
 
         // Check if it's a Spotify URL
         if (isSpotify) {
-            if (spotDlStatus !== 'ready') {
-                toast.error('SpotDL is not available. Please install it with: pip install spotdl');
-                return;
-            }
-
             setIsLoading(true);
             setError(null);
 
@@ -360,20 +308,13 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                 setIsLoading(false);
             }
         } else {
-            // Use yt-dlp for other platforms
-            if (ytDlpStatus !== 'ready') {
-                toast.error('yt-dlp is not available. Please install it first.');
-                return;
-            }
-
             setIsLoading(true);
             setError(null);
 
             try {
                 // Fetch media info first
-                // Check if SponsorBlock is enabled (default to true)
-                const useSponsorblock = await api.getSetting('use_sponsorblock');
-                const info = await api.getMediaInfo(url, useSponsorblock !== 'false');
+                // Fast metadata path: skip SponsorBlock chapter probing during info fetch.
+                const info = await api.getMediaInfo(url, false);
 
                 // For direct file hosting services, also probe the URL directly for accurate file size
                 const directFilePlatforms = ['googledrive', 'generic', 'onedrive', 'dropbox', 'mega', 'mediafire'];
@@ -390,8 +331,8 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                                 info.title = probeResult.filename.replace(/\.[^/.]+$/, ''); // Remove extension
                             }
                         }
-                    } catch (probeErr) {
-                        console.log('[HomePage] Direct file probe failed, using yt-dlp info:', probeErr);
+                    } catch {
+                        // Silently ignore direct probe failures
                     }
                 }
 
@@ -419,121 +360,56 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
         try {
             const downloadId = generateDownloadId();
 
-            // Check if we should download directly to vault
-            if (options.saveToVault) {
-                // Use direct vault download - encrypts on the fly, no plaintext on disk
-                const vaultRequest = {
-                    id: downloadId,
-                    url: url,
-                    original_name: `${mediaInfo.title}.${options.audioOnly ? options.audioFormat : options.videoFormat}`,
-                    file_type: options.audioOnly ? 'audio' : 'video' as 'video' | 'audio',
-                    thumbnail: mediaInfo.thumbnail,
-                    audio_only: options.audioOnly,
-                    quality: options.quality,
-                    format: options.format,
-                    audio_format: options.audioFormat,
-                    embed_metadata: options.embedMetadata,
-                    use_sponsorblock: options.useSponsorblock,
-                };
+            // Create download record in database
+            const download: DownloadType = {
+                id: downloadId,
+                title: mediaInfo.title,
+                url: url,
+                format: options.audioOnly ? 'mp3' : options.quality,
+                path: downloadPath,
+                timestamp: Date.now(),
+                status: 'downloading',
+                platform: mediaInfo.platform,
+                thumbnail: mediaInfo.thumbnail,
+            };
 
-                // Fire and forget - vault download runs in background with progress events
-                api.vaultDirectDownload(vaultRequest)
-                    .then(async (vaultFile: VaultFile) => {
-                        console.log('[HomePage] Vault download completed:', vaultFile);
+            await api.addDownload(download);
 
-                        // Add file to cloud index so it shows in vault UI
-                        if (isVaultCloudInitialized()) {
-                            try {
-                                await addToVaultIndex({
-                                    id: vaultFile.id,
-                                    original_name: vaultFile.original_name,
-                                    encrypted_name: vaultFile.encrypted_name,
-                                    size_bytes: vaultFile.size_bytes,
-                                    added_at: vaultFile.added_at,
-                                    file_type: vaultFile.file_type,
-                                    thumbnail: vaultFile.thumbnail || undefined,
-                                });
-                                console.log('[HomePage] File added to vault cloud index');
-                            } catch (indexErr) {
-                                console.error('[HomePage] Failed to add to cloud index:', indexErr);
-                            }
-                        }
+            // Start the actual download
+            const request: DownloadRequest = {
+                id: downloadId,
+                url: url,
+                output_path: downloadPath,
+                format: options.format,
+                audio_only: options.audioOnly,
+                quality: options.quality,
+                embed_thumbnail: options.embedThumbnail,
+                embed_metadata: options.embedMetadata,
+                download_subtitles: options.downloadSubtitles,
+                audio_quality: options.audioQuality,
+                audio_format: options.audioFormat,
+                video_format: options.videoFormat,
+                use_sponsorblock: options.useSponsorblock,
+            };
 
-                        toast.success(`🔒 "${vaultFile.original_name}" saved securely to vault!`);
-                    })
-                    .catch(err => {
-                        console.error('[HomePage] Vault download error:', err);
-                        toast.error(`Vault download failed: ${err}`);
-                    });
+            // Fire and forget - don't await the download completion
+            // The download runs in background and emits progress events
+            api.startDownload(request).catch(err => {
+                console.error('[HomePage] Download error:', err);
+                // Update the download status to failed
+                api.updateDownloadStatus(downloadId, 'failed').catch(() => { });
+            });
 
-                // Add to search history (vault downloads also get logged)
-                await api.addSearch(url, mediaInfo.title, mediaInfo.thumbnail);
+            // Immediately close modal and navigate
+            setShowModal(false);
+            setUrl('');
+            setMediaInfo(null);
+            toast.success('Download started!');
+            loadStats();
 
-                // Immediately close modal and show feedback
-                setShowModal(false);
-                setUrl('');
-                setMediaInfo(null);
-                toast.success('🔒 Vault download started! Encrypting directly to vault...');
-                loadStats();
-
-                // Navigate to vault page would be ideal here
-                // For now, just navigate to downloads to see progress
-                if (onNavigateToDownloads) {
-                    onNavigateToDownloads();
-                }
-            } else {
-                // Regular download flow - file saved to download folder
-                // Create download record in database
-                const download: DownloadType = {
-                    id: downloadId,
-                    title: mediaInfo.title,
-                    url: url,
-                    format: options.audioOnly ? 'mp3' : options.quality,
-                    path: downloadPath,
-                    timestamp: Date.now(),
-                    status: 'downloading',
-                    platform: mediaInfo.platform,
-                    thumbnail: mediaInfo.thumbnail,
-                };
-
-                await api.addDownload(download);
-
-                // Start the actual download
-                const request: DownloadRequest = {
-                    id: downloadId,
-                    url: url,
-                    output_path: downloadPath,
-                    format: options.format,
-                    audio_only: options.audioOnly,
-                    quality: options.quality,
-                    embed_thumbnail: options.embedThumbnail,
-                    embed_metadata: options.embedMetadata,
-                    download_subtitles: options.downloadSubtitles,
-                    audio_quality: options.audioQuality,
-                    audio_format: options.audioFormat,
-                    video_format: options.videoFormat,
-                    use_sponsorblock: options.useSponsorblock,
-                };
-
-                // Fire and forget - don't await the download completion
-                // The download runs in background and emits progress events
-                api.startDownload(request).catch(err => {
-                    console.error('[HomePage] Download error:', err);
-                    // Update the download status to failed
-                    api.updateDownloadStatus(downloadId, 'failed').catch(() => { });
-                });
-
-                // Immediately close modal and navigate
-                setShowModal(false);
-                setUrl('');
-                setMediaInfo(null);
-                toast.success('Download started!');
-                loadStats();
-
-                // Navigate to downloads tab immediately
-                if (onNavigateToDownloads) {
-                    onNavigateToDownloads();
-                }
+            // Navigate to downloads tab immediately
+            if (onNavigateToDownloads) {
+                onNavigateToDownloads();
             }
         } catch (err) {
             const errorMsg = err instanceof Error ? err.message : 'Failed to start download';
@@ -619,30 +495,6 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                     <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass text-sm flex-wrap justify-center">
                         <Sparkles className="w-4 h-4 text-primary" />
                         <span className="text-muted-foreground">1000+ Platforms + Spotify</span>
-                        {ytDlpStatus === 'ready' && (
-                            <span className="flex items-center gap-1 text-white">
-                                <CheckCircle className="w-3 h-3" />
-                                yt-dlp
-                            </span>
-                        )}
-                        {ytDlpStatus === 'error' && (
-                            <span className="flex items-center gap-1 text-white/50">
-                                <AlertCircle className="w-3 h-3" />
-                                yt-dlp missing
-                            </span>
-                        )}
-                        {spotDlStatus === 'ready' && (
-                            <span className="flex items-center gap-1 text-white">
-                                <CheckCircle className="w-3 h-3" />
-                                SpotDL
-                            </span>
-                        )}
-                        {spotDlStatus === 'error' && (
-                            <span className="flex items-center gap-1 text-white/50" title="Install with: pip install spotdl">
-                                <AlertCircle className="w-3 h-3" />
-                                SpotDL
-                            </span>
-                        )}
                     </div>
                     <h1 className="text-5xl font-display font-bold gradient-text">
                         Download Anything
@@ -694,8 +546,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                                 onClick={handleFetchInfo}
                                 disabled={
                                     !url.trim() ||
-                                    isLoading ||
-                                    (isSpotify ? spotDlStatus !== 'ready' : ytDlpStatus !== 'ready')
+                                    isLoading
                                 }
                                 className={cn(
                                     'btn-neon flex items-center gap-2',
@@ -791,44 +642,6 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                         gradient="from-white/20 to-white/10"
                     />
                 </motion.div>
-
-                {/* yt-dlp Status Card */}
-                {ytDlpStatus === 'error' && (
-                    <motion.div
-                        variants={fadeInUp}
-                        className="glass rounded-2xl p-6 border-l-4 border-orange-500"
-                    >
-                        <div className="flex items-start gap-4">
-                            <AlertCircle className="w-6 h-6 text-orange-500 shrink-0 mt-1" />
-                            <div>
-                                <h3 className="font-semibold text-lg">yt-dlp Not Found</h3>
-                                <p className="text-muted-foreground mt-1">
-                                    yt-dlp is required for downloading. Please install it:
-                                </p>
-                                <ul className="mt-3 space-y-2 text-sm">
-                                    <li className="flex items-center gap-2">
-                                        <span className="w-2 h-2 rounded-full bg-primary" />
-                                        <span><strong>Windows:</strong> <code className="bg-muted px-2 py-1 rounded">winget install yt-dlp</code></span>
-                                    </li>
-                                    <li className="flex items-center gap-2">
-                                        <span className="w-2 h-2 rounded-full bg-primary" />
-                                        <span><strong>macOS:</strong> <code className="bg-muted px-2 py-1 rounded">brew install yt-dlp</code></span>
-                                    </li>
-                                    <li className="flex items-center gap-2">
-                                        <span className="w-2 h-2 rounded-full bg-primary" />
-                                        <span><strong>Linux:</strong> <code className="bg-muted px-2 py-1 rounded">pip install yt-dlp</code></span>
-                                    </li>
-                                </ul>
-                                <button
-                                    onClick={checkYtDlp}
-                                    className="mt-4 btn-neon text-sm py-2 px-4"
-                                >
-                                    Check Again
-                                </button>
-                            </div>
-                        </div>
-                    </motion.div>
-                )}
             </motion.div>
 
             {/* Media Info Modal */}

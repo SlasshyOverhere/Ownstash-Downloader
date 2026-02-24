@@ -1,45 +1,48 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Toaster, toast } from 'sonner';
-import { listen, emit } from '@tauri-apps/api/event';
+import { listen } from '@tauri-apps/api/event';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { HomePage } from '@/components/pages/HomePage';
 import { DownloadsPage } from '@/components/pages/DownloadsPage';
 import { HistoryPage } from '@/components/pages/HistoryPage';
 import { SettingsPage } from '@/components/pages/SettingsPage';
-import { VaultPage } from '@/components/pages/VaultPage';
-import { AuthPage } from '@/components/pages/AuthPage';
-import { LoginExpiredModal } from '@/components/LoginExpiredModal';
-import { ExtensionDownloadProgress } from '@/components/vault/ExtensionDownloadProgress';
 import { useAuth } from '@/contexts/AuthContext';
-import { useData } from '@/contexts/DataContext';
 import { Loader2 } from 'lucide-react';
 import api, { DownloadProgress, SpotifyDownloadProgress } from '@/services/api';
-import { addToVaultIndex, isVaultCloudInitialized, lockVaultCloud } from '@/services/vaultCloudService';
-import { VaultFileEntry } from '@/services/gdriveService';
-import { enqueueUpload } from '@/services/vaultFileSyncService';
 
-export type PageType = 'home' | 'downloads' | 'history' | 'settings' | 'vault';
+export type PageType = 'home' | 'downloads' | 'history' | 'settings';
 
 function App() {
-    const { user, loading, isGDriveReady, isOfflineMode, setOfflineMode } = useAuth();
-    const { storageType, isLoading: isDataLoading, syncWithGDrive } = useData();
+    const { loading } = useAuth();
     const [currentPage, setCurrentPage] = useState<PageType>('home');
-    const [previousPage, setPreviousPage] = useState<PageType>('home');
     const [extensionUrl, setExtensionUrl] = useState<string | null>(null);
     const [_activeDownloadCount, setActiveDownloadCount] = useState(0);
-    const [showLoginExpiredModal, setShowLoginExpiredModal] = useState(false);
-    const [hasShownLoginPrompt, setHasShownLoginPrompt] = useState(false);
+    const [isInstallingAppUpdate, setIsInstallingAppUpdate] = useState(false);
+    const hasCheckedStartupUpdateRef = useRef(false);
+    const isInstallingAppUpdateRef = useRef(false);
 
-    // Extension vault download tracking
-    const [extensionDownload, setExtensionDownload] = useState<{
-        id: string;
-        filename: string;
-    } | null>(null);
+    const installAppUpdate = async () => {
+        if (isInstallingAppUpdateRef.current) return;
+
+        isInstallingAppUpdateRef.current = true;
+        setIsInstallingAppUpdate(true);
+
+        try {
+            toast.info('Downloading app update...');
+            await api.downloadAndInstallUpdate();
+            toast.success('Update downloaded. App will restart to apply it.');
+        } catch (err) {
+            console.error('[Updater] Update installation failed:', err);
+            toast.error('Failed to install update');
+        } finally {
+            isInstallingAppUpdateRef.current = false;
+            setIsInstallingAppUpdate(false);
+        }
+    };
 
     // Listen for URLs from Chrome extension (via deep link)
     useEffect(() => {
         const unlisten = listen<string>('extension-download-request', (event) => {
-            console.log('[Extension] Received download request:', event.payload);
             const url = event.payload;
 
             if (url && url.trim()) {
@@ -59,97 +62,52 @@ function App() {
         };
     }, []);
 
-    // Listen for Vault download requests from Chrome extension (intercepted downloads)
+    // Startup auto-update check (if enabled in settings)
     useEffect(() => {
-        interface VaultDownloadPayload {
-            url: string;
-            filename: string;
-            fileSize: number;
-            source: string;
-        }
+        if (loading || hasCheckedStartupUpdateRef.current) return;
 
-        const unlisten = listen<VaultDownloadPayload>('extension-vault-download-request', async (event) => {
-            console.log('[Extension] Received vault download request:', event.payload);
-            const { url, filename, fileSize: _fileSize } = event.payload;
+        hasCheckedStartupUpdateRef.current = true;
+        let cancelled = false;
 
-            if (url && url.trim()) {
-                // Check if vault is unlocked first
-                if (!isVaultCloudInitialized()) {
-                    toast.error('Vault is locked', {
-                        description: 'Please unlock your vault first to download files',
-                        duration: 5000
-                    });
-                    setCurrentPage('vault');
+        const timer = setTimeout(async () => {
+            try {
+                const saved = await api.getSetting('auto_check_app_updates');
+                const autoCheckEnabled = saved === null ? true : saved === 'true';
+
+                // Default is enabled unless user explicitly disabled it
+                if (saved === null) {
+                    await api.saveSetting('auto_check_app_updates', 'true');
+                }
+
+                if (!autoCheckEnabled || cancelled) {
                     return;
                 }
 
-                // Navigate to vault page
-                setCurrentPage('vault');
-
-                // Determine file type from filename
-                const ext = filename.split('.').pop()?.toLowerCase() || '';
-                let fileType = 'file';
-                if (['mp4', 'mkv', 'avi', 'mov', 'webm', 'wmv', 'flv'].includes(ext)) {
-                    fileType = 'video';
-                } else if (['mp3', 'wav', 'flac', 'aac', 'm4a', 'ogg', 'opus'].includes(ext)) {
-                    fileType = 'audio';
-                } else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(ext)) {
-                    fileType = 'image';
-                } else if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) {
-                    fileType = 'archive';
+                const info = await api.checkForUpdates();
+                if (!info.available || cancelled) {
+                    return;
                 }
 
-                // Create vault download request
-                const downloadId = `ext_vault_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-                const vaultRequest = {
-                    id: downloadId,
-                    url: url,
-                    original_name: filename,
-                    file_type: fileType,
-                    audio_only: false,
-                    audio_format: 'mp3',
-                    embed_metadata: true,
-                    use_sponsorblock: false
-                };
-
-                // Set extension download state to show progress UI
-                setExtensionDownload({ id: downloadId, filename });
-
-                // Start the vault download in background
-                api.vaultDirectDownload(vaultRequest)
-                    .then(async (vaultFile) => {
-                        console.log('[Extension] Vault download complete:', vaultFile);
-
-                        // Add to vault index for persistence
-                        const fileEntry: VaultFileEntry = {
-                            id: vaultFile.id,
-                            original_name: vaultFile.original_name,
-                            encrypted_name: vaultFile.encrypted_name,
-                            size_bytes: vaultFile.size_bytes,
-                            added_at: vaultFile.added_at,
-                            file_type: vaultFile.file_type,
-                            thumbnail: vaultFile.thumbnail
-                        };
-                        await addToVaultIndex(fileEntry);
-                        console.log('[Extension] Added to vault index:', fileEntry.id);
-
-                        // Queue for cloud upload
-                        enqueueUpload(vaultFile.id);
-
-                        // Emit event for VaultPage to refresh its file list
-                        await emit('vault-files-changed', { action: 'added', file: vaultFile });
-                    })
-                    .catch((error) => {
-                        console.error('[Extension] Vault download failed:', error);
-                        // Error will be handled by progress component
-                    });
+                toast('Update available', {
+                    description: `v${info.version} is available (current v${info.current_version}).`,
+                    duration: 20000,
+                    action: {
+                        label: isInstallingAppUpdate ? 'Installing...' : 'Install',
+                        onClick: () => {
+                            void installAppUpdate();
+                        },
+                    },
+                });
+            } catch (error) {
+                console.error('[Updater] Startup update check failed:', error);
             }
-        });
+        }, 2500);
 
         return () => {
-            unlisten.then(fn => fn());
+            cancelled = true;
+            clearTimeout(timer);
         };
-    }, []);
+    }, [loading, isInstallingAppUpdate]);
 
     // Setup download progress listeners for taskbar and notifications
     useEffect(() => {
@@ -224,7 +182,6 @@ function App() {
 
         // Listen for notification clicks
         api.onNotificationClick((event) => {
-            console.log('[Notification] Clicked:', event);
             if (event.type === 'download_complete') {
                 setCurrentPage('downloads');
             }
@@ -237,67 +194,6 @@ function App() {
             api.clearTaskbarProgress().catch(console.error);
         };
     }, []);
-
-    // Auto-lock vault when navigating away from vault tab
-    useEffect(() => {
-        // If we were on vault page and now we're not, lock the vault
-        if (previousPage === 'vault' && currentPage !== 'vault') {
-            console.log('[App] Navigating away from vault, auto-locking...');
-            if (isVaultCloudInitialized()) {
-                lockVaultCloud();
-                // Also lock the backend
-                api.vaultLock().catch(console.error);
-                api.vaultCleanupTemp().catch(console.error);
-            }
-        }
-        // Update previousPage to track page changes
-        setPreviousPage(currentPage);
-    }, [currentPage, previousPage]);
-
-    // Show login expired prompt when app is in local-only state on startup
-    useEffect(() => {
-        // Only check once GDrive ready state is determined and data has loaded
-        if (!isGDriveReady || isDataLoading) return;
-
-        // Skip if user is already in offline mode
-        if (isOfflineMode) return;
-
-        // Only show prompt if:
-        // 1. User is logged in
-        // 2. Storage type is local (no GDrive access)
-        // 3. We haven't already shown the prompt this session
-        if (user && storageType === 'local' && !hasShownLoginPrompt) {
-            console.log('[App] Detected local-only state, showing login expired prompt');
-            // Small delay to let the app fully render first
-            const timer = setTimeout(() => {
-                setShowLoginExpiredModal(true);
-                setHasShownLoginPrompt(true);
-            }, 1000);
-            return () => clearTimeout(timer);
-        }
-    }, [user, storageType, isGDriveReady, isDataLoading, hasShownLoginPrompt, isOfflineMode]);
-
-    // Handle successful login from modal
-    const handleLoginSuccess = async () => {
-        console.log('[App] Login successful, triggering GDrive sync');
-        setOfflineMode(false); // Exit offline mode on successful login
-        const result = await syncWithGDrive();
-        if (result.success) {
-            toast.success('Google Drive sync restored!', {
-                description: result.message
-            });
-        }
-    };
-
-    // Handle continue without login (offline mode)
-    const handleContinueWithoutLogin = () => {
-        console.log('[App] User chose to continue without login (offline mode)');
-        setOfflineMode(true);
-        setShowLoginExpiredModal(false);
-        toast.info('Offline mode enabled', {
-            description: 'Downloads saved locally. Vault requires login.'
-        });
-    };
 
     // Clear extension URL after it's been consumed
     const handleExtensionUrlConsumed = () => {
@@ -316,11 +212,6 @@ function App() {
         );
     }
 
-    // Authentication is REQUIRED - show auth page if not logged in
-    if (!user) {
-        return <AuthPage />;
-    }
-
     const renderPage = () => {
         switch (currentPage) {
             case 'home':
@@ -337,8 +228,6 @@ function App() {
                 return <HistoryPage />;
             case 'settings':
                 return <SettingsPage />;
-            case 'vault':
-                return <VaultPage />;
             default:
                 return (
                     <HomePage
@@ -366,38 +255,8 @@ function App() {
                     },
                 }}
             />
-            {/* Login Expired Modal - shown when app starts in local-only state */}
-            <LoginExpiredModal
-                isOpen={showLoginExpiredModal}
-                onLoginSuccess={() => {
-                    setShowLoginExpiredModal(false);
-                    handleLoginSuccess();
-                }}
-                onContinueWithoutLogin={handleContinueWithoutLogin}
-            />
-            {/* Extension Vault Download Progress */}
-            {extensionDownload && (
-                <ExtensionDownloadProgress
-                    downloadId={extensionDownload.id}
-                    filename={extensionDownload.filename}
-                    onComplete={() => {
-                        toast.success('🔒 Downloaded to Vault!', {
-                            description: extensionDownload.filename
-                        });
-                        setExtensionDownload(null);
-                    }}
-                    onFailed={(error) => {
-                        toast.error('Vault download failed', {
-                            description: error
-                        });
-                        setExtensionDownload(null);
-                    }}
-                />
-            )}
         </>
     );
 }
 
 export default App;
-
-

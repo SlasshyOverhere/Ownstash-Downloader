@@ -7,12 +7,9 @@ import {
     Settings,
     ChevronLeft,
     ChevronRight,
-    Sparkles,
     LogOut,
     Cloud,
-    CloudOff,
     Loader2,
-    Shield,
     HardDrive
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -30,9 +27,7 @@ interface AnimatedSidebarProps {
 const navItems = [
     { id: 'home' as const, label: 'Home', icon: Home },
     { id: 'downloads' as const, label: 'Downloads', icon: Download },
-    { id: 'vault' as const, label: 'Vault', icon: Shield },
     { id: 'history' as const, label: 'History', icon: History },
-    { id: 'settings' as const, label: 'Settings', icon: Settings },
 ];
 
 export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarProps) {
@@ -56,22 +51,27 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
             variants={sidebarVariants}
             initial="expanded"
             animate={isExpanded ? 'expanded' : 'collapsed'}
-            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            transition={{ type: 'tween', duration: 0.18, ease: 'easeOut' }}
         >
             {/* Logo */}
-            <div className="flex items-center gap-3 p-4 border-b border-white/5">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-white to-white/80 flex items-center justify-center shadow-elegant">
-                    <Sparkles className="w-5 h-5 text-black" />
-                </div>
+            <div className={cn(
+                'flex items-center p-4 border-b border-white/5',
+                isExpanded ? 'gap-3 justify-start' : 'justify-center'
+            )}>
+                <img
+                    src="/logo.png"
+                    alt="Ownstash logo"
+                    className="w-10 h-10 rounded-xl object-contain shadow-elegant"
+                />
                 <motion.div
                     variants={sidebarItemText}
                     className="overflow-hidden"
                 >
                     <h1 className="font-display font-bold text-lg gradient-text whitespace-nowrap">
-                        Slasshy
+                        Ownstash
                     </h1>
                     <p className="text-[10px] text-muted-foreground whitespace-nowrap">
-                        OmniDownloader
+                        Downloader
                     </p>
                 </motion.div>
             </div>
@@ -87,8 +87,9 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
                             key={item.id}
                             onClick={() => onPageChange(item.id)}
                             className={cn(
-                                'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200',
+                                'w-full flex items-center py-2.5 rounded-xl transition-all duration-200',
                                 'hover:bg-white/5 group relative overflow-hidden',
+                                isExpanded ? 'gap-3 px-3 justify-start' : 'gap-0 px-0 justify-center',
                                 isActive && 'bg-primary/10 border border-primary/20'
                             )}
                         >
@@ -97,7 +98,7 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
                                 <motion.div
                                     layoutId="activeTab"
                                     className="absolute inset-0 bg-gradient-to-r from-primary/20 to-transparent rounded-xl"
-                                    transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                                    transition={{ type: 'tween', duration: 0.14, ease: 'easeOut' }}
                                 />
                             )}
 
@@ -128,11 +129,14 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
             </nav>
 
             {/* User Profile Section */}
-            <div className="p-3 border-t border-white/5">
-                {user ? (
+            {user && (
+                <div className="p-3 border-t border-white/5">
                     <div className="space-y-2">
                         {/* User Info */}
-                        <div className="flex items-center gap-3 px-3 py-2">
+                        <div className={cn(
+                            'flex items-center py-2',
+                            isExpanded ? 'gap-3 px-3 justify-start' : 'gap-0 px-0 justify-center'
+                        )}>
                             <UserAvatar
                                 photoURL={user.photoURL}
                                 displayName={user.displayName}
@@ -172,9 +176,10 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
                             onClick={handleSignOut}
                             disabled={isSigningOut}
                             className={cn(
-                                'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl',
+                                'w-full flex items-center py-2.5 rounded-xl',
                                 'text-muted-foreground hover:text-red-400 hover:bg-red-500/10',
                                 'transition-all duration-200 group',
+                                isExpanded ? 'gap-3 px-3 justify-start' : 'gap-0 px-0 justify-center',
                                 isSigningOut && 'opacity-50 cursor-not-allowed'
                             )}
                         >
@@ -193,25 +198,41 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
                             </motion.span>
                         </button>
                     </div>
-                ) : (
-                    /* Offline / Not Logged In */
-                    <div className="flex items-center gap-3 px-3 py-2">
-                        <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center flex-shrink-0">
-                            <CloudOff className="w-4 h-4 text-slate-400" />
-                        </div>
-                        <motion.div
-                            variants={sidebarItemText}
-                            className="overflow-hidden flex-1 min-w-0"
-                        >
-                            <p className="text-sm font-medium text-muted-foreground">
-                                Offline Mode
-                            </p>
-                            <p className="text-[10px] text-muted-foreground/70">
-                                Local storage only
-                            </p>
-                        </motion.div>
+                </div>
+            )}
+
+            {/* Bottom Settings Button */}
+            <div className="p-3 border-t border-white/5">
+                <button
+                    onClick={() => onPageChange('settings')}
+                    className={cn(
+                        'w-full flex items-center py-2.5 rounded-xl transition-all duration-200',
+                        'hover:bg-white/5 group relative overflow-hidden',
+                        isExpanded ? 'gap-3 px-3 justify-start' : 'gap-0 px-0 justify-center',
+                        currentPage === 'settings' && 'bg-primary/10 border border-primary/20'
+                    )}
+                >
+                    <div className={cn(
+                        'relative z-10 p-1.5 rounded-lg transition-all duration-200',
+                        currentPage === 'settings'
+                            ? 'text-primary text-glow-sm'
+                            : 'text-muted-foreground group-hover:text-foreground'
+                    )}>
+                        <Settings className="w-5 h-5" />
                     </div>
-                )}
+                    <motion.span
+                        variants={sidebarItemText}
+                        className={cn(
+                            'relative z-10 font-medium whitespace-nowrap',
+                            currentPage === 'settings'
+                                ? 'text-foreground'
+                                : 'text-muted-foreground group-hover:text-foreground'
+                        )}
+                    >
+                        Settings
+                    </motion.span>
+                    <div className="absolute inset-0 bg-white/0 group-hover:bg-white/5 rounded-xl transition-colors" />
+                </button>
             </div>
 
             {/* Collapse Toggle */}
@@ -219,9 +240,10 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
                 <button
                     onClick={() => setIsExpanded(!isExpanded)}
                     className={cn(
-                        'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl',
+                        'w-full flex items-center py-2.5 rounded-xl',
                         'text-muted-foreground hover:text-foreground hover:bg-white/5',
-                        'transition-all duration-200'
+                        'transition-all duration-200',
+                        isExpanded ? 'gap-3 px-3 justify-start' : 'gap-0 px-0 justify-center'
                     )}
                 >
                     <div className="p-1.5 rounded-lg">

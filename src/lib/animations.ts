@@ -8,9 +8,9 @@ export const fadeIn: Variants = {
 };
 
 export const fadeInUp: Variants = {
-    initial: { opacity: 0, y: 20 },
+    initial: { opacity: 0, y: 12 },
     animate: { opacity: 1, y: 0 },
-    exit: { opacity: 0, y: -20 },
+    exit: { opacity: 0, y: -8 },
 };
 
 export const fadeInDown: Variants = {
@@ -53,18 +53,18 @@ export const staggerContainer: Variants = {
     initial: {},
     animate: {
         transition: {
-            staggerChildren: 0.1,
-            delayChildren: 0.1,
+            staggerChildren: 0.04,
+            delayChildren: 0.02,
         },
     },
 };
 
 export const staggerItem: Variants = {
-    initial: { opacity: 0, y: 20 },
+    initial: { opacity: 0, y: 10 },
     animate: {
         opacity: 1,
         y: 0,
-        transition: { type: 'spring', stiffness: 300, damping: 24 }
+        transition: { type: 'tween', duration: 0.18, ease: 'easeOut' }
     },
 };
 
@@ -117,18 +117,16 @@ export const sidebarItemText: Variants = {
 
 // Page transitions
 export const pageTransition: Variants = {
-    initial: { opacity: 0, x: 20, filter: 'blur(10px)' },
+    initial: { opacity: 0, x: 8 },
     animate: {
         opacity: 1,
         x: 0,
-        filter: 'blur(0px)',
-        transition: { duration: 0.3, ease: 'easeOut' }
+        transition: { duration: 0.16, ease: 'easeOut' }
     },
     exit: {
         opacity: 0,
-        x: -20,
-        filter: 'blur(10px)',
-        transition: { duration: 0.2 }
+        x: -6,
+        transition: { duration: 0.12 }
     },
 };
 

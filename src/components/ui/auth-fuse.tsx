@@ -449,7 +449,7 @@ const defaultSignInContent = {
     },
     quote: {
         text: "Welcome back! Your downloads await.",
-        author: "Slasshy OmniDownloader"
+        author: "Ownstash Downloader"
     }
 };
 
@@ -460,7 +460,7 @@ const defaultSignUpContent = {
     },
     quote: {
         text: "Join us and download from 1000+ platforms.",
-        author: "Slasshy OmniDownloader"
+        author: "Ownstash Downloader"
     }
 };
 

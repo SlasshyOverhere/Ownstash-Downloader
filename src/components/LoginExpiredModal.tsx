@@ -218,7 +218,7 @@ export function LoginExpiredModal({ isOpen, onLoginSuccess, onContinueWithoutLog
                                         </div>
                                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                             <Shield className="w-3.5 h-3.5 text-red-400" />
-                                            <span className="text-red-300">Vault requires Google login</span>
+                                            <span className="text-red-300">Cloud sync requires Google login</span>
                                         </div>
                                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                             <Wifi className="w-3.5 h-3.5 text-yellow-400" />

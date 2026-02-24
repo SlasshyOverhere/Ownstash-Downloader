@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
     Download,
     X,
@@ -27,6 +27,29 @@ interface DownloadItem extends DownloadType {
     eta?: string;
     engine_badge?: string;  // "SNDE ACCELERATED", "SNDE SAFE", or "MEDIA ENGINE"
 }
+
+const clampProgress = (value: number): number => {
+    if (!Number.isFinite(value)) return 0;
+    return Math.min(100, Math.max(0, value));
+};
+
+const stabilizeProgressEvent = (incoming: DownloadProgress, previous?: DownloadProgress): DownloadProgress => {
+    const normalized = clampProgress(incoming.progress ?? 0);
+
+    if (!previous) {
+        return { ...incoming, progress: normalized };
+    }
+
+    // Keep progress monotonic during active download phases.
+    if (incoming.status === 'downloading' || incoming.status === 'starting' || incoming.status === 'pending') {
+        return {
+            ...incoming,
+            progress: Math.max(clampProgress(previous.progress ?? 0), normalized),
+        };
+    }
+
+    return { ...incoming, progress: normalized };
+};
 
 const typeIcons = {
     video: Video,
@@ -63,7 +86,7 @@ function DownloadCard({ item, onCancel, onDelete, onRetry, onOpenFolder, onPlay 
     };
 
     const TypeIcon = typeIcons[getType()];
-    const progress = item.progress || 0;
+    const progress = clampProgress(item.progress ?? 0);
     const isActive = item.status === 'downloading' || item.status === 'paused';
 
     return (
@@ -72,7 +95,6 @@ function DownloadCard({ item, onCancel, onDelete, onRetry, onOpenFolder, onPlay 
             style={tiltStyle}
             {...handlers}
             variants={staggerItem}
-            layout
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, x: -100, transition: { duration: 0.2 } }}
@@ -175,7 +197,7 @@ function DownloadCard({ item, onCancel, onDelete, onRetry, onOpenFolder, onPlay 
                                     className="h-full bg-gradient-to-r from-primary to-accent rounded-full progress-shimmer"
                                     initial={{ width: 0 }}
                                     animate={{ width: `${progress}%` }}
-                                    transition={{ type: 'spring', stiffness: 100, damping: 20 }}
+                                    transition={{ type: 'tween', duration: 0.2, ease: 'easeOut' }}
                                 />
                             </div>
                         </div>
@@ -258,27 +280,23 @@ export function DownloadsPage() {
         let unlistenYtdlp: (() => void) | undefined;
         let unlistenSpotify: (() => void) | undefined;
 
-        console.log('[DownloadsPage] Setting up progress listeners...');
-
         // yt-dlp progress listener
         api.onDownloadProgress((progress) => {
-            console.log('[DownloadsPage] yt-dlp Progress event received:', progress);
-
             setProgressMap(prev => {
                 const newMap = new Map(prev);
-                newMap.set(progress.id, progress);
+                const previousProgress = prev.get(progress.id);
+                const stabilized = stabilizeProgressEvent(progress, previousProgress);
+                newMap.set(progress.id, stabilized);
                 return newMap;
             });
 
             // Update download status in database if completed or failed
             if (progress.status === 'completed' || progress.status === 'failed' || progress.status === 'cancelled') {
-                console.log(`[DownloadsPage] Download ${progress.id} status changed to: ${progress.status}`);
                 api.updateDownloadStatus(progress.id, progress.status);
                 // Refresh downloads list
                 setTimeout(loadDownloads, 500);
             }
         }).then(fn => {
-            console.log('[DownloadsPage] yt-dlp Progress listener registered successfully');
             unlistenYtdlp = fn;
         }).catch(err => {
             console.error('[DownloadsPage] Failed to set up yt-dlp progress listener:', err);
@@ -286,12 +304,10 @@ export function DownloadsPage() {
 
         // Spotify progress listener
         api.onSpotifyDownloadProgress((progress: SpotifyDownloadProgress) => {
-            console.log('[DownloadsPage] Spotify Progress event received:', progress);
-
             // Convert SpotifyDownloadProgress to DownloadProgress format
             setProgressMap(prev => {
                 const newMap = new Map(prev);
-                newMap.set(progress.id, {
+                const nextProgress: DownloadProgress = {
                     id: progress.id,
                     progress: progress.progress,
                     speed: progress.speed || (progress.current_track ? `Downloading: ${progress.current_track}` : ''),
@@ -299,26 +315,26 @@ export function DownloadsPage() {
                         ? `${progress.completed_tracks}/${progress.total_tracks} tracks`
                         : '',
                     status: progress.status,
-                });
+                };
+                const previousProgress = prev.get(progress.id);
+                const stabilized = stabilizeProgressEvent(nextProgress, previousProgress);
+                newMap.set(progress.id, stabilized);
                 return newMap;
             });
 
             // Update download status in database if completed or failed
             if (progress.status === 'completed' || progress.status === 'failed' || progress.status === 'cancelled') {
-                console.log(`[DownloadsPage] Spotify Download ${progress.id} status changed to: ${progress.status}`);
                 api.updateDownloadStatus(progress.id, progress.status);
                 // Refresh downloads list
                 setTimeout(loadDownloads, 500);
             }
         }).then(fn => {
-            console.log('[DownloadsPage] Spotify Progress listener registered successfully');
             unlistenSpotify = fn;
         }).catch(err => {
             console.error('[DownloadsPage] Failed to set up Spotify progress listener:', err);
         });
 
         return () => {
-            console.log('[DownloadsPage] Cleaning up progress listeners');
             if (unlistenYtdlp) unlistenYtdlp();
             if (unlistenSpotify) unlistenSpotify();
         };
@@ -389,25 +405,19 @@ export function DownloadsPage() {
             const mediaInfo = await api.findMediaFile(path, title);
             const filePath = mediaInfo.file_path;
 
-            // Check if format needs transcoding
-            const extension = filePath.split('.').pop()?.toLowerCase() || '';
-            const webSupported = ['mp4', 'webm', 'ogg', 'mov', 'mp3', 'm4a', 'wav', 'flac', 'opus'];
-
             let playablePath = filePath;
 
-            if (!webSupported.includes(extension)) {
-                // Need to transcode
-                toast.info('Preparing video for playback... This may take a moment.');
-
+            if (!mediaInfo.is_audio) {
+                const prepToast = toast.loading('Preparing video for playback...');
                 try {
                     const result = await api.transcodeForPlayback(filePath);
                     playablePath = result.output_path;
-
+                    toast.dismiss(prepToast);
                     if (result.was_transcoded) {
-                        toast.success('Video ready!');
+                        toast.success('Video ready for in-app playback');
                     }
                 } catch (transcodeErr) {
-                    // If transcoding fails, try to play anyway (might work for some formats)
+                    toast.dismiss(prepToast);
                     console.error('[DownloadsPage] Transcode failed:', transcodeErr);
                     toast.warning('Could not transcode video. Attempting direct playback...');
                 }
@@ -498,16 +508,14 @@ export function DownloadsPage() {
                             </span>
                         </h2>
                         <motion.div variants={staggerContainer} className="space-y-3">
-                            <AnimatePresence mode="popLayout">
-                                {activeDownloads.map(item => (
-                                    <DownloadCard
-                                        key={item.id}
-                                        item={item}
-                                        onCancel={handleCancel}
-                                        onDelete={handleDelete}
-                                    />
-                                ))}
-                            </AnimatePresence>
+                            {activeDownloads.map(item => (
+                                <DownloadCard
+                                    key={item.id}
+                                    item={item}
+                                    onCancel={handleCancel}
+                                    onDelete={handleDelete}
+                                />
+                            ))}
                         </motion.div>
                     </motion.section>
                 )}
@@ -523,18 +531,16 @@ export function DownloadsPage() {
                             </span>
                         </h2>
                         <motion.div variants={staggerContainer} className="space-y-3">
-                            <AnimatePresence mode="popLayout">
-                                {completedDownloads.map(item => (
-                                    <DownloadCard
-                                        key={item.id}
-                                        item={item}
-                                        onCancel={handleCancel}
-                                        onDelete={handleDelete}
-                                        onOpenFolder={handleOpenFolder}
-                                        onPlay={handlePlay}
-                                    />
-                                ))}
-                            </AnimatePresence>
+                            {completedDownloads.map(item => (
+                                <DownloadCard
+                                    key={item.id}
+                                    item={item}
+                                    onCancel={handleCancel}
+                                    onDelete={handleDelete}
+                                    onOpenFolder={handleOpenFolder}
+                                    onPlay={handlePlay}
+                                />
+                            ))}
                         </motion.div>
                     </motion.section>
                 )}
@@ -550,16 +556,14 @@ export function DownloadsPage() {
                             </span>
                         </h2>
                         <motion.div variants={staggerContainer} className="space-y-3">
-                            <AnimatePresence mode="popLayout">
-                                {failedDownloads.map(item => (
-                                    <DownloadCard
-                                        key={item.id}
-                                        item={item}
-                                        onCancel={handleCancel}
-                                        onDelete={handleDelete}
-                                    />
-                                ))}
-                            </AnimatePresence>
+                            {failedDownloads.map(item => (
+                                <DownloadCard
+                                    key={item.id}
+                                    item={item}
+                                    onCancel={handleCancel}
+                                    onDelete={handleDelete}
+                                />
+                            ))}
                         </motion.div>
                     </motion.section>
                 )}

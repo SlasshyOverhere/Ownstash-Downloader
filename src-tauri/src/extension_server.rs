@@ -46,7 +46,7 @@ pub fn start_extension_server(app_handle: AppHandle) {
                 .map(|| {
                     warp::reply::json(&serde_json::json!({
                         "status": "ok",
-                        "app": "slasshy-omnidownloader"
+                        "app": "ownstash-downloader"
                     }))
                 });
 
@@ -100,7 +100,7 @@ pub fn start_extension_server(app_handle: AppHandle) {
                             <!DOCTYPE html>
                             <html>
                             <head>
-                                <title>Slasshy</title>
+                                <title>Ownstash</title>
                                 <style>
                                     body {
                                         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -127,7 +127,7 @@ pub fn start_extension_server(app_handle: AppHandle) {
                             <body>
                                 <div class="container">
                                     <div class="checkmark">✓</div>
-                                    <h1>Sent to Slasshy!</h1>
+                                    <h1>Sent to Ownstash!</h1>
                                     <p>You can close this tab.</p>
                                 </div>
                                 <script>setTimeout(() => window.close(), 1500);</script>

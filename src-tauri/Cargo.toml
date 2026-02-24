@@ -1,13 +1,13 @@
 [package]
-name = "slasshy-omnidownloader"
-version = "0.1.0"
+name = "ownstash-downloader"
+version = "1.0.4"
 description = "Cross-platform media downloader, organizer, and converter"
 authors = ["Suman Patgiri"]
 edition = "2021"
 
 [lib]
-name = "slasshy_omnidownloader_lib"
-crate-type = ["lib", "cdylib", "staticlib"]
+name = "ownstash_downloader_lib"
+crate-type = ["lib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -19,6 +19,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-notification = "2"
+tauri-plugin-autostart = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }

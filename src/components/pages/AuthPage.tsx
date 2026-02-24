@@ -19,7 +19,7 @@ function GoogleLogo({ className }: { className?: string }) {
 }
 
 export function AuthPage() {
-    const { signInWithGoogle } = useAuth();
+    const { signInWithGoogle, setOfflineMode } = useAuth();
 
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -68,12 +68,12 @@ export function AuthPage() {
                         <div className="flex items-center gap-4 mb-8">
                             <img
                                 src="/logo.png"
-                                alt="Slasshy OmniDownloader Logo"
+                                alt="Ownstash Downloader Logo"
                                 className="w-14 h-14 rounded-xl object-contain"
                             />
                             <div className="flex flex-col">
-                                <span className="text-2xl font-display font-bold">Slasshy</span>
-                                <span className="text-sm text-white/60 font-medium">OmniDownloader</span>
+                                <span className="text-2xl font-display font-bold">Ownstash</span>
+                                <span className="text-sm text-white/60 font-medium">Downloader</span>
                             </div>
                         </div>
 
@@ -88,7 +88,7 @@ export function AuthPage() {
                         </p>
 
                         <div className="flex flex-wrap gap-3 pt-4">
-                            {['1000+ Platforms', 'Cloud Sync', 'Secure Vault', 'Auto Updates'].map((feature) => (
+                            {['1000+ Platforms', 'Cloud Sync', 'Smart Queue', 'Auto Updates'].map((feature) => (
                                 <span
                                     key={feature}
                                     className="px-3 py-1.5 rounded-full text-sm bg-white/5 backdrop-blur-sm border border-white/10 text-white/70"
@@ -111,12 +111,12 @@ export function AuthPage() {
                     <div className="lg:hidden flex flex-col items-center gap-3 mb-4">
                         <img
                             src="/logo.png"
-                            alt="Slasshy OmniDownloader Logo"
+                            alt="Ownstash Downloader Logo"
                             className="w-16 h-16 rounded-xl object-contain"
                         />
                         <div className="text-center">
-                            <span className="text-xl font-display font-bold text-white block">Slasshy</span>
-                            <span className="text-sm text-white/60 font-medium">OmniDownloader</span>
+                            <span className="text-xl font-display font-bold text-white block">Ownstash</span>
+                            <span className="text-sm text-white/60 font-medium">Downloader</span>
                         </div>
                     </div>
 
@@ -161,6 +161,22 @@ export function AuthPage() {
                                 <span>Continue with Google</span>
                             </>
                         )}
+                    </button>
+
+                    {/* Continue Without Login Button - Enables offline mode */}
+                    <button
+                        onClick={() => {
+                            setOfflineMode(true);
+                        }}
+                        className={cn(
+                            "w-full flex items-center justify-center gap-3 px-6 py-4 rounded-xl",
+                            "bg-neutral-800 text-white font-medium text-lg",
+                            "hover:bg-neutral-700 hover:shadow-lg hover:shadow-white/5",
+                            "focus:outline-none focus:ring-2 focus:ring-white/30 focus:ring-offset-2 focus:ring-offset-black",
+                            "transition-all duration-200"
+                        )}
+                    >
+                        <span>Continue without Login</span>
                     </button>
 
                     {/* Privacy Notice */}

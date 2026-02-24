@@ -92,7 +92,7 @@ pub struct DownloadHealth {
 /// Download engine types
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DownloadEngine {
-    /// Slasshy Native Download Engine - full parallelism
+    /// Ownstash Native Download Engine - full parallelism
     SNDE,
     /// SNDE in Safe Mode - reduced parallelism, HTTP/2 allowed
     SNDESafe,

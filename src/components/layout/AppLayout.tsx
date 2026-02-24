@@ -26,10 +26,10 @@ export function AppLayout({ children, currentPage, onPageChange }: AppLayoutProp
                 {/* Base gradient */}
                 <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-primary/5" />
 
-                {/* Simple animated gradient orbs instead of Three.js */}
-                <div className="absolute w-96 h-96 -left-48 -top-48 bg-white/5 rounded-full blur-3xl animate-pulse" />
-                <div className="absolute w-96 h-96 -right-48 -bottom-48 bg-white/3 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
-                <div className="absolute w-64 h-64 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white/2 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }} />
+                {/* Static gradient orbs (lighter than continuous pulse animation) */}
+                <div className="absolute w-96 h-96 -left-48 -top-48 bg-white/5 rounded-full blur-3xl" />
+                <div className="absolute w-96 h-96 -right-48 -bottom-48 bg-white/3 rounded-full blur-3xl" />
+                <div className="absolute w-64 h-64 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white/2 rounded-full blur-3xl" />
             </div>
 
             {/* Sidebar */}
@@ -41,11 +41,11 @@ export function AppLayout({ children, currentPage, onPageChange }: AppLayoutProp
             {/* Main content area */}
             <main className="flex-1 relative overflow-hidden">
                 <div className="absolute inset-0 overflow-y-auto overflow-x-hidden">
-                    <AnimatePresence mode="wait">
+                    <AnimatePresence mode="wait" initial={false}>
                         <motion.div
                             key={currentPage}
                             variants={pageTransition}
-                            initial="initial"
+                            initial={false}
                             animate="animate"
                             exit="exit"
                             className="min-h-full p-6"

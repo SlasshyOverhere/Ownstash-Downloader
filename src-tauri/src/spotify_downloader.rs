@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::process::Command;
@@ -50,6 +51,20 @@ pub struct SpotDlInfo {
     pub version: String,
     pub path: String,
     pub is_available: bool,
+    pub latest_version: Option<String>,
+    pub update_available: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct GithubRelease {
+    tag_name: String,
+    assets: Vec<GithubAsset>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct GithubAsset {
+    name: String,
+    browser_download_url: String,
 }
 
 pub struct SpotifyDownloader {
@@ -79,7 +94,267 @@ impl SpotifyDownloader {
         Self { spotdl_path, ffmpeg_path }
     }
 
+    fn binaries_dir(app_handle: &AppHandle) -> Result<PathBuf, String> {
+        let app_data_dir = app_handle
+            .path()
+            .app_data_dir()
+            .map_err(|e| format!("Failed to access app data directory: {}", e))?;
+        Ok(app_data_dir.join("binaries"))
+    }
+
+    fn managed_spotdl_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
+        let binary_name = if cfg!(windows) { "spotdl.exe" } else { "spotdl" };
+        Ok(Self::binaries_dir(app_handle)?.join(binary_name))
+    }
+
+    async fn download_binary(url: &str, target_path: &Path) -> Result<(), String> {
+        let client = reqwest::Client::builder()
+            .user_agent("OwnstashDownloader/1.0")
+            .timeout(std::time::Duration::from_secs(180))
+            .build()
+            .map_err(|e| format!("Failed to initialize HTTP client: {}", e))?;
+
+        let response = client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to download SpotDL release: {}", e))?;
+
+        if !response.status().is_success() {
+            return Err(format!(
+                "Failed to download SpotDL release (HTTP {})",
+                response.status()
+            ));
+        }
+
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| format!("Failed to read SpotDL binary: {}", e))?;
+
+        let parent = target_path
+            .parent()
+            .ok_or_else(|| "Invalid SpotDL destination path".to_string())?;
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| format!("Failed to prepare binaries directory: {}", e))?;
+
+        let temp_path = target_path.with_extension("download.tmp");
+        tokio::fs::write(&temp_path, bytes)
+            .await
+            .map_err(|e| format!("Failed to write SpotDL binary: {}", e))?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            tokio::fs::set_permissions(&temp_path, std::fs::Permissions::from_mode(0o755))
+                .await
+                .map_err(|e| format!("Failed to set SpotDL executable permissions: {}", e))?;
+        }
+
+        if target_path.exists() {
+            tokio::fs::remove_file(target_path)
+                .await
+                .map_err(|e| format!("Failed to replace existing SpotDL binary: {}", e))?;
+        }
+
+        tokio::fs::rename(&temp_path, target_path)
+            .await
+            .map_err(|e| format!("Failed to finalize SpotDL update: {}", e))?;
+
+        Ok(())
+    }
+
+    fn pick_spotdl_asset(release: &GithubRelease) -> Option<GithubAsset> {
+        #[cfg(target_os = "windows")]
+        {
+            return release
+                .assets
+                .iter()
+                .find(|asset| {
+                    let name = asset.name.to_ascii_lowercase();
+                    name.contains("win") && name.ends_with(".exe")
+                })
+                .cloned()
+                .or_else(|| {
+                    release
+                        .assets
+                        .iter()
+                        .find(|asset| asset.name.eq_ignore_ascii_case("spotdl.exe"))
+                        .cloned()
+                });
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            return release
+                .assets
+                .iter()
+                .find(|asset| {
+                    let name = asset.name.to_ascii_lowercase();
+                    name.contains("darwin") || name.contains("mac")
+                })
+                .cloned()
+                .or_else(|| {
+                    release
+                        .assets
+                        .iter()
+                        .find(|asset| asset.name.eq_ignore_ascii_case("spotdl"))
+                        .cloned()
+                });
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            return release
+                .assets
+                .iter()
+                .find(|asset| asset.name.to_ascii_lowercase().contains("linux"))
+                .cloned()
+                .or_else(|| {
+                    release
+                        .assets
+                        .iter()
+                        .find(|asset| asset.name.eq_ignore_ascii_case("spotdl"))
+                        .cloned()
+                });
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+        {
+            release.assets.first().cloned()
+        }
+    }
+
+    async fn fetch_latest_spotdl_version() -> Result<String, String> {
+        let client = reqwest::Client::builder()
+            .user_agent("OwnstashDownloader/1.0")
+            .timeout(std::time::Duration::from_secs(20))
+            .build()
+            .map_err(|e| format!("Failed to initialize HTTP client: {}", e))?;
+
+        let release: GithubRelease = client
+            .get("https://api.github.com/repos/spotDL/spotify-downloader/releases/latest")
+            .send()
+            .await
+            .map_err(|e| format!("Failed to check latest SpotDL version: {}", e))?
+            .error_for_status()
+            .map_err(|e| format!("Latest SpotDL version request failed: {}", e))?
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse SpotDL release metadata: {}", e))?;
+
+        Ok(release.tag_name.trim().to_string())
+    }
+
+    fn normalize_version_token(version: &str) -> String {
+        let cleaned = version.trim().trim_start_matches('v');
+
+        for token in cleaned.split(|c: char| c.is_whitespace() || c == '(' || c == ')' || c == ',') {
+            let token = token
+                .trim()
+                .trim_start_matches('v')
+                .trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '.');
+
+            if token.contains('.') && token.chars().any(|c| c.is_ascii_digit()) {
+                return token.to_string();
+            }
+        }
+
+        cleaned.to_string()
+    }
+
+    fn parse_version_segments(version: &str) -> Option<Vec<u32>> {
+        let normalized = Self::normalize_version_token(version);
+        let mut segments = Vec::new();
+
+        for part in normalized.split('.') {
+            let digits: String = part.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if digits.is_empty() {
+                return None;
+            }
+            segments.push(digits.parse::<u32>().ok()?);
+        }
+
+        if segments.is_empty() {
+            None
+        } else {
+            Some(segments)
+        }
+    }
+
+    fn is_update_available(current_version: &str, latest_version: &str) -> bool {
+        let current_segments = Self::parse_version_segments(current_version);
+        let latest_segments = Self::parse_version_segments(latest_version);
+
+        if let (Some(current), Some(latest)) = (current_segments, latest_segments) {
+            let max_len = current.len().max(latest.len());
+            for idx in 0..max_len {
+                let current_value = *current.get(idx).unwrap_or(&0);
+                let latest_value = *latest.get(idx).unwrap_or(&0);
+
+                if latest_value > current_value {
+                    return true;
+                }
+                if latest_value < current_value {
+                    return false;
+                }
+            }
+            return false;
+        }
+
+        Self::normalize_version_token(current_version)
+            != Self::normalize_version_token(latest_version)
+    }
+
+    pub async fn update_spotdl(app_handle: &AppHandle) -> Result<SpotDlInfo, String> {
+        let client = reqwest::Client::builder()
+            .user_agent("OwnstashDownloader/1.0")
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| format!("Failed to initialize HTTP client: {}", e))?;
+
+        let release: GithubRelease = client
+            .get("https://api.github.com/repos/spotDL/spotify-downloader/releases/latest")
+            .send()
+            .await
+            .map_err(|e| format!("Failed to fetch SpotDL release metadata: {}", e))?
+            .error_for_status()
+            .map_err(|e| format!("SpotDL release request failed: {}", e))?
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse SpotDL release metadata: {}", e))?;
+
+        let asset = Self::pick_spotdl_asset(&release).ok_or_else(|| {
+            "No compatible SpotDL release asset was found for this platform".to_string()
+        })?;
+
+        let target_path = Self::managed_spotdl_path(app_handle)?;
+        println!(
+            "[SpotifyDownloader] Updating SpotDL {} using asset {}",
+            release.tag_name, asset.name
+        );
+        println!(
+            "[SpotifyDownloader] Download URL: {}",
+            asset.browser_download_url
+        );
+        println!("[SpotifyDownloader] Target path: {:?}", target_path);
+
+        Self::download_binary(&asset.browser_download_url, &target_path).await?;
+
+        let downloader = SpotifyDownloader::new(app_handle);
+        downloader.check_spotdl(true).await
+    }
+
     fn find_spotdl(app_handle: &AppHandle) -> String {
+        // App-managed binaries have priority so in-app updates are used immediately
+        if let Ok(managed_path) = Self::managed_spotdl_path(app_handle) {
+            if managed_path.exists() {
+                println!("[SpotifyDownloader] Found managed spotdl in app data: {:?}", managed_path);
+                return managed_path.to_string_lossy().to_string();
+            }
+        }
+
         // Try multiple possible locations for bundled spotdl
         if let Ok(resource_dir) = app_handle.path().resource_dir() {
             let possible_paths = if cfg!(windows) {
@@ -106,17 +381,6 @@ impl SpotifyDownloader {
             println!("[SpotifyDownloader] spotdl not found in resource dir. Checked paths:");
             for path in &possible_paths {
                 println!("  - {:?}", path);
-            }
-        }
-
-        // Try app data directory
-        if let Ok(app_data_dir) = app_handle.path().app_data_dir() {
-            let binary_name = if cfg!(windows) { "spotdl.exe" } else { "spotdl" };
-            let data_path = app_data_dir.join("binaries").join(binary_name);
-            
-            if data_path.exists() {
-                println!("[SpotifyDownloader] Found spotdl in app data: {:?}", data_path);
-                return data_path.to_string_lossy().to_string();
             }
         }
 
@@ -163,7 +427,7 @@ impl SpotifyDownloader {
         None
     }
 
-    pub async fn check_spotdl(&self) -> Result<SpotDlInfo, String> {
+    pub async fn check_spotdl(&self, include_latest: bool) -> Result<SpotDlInfo, String> {
         // Clean path - remove Windows extended path prefix
         let spotdl_path_clean = self.spotdl_path
             .replace("\\\\?\\", "")
@@ -173,18 +437,41 @@ impl SpotifyDownloader {
             .arg("--version")
             .output()
             .await
-            .map_err(|e| format!("spotdl not found or not working: {}. Please install spotdl with: pip install spotdl", e))?;
+            .map_err(|e| format!("spotdl not found or not working: {}. Use Settings > SpotDL Engine > Update Engine.", e))?;
 
         if !output.status.success() {
             return Err("spotdl returned an error. Please ensure spotdl is installed correctly.".to_string());
         }
 
-        let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let raw_version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let normalized_version = Self::normalize_version_token(&raw_version);
+        let version = if normalized_version.is_empty() {
+            raw_version
+        } else {
+            normalized_version
+        };
+        let latest_version = if include_latest {
+            match Self::fetch_latest_spotdl_version().await {
+                Ok(version) => Some(version),
+                Err(err) => {
+                    println!("[SpotifyDownloader] Failed to fetch latest SpotDL version: {}", err);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let update_available = latest_version
+            .as_ref()
+            .map(|latest| Self::is_update_available(&version, latest))
+            .unwrap_or(false);
 
         Ok(SpotDlInfo {
             version,
             path: spotdl_path_clean,
             is_available: true,
+            latest_version,
+            update_available,
         })
     }
 
@@ -411,6 +698,7 @@ impl SpotifyDownloader {
         let app = app_handle.clone();
         let output_path = request.output_path.clone();
         let audio_format = request.audio_format.clone();
+        let concurrent_fragments = request.threads.unwrap_or(4).clamp(2, 8).to_string();
 
         tokio::spawn(async move {
             let mut completed = 0;
@@ -516,6 +804,14 @@ impl SpotifyDownloader {
                         &audio_format,
                         "--audio-quality",
                         "0",  // Best quality
+                        "--concurrent-fragments",
+                        &concurrent_fragments,
+                        "--retries",
+                        "4",
+                        "--fragment-retries",
+                        "4",
+                        "--socket-timeout",
+                        "20",
                         "-o",
                         &output_template,
                         "--ffmpeg-location",
@@ -596,9 +892,14 @@ impl SpotifyDownloader {
 
 // Tauri commands for Spotify downloading
 #[tauri::command]
-pub async fn check_spotdl(app_handle: AppHandle) -> Result<SpotDlInfo, String> {
+pub async fn check_spotdl(app_handle: AppHandle, include_latest: Option<bool>) -> Result<SpotDlInfo, String> {
     let downloader = SpotifyDownloader::new(&app_handle);
-    downloader.check_spotdl().await
+    downloader.check_spotdl(include_latest.unwrap_or(false)).await
+}
+
+#[tauri::command]
+pub async fn update_spotdl(app_handle: AppHandle) -> Result<SpotDlInfo, String> {
+    SpotifyDownloader::update_spotdl(&app_handle).await
 }
 
 #[tauri::command]

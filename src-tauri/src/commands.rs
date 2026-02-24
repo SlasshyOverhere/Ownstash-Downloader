@@ -431,7 +431,11 @@ fn open_file_with_default_app(path: &std::path::Path) -> Result<(), String> {
 /// Transcode a media file to MP4 for web playback
 /// Returns the path to the transcoded file
 #[tauri::command]
-pub async fn transcode_for_playback(app_handle: AppHandle, input_path: String) -> Result<TranscodeResult, String> {
+pub async fn transcode_for_playback(
+    app_handle: AppHandle,
+    input_path: String,
+    force: Option<bool>,
+) -> Result<TranscodeResult, String> {
     use std::path::PathBuf;
     use tokio::process::Command as TokioCommand;
     
@@ -439,16 +443,40 @@ pub async fn transcode_for_playback(app_handle: AppHandle, input_path: String) -
     if !input.exists() {
         return Err(format!("Input file does not exist: {}", input_path));
     }
+
+    let force_transcode = force.unwrap_or(false);
     
     // Check if format is already supported
     let extension = input.extension()
         .and_then(|e| e.to_str())
         .map(|e| e.to_lowercase())
         .unwrap_or_default();
-    
-    let web_supported = ["mp4", "webm", "ogg", "mov"];
-    if web_supported.contains(&extension.as_str()) {
-        // Already supported, return original path
+
+    let audio_formats = ["mp3", "m4a", "flac", "wav", "ogg", "opus", "aac"];
+    if audio_formats.contains(&extension.as_str()) {
+        // Audio files are handled directly by the browser media element.
+        return Ok(TranscodeResult {
+            output_path: input_path,
+            was_transcoded: false,
+        });
+    }
+
+    let web_supported = ["mp4", "webm", "ogg", "mov", "m4v"];
+    let mut should_transcode = force_transcode || !web_supported.contains(&extension.as_str());
+
+    if !should_transcode {
+        if let Some(codec) = probe_primary_video_codec(&app_handle, &input_path) {
+            if !is_codec_supported_by_webview(&codec) {
+                println!(
+                    "[Transcode] Forcing transcode for unsupported playback codec: {}",
+                    codec
+                );
+                should_transcode = true;
+            }
+        }
+    }
+
+    if !should_transcode {
         return Ok(TranscodeResult {
             output_path: input_path,
             was_transcoded: false,
@@ -560,6 +588,97 @@ fn find_ffmpeg(app_handle: &AppHandle) -> Option<String> {
     }
     
     None
+}
+
+fn find_ffprobe(app_handle: &AppHandle) -> Option<String> {
+    use tauri::Manager;
+
+    if let Ok(resource_dir) = app_handle.path().resource_dir() {
+        let paths = if cfg!(windows) {
+            vec![
+                resource_dir.join("binaries").join("ffprobe.exe"),
+                resource_dir.join("binaries/ffprobe.exe"),
+                resource_dir.join("ffprobe.exe"),
+            ]
+        } else {
+            vec![
+                resource_dir.join("binaries").join("ffprobe"),
+                resource_dir.join("binaries/ffprobe"),
+                resource_dir.join("ffprobe"),
+            ]
+        };
+
+        for path in paths {
+            if path.exists() {
+                return Some(path.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    if let Ok(app_data_dir) = app_handle.path().app_data_dir() {
+        let binary_name = if cfg!(windows) { "ffprobe.exe" } else { "ffprobe" };
+        let data_path = app_data_dir.join("binaries").join(binary_name);
+
+        if data_path.exists() {
+            return Some(data_path.to_string_lossy().to_string());
+        }
+    }
+
+    let binary_name = if cfg!(windows) { "ffprobe.exe" } else { "ffprobe" };
+    if which::which(binary_name).is_ok() {
+        return Some(binary_name.to_string());
+    }
+
+    None
+}
+
+fn probe_primary_video_codec(app_handle: &AppHandle, input_path: &str) -> Option<String> {
+    let ffprobe_path = find_ffprobe(app_handle)?;
+    let mut cmd = Command::new(ffprobe_path);
+
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let output = cmd
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=codec_name",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            input_path,
+        ])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let codec = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_lowercase();
+
+    if codec.is_empty() {
+        None
+    } else {
+        Some(codec)
+    }
+}
+
+fn is_codec_supported_by_webview(codec: &str) -> bool {
+    matches!(
+        codec,
+        "h264" | "avc1" | "vp8" | "vp9" | "mpeg4" | "theora"
+    )
 }
 
 // Download commands

@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
-    "name": "Slasshy OmniDownloader",
+    "name": "Ownstash Downloader",
     "version": "1.0.0",
-    "description": "Send media links to Slasshy OmniDownloader from supported websites. Works with YouTube, YouTube Music, and 1000+ other sites.",
+    "description": "Send media links to Ownstash Downloader from supported websites. Works with YouTube, YouTube Music, and 1000+ other sites.",
     "permissions": [
         "storage",
         "activeTab",

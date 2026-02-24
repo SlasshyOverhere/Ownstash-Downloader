@@ -1,8 +1,8 @@
 {
     "$schema": "https://schema.tauri.app/config/2",
-    "productName": "Slasshy OmniDownloader",
-    "version": "0.1.0",
-    "identifier": "com.slasshy.omnidownloader",
+    "productName": "Ownstash Downloader",
+    "version": "1.0.4",
+    "identifier": "com.ownstash.downloader",
     "build": {
         "beforeDevCommand": "npm run dev",
         "devUrl": "http://localhost:1420",
@@ -19,7 +19,7 @@
         },
         "windows": [
             {
-                "title": "Slasshy OmniDownloader",
+                "title": "Ownstash Downloader",
                 "width": 1280,
                 "height": 800,
                 "minWidth": 900,
@@ -28,12 +28,14 @@
                 "fullscreen": false,
                 "decorations": true,
                 "transparent": false,
-                "center": true
+                "center": true,
+                "visible": false
             }
         ]
     },
     "bundle": {
         "active": true,
+        "createUpdaterArtifacts": true,
         "targets": "all",
         "icon": [
             "icons/32x32.png",
@@ -49,7 +51,7 @@
         ],
         "category": "Utility",
         "shortDescription": "Media downloader supporting 1000+ platforms",
-        "longDescription": "Slasshy OmniDownloader is a cross-platform media downloader, organizer, and converter.",
+        "longDescription": "Ownstash Downloader is a cross-platform media downloader, organizer, and converter.",
         "windows": {
             "certificateThumbprint": null,
             "digestAlgorithm": "sha256",
@@ -63,14 +65,14 @@
         "updater": {
             "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU0NzZBMTkzNzYzQzlCQTQKUldTa216eDJrNkYyVkFqdGMzVGZLd0NtdXRRVG53ZXpVREx4ZkJOT0ROMXo2Ly9maGF0cUpMWmUK",
             "endpoints": [
-                "https://github.com/SlasshyOverhere/slasshy-omnidownloader/releases/latest/download/latest.json"
+                "https://github.com/SlasshyOverhere/Ownstash-Downloader/releases/latest/download/latest.json"
             ]
         },
         "deep-link": {
             "mobile": [],
             "desktop": {
                 "schemes": [
-                    "slasshy"
+                    "ownstash"
                 ]
             }
         }

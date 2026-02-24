@@ -1,7 +1,7 @@
 //! Host Reputation Memory System
 //! 
 //! Maintains a lightweight local database of host-specific behavior to optimize
-//! download strategies. This is "The Moat" that gives Slasshy its edge over
+//! download strategies. This is "The Moat" that gives Ownstash its edge over
 //! basic downloaders.
 //!
 //! Key features:

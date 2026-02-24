@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
     Search,
     Trash2,
@@ -86,7 +86,6 @@ function DownloadHistoryCard({ item, onDelete, onOpenFolder }: DownloadHistoryCa
             style={tiltStyle}
             {...handlers}
             variants={staggerItem}
-            layout
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, x: -100 }}
@@ -186,7 +185,6 @@ function SearchHistoryCard({ item, onSelect }: SearchHistoryCardProps) {
             style={tiltStyle}
             {...handlers}
             variants={staggerItem}
-            layout
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, x: -100 }}
@@ -433,31 +431,27 @@ export function HistoryPage() {
             {/* Downloads List */}
             {!isLoading && activeTab === 'downloads' && (
                 <motion.div variants={staggerContainer} className="space-y-3">
-                    <AnimatePresence mode="popLayout">
-                        {filteredDownloads.map(item => (
-                            <DownloadHistoryCard
-                                key={item.id}
-                                item={item}
-                                onDelete={handleDeleteDownload}
-                                onOpenFolder={handleOpenFolder}
-                            />
-                        ))}
-                    </AnimatePresence>
+                    {filteredDownloads.map(item => (
+                        <DownloadHistoryCard
+                            key={item.id}
+                            item={item}
+                            onDelete={handleDeleteDownload}
+                            onOpenFolder={handleOpenFolder}
+                        />
+                    ))}
                 </motion.div>
             )}
 
             {/* Search History List */}
             {!isLoading && activeTab === 'searches' && (
                 <motion.div variants={staggerContainer} className="space-y-3">
-                    <AnimatePresence mode="popLayout">
-                        {filteredSearches.map(item => (
-                            <SearchHistoryCard
-                                key={item.id}
-                                item={item}
-                                onSelect={handleSelectSearch}
-                            />
-                        ))}
-                    </AnimatePresence>
+                    {filteredSearches.map(item => (
+                        <SearchHistoryCard
+                            key={item.id}
+                            item={item}
+                            onSelect={handleSelectSearch}
+                        />
+                    ))}
                 </motion.div>
             )}
 

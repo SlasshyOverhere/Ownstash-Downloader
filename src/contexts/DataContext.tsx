@@ -1,10 +1,9 @@
 // Data Sync Context - Provides cloud-synced data throughout the app
-// Now uses Google Drive as personal database instead of Firestore
+// Uses Google Drive as personal database
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 import { gdriveService, isGDriveAvailable } from '@/services/gdriveService';
-import { Download, SearchHistory, Setting } from '@/services/firestore';
-import { api } from '@/services/api';
+import { api, Download, SearchHistory, Setting } from '@/services/api';
 
 interface DataContextType {
     // Downloads

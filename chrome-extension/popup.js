@@ -1,5 +1,5 @@
 /**
- * Slasshy OmniDownloader - Chrome Extension Popup Script
+ * Ownstash Downloader - Chrome Extension Popup Script
  * Manages enabled sites and sends download requests to the desktop app
  */
 
@@ -7,9 +7,9 @@
 // Storage Keys
 // ============================================
 const STORAGE_KEYS = {
-    ENABLED_SITES: 'slasshy_enabled_sites',
-    SETTINGS: 'slasshy_settings',
-    VAULT_DOWNLOAD_ENABLED: 'slasshy_vault_download_enabled'
+    ENABLED_SITES: 'ownstash_enabled_sites',
+    SETTINGS: 'ownstash_settings',
+    VAULT_DOWNLOAD_ENABLED: 'ownstash_vault_download_enabled'
 };
 
 // Default settings
@@ -145,7 +145,7 @@ function updateCurrentSiteCard() {
         elements.btnToggleSite.classList.remove('btn-remove');
         elements.btnToggleSite.classList.add('btn-primary');
         elements.btnDownload.style.display = 'inline-flex';
-        elements.btnDownload.title = 'Send to Slasshy App';
+        elements.btnDownload.title = 'Send to Ownstash App';
     } else if (isEnabled) {
         elements.siteStatus.innerHTML = '<span class="status-badge status-enabled">Enabled</span>';
         elements.btnToggleText.textContent = 'Remove Site';
@@ -236,7 +236,7 @@ async function addSite(domain) {
 
     // Block Spotify - better handled via app directly
     if (isBlockedDomain(domain)) {
-        showNotification('🎵 Spotify works better in the app! Paste your Spotify URL directly into Slasshy for the best experience.', 'info');
+        showNotification('🎵 Spotify works better in the app! Paste your Spotify URL directly into Ownstash for the best experience.', 'info');
         return;
     }
 
@@ -316,7 +316,7 @@ async function sendToApp() {
     }
 
     const url = currentTab.url;
-    console.log('[Slasshy Popup] Sending URL via background:', url);
+    console.log('[Ownstash Popup] Sending URL via background:', url);
 
     // Send via background script which has better network permissions
     try {
@@ -325,22 +325,22 @@ async function sendToApp() {
             url: url
         });
 
-        console.log('[Slasshy Popup] Response from background:', response);
+        console.log('[Ownstash Popup] Response from background:', response);
 
         if (response && response.success) {
-            showNotification('Sent to Slasshy! ✓', 'success');
+            showNotification('Sent to Ownstash! ✓', 'success');
             // Close the popup after successful send
             setTimeout(() => window.close(), 800);
         } else {
             const errorMsg = response?.error || 'Failed to send';
             if (errorMsg.includes('not running') || errorMsg.includes('Failed to fetch')) {
-                showNotification('Slasshy app is not running', 'error');
+                showNotification('Ownstash app is not running', 'error');
             } else {
                 showNotification(errorMsg, 'error');
             }
         }
     } catch (e) {
-        console.error('[Slasshy Popup] Error:', e);
+        console.error('[Ownstash Popup] Error:', e);
         showNotification('Extension error: ' + e.message, 'error');
     }
 }
@@ -349,9 +349,9 @@ function openApp() {
     // Send a message to check if app is running
     chrome.runtime.sendMessage({ action: 'checkApp' }, (response) => {
         if (response && response.running) {
-            showNotification('Slasshy is running!', 'success');
+            showNotification('Ownstash is running!', 'success');
         } else {
-            showNotification('Slasshy app is not running. Please start it.', 'info');
+            showNotification('Ownstash app is not running. Please start it.', 'info');
         }
     });
 }
@@ -464,7 +464,7 @@ function setupEventListeners() {
 async function resetButtonPositions() {
     // Get all stored items
     const items = await chrome.storage.local.get(null);
-    const keysToRemove = Object.keys(items).filter(key => key.startsWith('slasshy_button_position_'));
+    const keysToRemove = Object.keys(items).filter(key => key.startsWith('ownstash_button_position_'));
 
     if (keysToRemove.length > 0) {
         await chrome.storage.local.remove(keysToRemove);
@@ -512,7 +512,7 @@ async function toggleVaultDownloadMode(enabled) {
             enabled: enabled
         });
     } catch (e) {
-        console.error('[Slasshy Popup] Failed to notify background:', e);
+        console.error('[Ownstash Popup] Failed to notify background:', e);
     }
 
     // Show feedback notification

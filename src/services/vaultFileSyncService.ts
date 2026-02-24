@@ -25,7 +25,7 @@ import {
 
 // ==================== CONSTANTS ====================
 
-const VAULT_FILES_FOLDER_NAME = 'slasshy_vault_files';
+const VAULT_FILES_FOLDER_NAME = 'ownstash_vault_files';
 const SMALL_FILE_THRESHOLD = 10 * 1024 * 1024; // 10MB - auto-download without popup
 const SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 

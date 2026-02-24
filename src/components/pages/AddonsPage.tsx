@@ -32,8 +32,8 @@ export function AddonsPage() {
   const [addons, setAddons] = useState<Addon[]>([
     {
       id: 'secure-browser',
-      name: 'Secure Vault Browser',
-      description: 'A secure browser extension for enhanced privacy and protection when accessing vault contents',
+      name: 'Secure Browser',
+      description: 'A secure browser extension for safer and cleaner browsing while using the downloader',
       icon: <Shield className="w-6 h-6" />,
       status: 'not_installed',
       size: '~190MB',
@@ -359,8 +359,8 @@ export function AddonsPage() {
       </div>
 
       <div className="text-sm text-muted-foreground mt-8">
-        <p className="mb-2">Add-ons enhance your secure browsing experience by providing additional privacy features and integration with the vault.</p>
-        <p>All add-ons are securely sandboxed and do not have access to your vault contents without explicit permission.</p>
+        <p className="mb-2">Add-ons enhance your secure browsing experience with additional privacy and workflow tools.</p>
+        <p>All add-ons are securely sandboxed and limited to the permissions you approve.</p>
       </div>
     </motion.div>
   );

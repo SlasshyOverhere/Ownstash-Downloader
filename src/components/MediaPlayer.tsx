@@ -39,6 +39,7 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showControls, setShowControls] = useState(true);
+    const [hasRetriedTranscode, setHasRetriedTranscode] = useState(false);
     const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const [mediaSrc, setMediaSrc] = useState<string>('');
@@ -52,6 +53,7 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
             setDuration(0);
             setIsLoading(true);
             setError(null);
+            setHasRetriedTranscode(false);
 
             // Use the robust media server URL which handles special characters and Range requests better
             api.getMediaStreamUrl(filePath)
@@ -177,7 +179,27 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
         }
     };
 
-    const handleError = () => {
+    const handleError = async () => {
+        if (!isAudio && !hasRetriedTranscode && filePath) {
+            setHasRetriedTranscode(true);
+            setIsLoading(true);
+            setError(null);
+
+            try {
+                const result = await api.transcodeForPlayback(filePath, true);
+                const retryPath = result.output_path;
+
+                const retryUrl = await api.getMediaStreamUrl(retryPath)
+                    .catch(() => convertFileSrc(retryPath));
+
+                console.log('[MediaPlayer] Retrying playback with transcoded media:', retryPath);
+                setMediaSrc(retryUrl);
+                return;
+            } catch (retryErr) {
+                console.error('[MediaPlayer] Transcode retry failed:', retryErr);
+            }
+        }
+
         setError('Failed to load media file. The file may be corrupted or in an unsupported format.');
         setIsLoading(false);
     };

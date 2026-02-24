@@ -1,5 +1,5 @@
 /**
- * Slasshy OmniDownloader - Background Service Worker
+ * Ownstash Downloader - Background Service Worker
  * Handles extension lifecycle and context menu actions
  */
 
@@ -7,9 +7,9 @@
 // Storage Keys
 // ============================================
 const STORAGE_KEYS = {
-    ENABLED_SITES: 'slasshy_enabled_sites',
-    SETTINGS: 'slasshy_settings',
-    VAULT_DOWNLOAD_ENABLED: 'slasshy_vault_download_enabled'
+    ENABLED_SITES: 'ownstash_enabled_sites',
+    SETTINGS: 'ownstash_settings',
+    VAULT_DOWNLOAD_ENABLED: 'ownstash_vault_download_enabled'
 };
 
 // ============================================
@@ -18,7 +18,7 @@ const STORAGE_KEYS = {
 chrome.runtime.onInstalled.addListener((details) => {
     if (details.reason === 'install') {
         // First time installation
-        console.log('Slasshy OmniDownloader extension installed!');
+        console.log('Ownstash Downloader extension installed!');
 
         // Initialize with popular sites pre-enabled (Spotify excluded - better handled via app directly)
         const defaultSites = [
@@ -40,7 +40,7 @@ chrome.runtime.onInstalled.addListener((details) => {
         // Create context menu
         createContextMenu();
     } else if (details.reason === 'update') {
-        console.log('Slasshy OmniDownloader extension updated!');
+        console.log('Ownstash Downloader extension updated!');
         createContextMenu();
     }
 });
@@ -53,36 +53,36 @@ function createContextMenu() {
     chrome.contextMenus.removeAll(() => {
         // Download current page
         chrome.contextMenus.create({
-            id: 'slasshy-download-page',
-            title: 'Download with Slasshy',
+            id: 'ownstash-download-page',
+            title: 'Download with Ownstash',
             contexts: ['page', 'frame']
         });
 
         // Download link
         chrome.contextMenus.create({
-            id: 'slasshy-download-link',
-            title: 'Download link with Slasshy',
+            id: 'ownstash-download-link',
+            title: 'Download link with Ownstash',
             contexts: ['link']
         });
 
         // Download media (video/audio)
         chrome.contextMenus.create({
-            id: 'slasshy-download-media',
-            title: 'Download media with Slasshy',
+            id: 'ownstash-download-media',
+            title: 'Download media with Ownstash',
             contexts: ['video', 'audio']
         });
 
         // Separator
         chrome.contextMenus.create({
-            id: 'slasshy-separator',
+            id: 'ownstash-separator',
             type: 'separator',
             contexts: ['page', 'link', 'video', 'audio']
         });
 
         // Toggle site
         chrome.contextMenus.create({
-            id: 'slasshy-toggle-site',
-            title: 'Toggle this site in Slasshy',
+            id: 'ownstash-toggle-site',
+            title: 'Toggle this site in Ownstash',
             contexts: ['page']
         });
     });
@@ -93,19 +93,19 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     let url = '';
 
     switch (info.menuItemId) {
-        case 'slasshy-download-page':
+        case 'ownstash-download-page':
             url = info.pageUrl || tab.url;
             break;
 
-        case 'slasshy-download-link':
+        case 'ownstash-download-link':
             url = info.linkUrl;
             break;
 
-        case 'slasshy-download-media':
+        case 'ownstash-download-media':
             url = info.srcUrl || info.pageUrl;
             break;
 
-        case 'slasshy-toggle-site':
+        case 'ownstash-toggle-site':
             await toggleSite(tab.url);
             return;
     }
@@ -159,7 +159,7 @@ async function toggleSite(pageUrl) {
 const EXTENSION_SERVER_URL = 'http://127.0.0.1:47152';
 
 async function sendToApp(url) {
-    console.log('[Slasshy Background] Sending URL:', url);
+    console.log('[Ownstash Background] Sending URL:', url);
 
     try {
         const controller = new AbortController();
@@ -179,7 +179,7 @@ async function sendToApp(url) {
         if (response.ok) {
             const data = await response.json();
             if (data.success) {
-                showNotification('Sent to Slasshy', 'The URL has been sent to Slasshy OmniDownloader');
+                showNotification('Sent to Ownstash', 'The URL has been sent to Ownstash Downloader');
                 return { success: true };
             } else {
                 showNotification('Error', 'Failed to send to app');
@@ -190,21 +190,21 @@ async function sendToApp(url) {
             return { success: false, error: 'App returned error: ' + response.status };
         }
     } catch (e) {
-        console.error('[Slasshy Background] HTTP failed, trying deep link:', e);
+        console.error('[Ownstash Background] HTTP failed, trying deep link:', e);
 
         // App not running - try to launch it using deep link
         return await launchAppWithDeepLink(url);
     }
 }
 
-// Launch app using deep link protocol (slasshy://)
+// Launch app using deep link protocol (ownstash://)
 async function launchAppWithDeepLink(url) {
     try {
         // Construct deep link URL
         const encodedUrl = encodeURIComponent(url);
-        const deepLinkUrl = `slasshy://download?url=${encodedUrl}`;
+        const deepLinkUrl = `ownstash://download?url=${encodedUrl}`;
 
-        console.log('[Slasshy Background] Opening deep link:', deepLinkUrl);
+        console.log('[Ownstash Background] Opening deep link:', deepLinkUrl);
 
         // Try to open the deep link - this will launch the app if installed
         // Create a new tab with the deep link, then close it
@@ -215,12 +215,12 @@ async function launchAppWithDeepLink(url) {
             chrome.tabs.remove(tab.id).catch(() => { });
         }, 1000);
 
-        showNotification('Launching Slasshy', 'Opening the app to download...');
+        showNotification('Launching Ownstash', 'Opening the app to download...');
 
         return { success: true, launched: true };
     } catch (e) {
-        console.error('[Slasshy Background] Deep link failed:', e);
-        showNotification('App Not Installed', 'Please install Slasshy OmniDownloader');
+        console.error('[Ownstash Background] Deep link failed:', e);
+        showNotification('App Not Installed', 'Please install Ownstash Downloader');
         return { success: false, error: 'Failed to launch app' };
     }
 }
@@ -244,7 +244,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'sendToApp') {
         // Handle async sendToApp with proper response
         (async () => {
-            console.log('[Slasshy Background] Received sendToApp message:', message.url);
+            console.log('[Ownstash Background] Received sendToApp message:', message.url);
             try {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -262,7 +262,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                 if (response.ok) {
                     const data = await response.json();
-                    console.log('[Slasshy Background] Response:', data);
+                    console.log('[Ownstash Background] Response:', data);
                     if (data.success) {
                         sendResponse({ success: true });
                     } else {
@@ -272,7 +272,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sendResponse({ success: false, error: 'App error: ' + response.status });
                 }
             } catch (e) {
-                console.error('[Slasshy Background] Error:', e);
+                console.error('[Ownstash Background] Error:', e);
                 sendResponse({ success: false, error: 'App not running or connection failed' });
             }
         })();
@@ -350,7 +350,7 @@ let vaultDownloadEnabled = false;
 chrome.storage.local.get(STORAGE_KEYS.VAULT_DOWNLOAD_ENABLED, (result) => {
     vaultDownloadEnabled = result[STORAGE_KEYS.VAULT_DOWNLOAD_ENABLED] || false;
     updateVaultBadge();
-    console.log('[Slasshy Background] Vault download mode:', vaultDownloadEnabled ? 'ENABLED' : 'DISABLED');
+    console.log('[Ownstash Background] Vault download mode:', vaultDownloadEnabled ? 'ENABLED' : 'DISABLED');
 });
 
 // Listen for storage changes (from popup toggle)
@@ -358,7 +358,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === 'local' && changes[STORAGE_KEYS.VAULT_DOWNLOAD_ENABLED]) {
         vaultDownloadEnabled = changes[STORAGE_KEYS.VAULT_DOWNLOAD_ENABLED].newValue || false;
         updateVaultBadge();
-        console.log('[Slasshy Background] Vault download mode changed:', vaultDownloadEnabled ? 'ENABLED' : 'DISABLED');
+        console.log('[Ownstash Background] Vault download mode changed:', vaultDownloadEnabled ? 'ENABLED' : 'DISABLED');
     }
 });
 
@@ -381,7 +381,7 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
         return;
     }
 
-    console.log('[Slasshy Background] Intercepting download:', downloadItem);
+    console.log('[Ownstash Background] Intercepting download:', downloadItem);
 
     // Get the download URL
     const downloadUrl = downloadItem.finalUrl || downloadItem.url;
@@ -389,24 +389,24 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
     // Cancel the browser download immediately
     try {
         await chrome.downloads.cancel(downloadItem.id);
-        console.log('[Slasshy Background] Cancelled browser download:', downloadItem.id);
+        console.log('[Ownstash Background] Cancelled browser download:', downloadItem.id);
     } catch (e) {
-        console.warn('[Slasshy Background] Could not cancel download:', e);
+        console.warn('[Ownstash Background] Could not cancel download:', e);
     }
 
     // Remove the cancelled download from Chrome's download history
     try {
         await chrome.downloads.erase({ id: downloadItem.id });
     } catch (e) {
-        console.warn('[Slasshy Background] Could not erase download entry:', e);
+        console.warn('[Ownstash Background] Could not erase download entry:', e);
     }
 
     // Try to get the best filename
     let filename = await getBestFilename(downloadItem, downloadUrl);
 
-    console.log('[Slasshy Background] Final filename:', filename);
+    console.log('[Ownstash Background] Final filename:', filename);
 
-    // Send to Slasshy Vault
+    // Send to Ownstash Vault
     await sendToVault(downloadUrl, filename, downloadItem.fileSize || downloadItem.totalBytes || 0);
 });
 
@@ -417,7 +417,7 @@ async function getBestFilename(downloadItem, url) {
         const parts = downloadItem.filename.split(/[\/\\]/);
         const name = parts[parts.length - 1];
         if (name && name !== 'download' && name.length > 0) {
-            console.log('[Slasshy Background] Using downloadItem.filename:', name);
+            console.log('[Ownstash Background] Using downloadItem.filename:', name);
             return name;
         }
     }
@@ -432,7 +432,7 @@ async function getBestFilename(downloadItem, url) {
             if (filenameMatch) {
                 const extractedName = (filenameMatch[2] || filenameMatch[3] || '').trim().replace(/^["']|["']$/g, '');
                 if (extractedName && extractedName !== 'download') {
-                    console.log('[Slasshy Background] Using Content-Disposition filename:', extractedName);
+                    console.log('[Ownstash Background] Using Content-Disposition filename:', extractedName);
                     return decodeURIComponent(extractedName);
                 }
             }
@@ -441,10 +441,10 @@ async function getBestFilename(downloadItem, url) {
         // Also check content-type to add extension if needed
         const contentType = headResponse.headers.get('content-type');
         if (contentType) {
-            console.log('[Slasshy Background] Content-Type:', contentType);
+            console.log('[Ownstash Background] Content-Type:', contentType);
         }
     } catch (e) {
-        console.log('[Slasshy Background] HEAD request failed:', e);
+        console.log('[Ownstash Background] HEAD request failed:', e);
     }
 
     // 3. Extract from URL
@@ -509,7 +509,7 @@ function extractFilenameFromUrl(url) {
 
 // Send download to Vault via app
 async function sendToVault(url, filename, fileSize) {
-    console.log('[Slasshy Background] Sending to Vault:', { url, filename, fileSize });
+    console.log('[Ownstash Background] Sending to Vault:', { url, filename, fileSize });
 
     try {
         const controller = new AbortController();
@@ -545,7 +545,7 @@ async function sendToVault(url, filename, fileSize) {
             return { success: false, error: 'App error: ' + response.status };
         }
     } catch (e) {
-        console.error('[Slasshy Background] Vault download failed:', e);
+        console.error('[Ownstash Background] Vault download failed:', e);
 
         // Try deep link fallback with vault parameter
         return await launchAppWithVaultDeepLink(url, filename);
@@ -557,9 +557,9 @@ async function launchAppWithVaultDeepLink(url, filename) {
     try {
         const encodedUrl = encodeURIComponent(url);
         const encodedFilename = encodeURIComponent(filename);
-        const deepLinkUrl = `slasshy://vault-download?url=${encodedUrl}&filename=${encodedFilename}`;
+        const deepLinkUrl = `ownstash://vault-download?url=${encodedUrl}&filename=${encodedFilename}`;
 
-        console.log('[Slasshy Background] Opening vault deep link:', deepLinkUrl);
+        console.log('[Ownstash Background] Opening vault deep link:', deepLinkUrl);
 
         const tab = await chrome.tabs.create({ url: deepLinkUrl, active: false });
 
@@ -567,12 +567,12 @@ async function launchAppWithVaultDeepLink(url, filename) {
             chrome.tabs.remove(tab.id).catch(() => { });
         }, 1000);
 
-        showNotification('🔒 Vault Download', 'Launching Slasshy to download to Vault...');
+        showNotification('🔒 Vault Download', 'Launching Ownstash to download to Vault...');
 
         return { success: true, launched: true };
     } catch (e) {
-        console.error('[Slasshy Background] Vault deep link failed:', e);
-        showNotification('App Not Running', 'Please start Slasshy OmniDownloader');
+        console.error('[Ownstash Background] Vault deep link failed:', e);
+        showNotification('App Not Running', 'Please start Ownstash Downloader');
         return { success: false, error: 'Failed to launch app' };
     }
 }
@@ -599,7 +599,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // This can be used for more advanced communication with the desktop app
 // Requires native host manifest to be installed
 
-const NATIVE_HOST_NAME = 'com.slasshy.omnidownloader';
+const NATIVE_HOST_NAME = 'com.ownstash.downloader';
 
 async function sendNativeMessage(message) {
     try {

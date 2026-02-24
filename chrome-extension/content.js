@@ -1,5 +1,5 @@
 /**
- * Slasshy OmniDownloader - Content Script
+ * Ownstash Downloader - Content Script
  * Displays a floating download button on enabled sites
  */
 
@@ -7,8 +7,8 @@
 // Storage Keys
 // ============================================
 const STORAGE_KEYS = {
-    ENABLED_SITES: 'slasshy_enabled_sites',
-    SETTINGS: 'slasshy_settings'
+    ENABLED_SITES: 'ownstash_enabled_sites',
+    SETTINGS: 'ownstash_settings'
 };
 
 // Default settings
@@ -51,7 +51,7 @@ async function init() {
     try {
         chrome.runtime.onMessage.addListener(handleMessage);
     } catch (e) {
-        console.log('[Slasshy] Extension context invalid on init (reload needed)');
+        console.log('[Ownstash] Extension context invalid on init (reload needed)');
     }
 
     // Listen for fullscreen changes
@@ -114,7 +114,7 @@ async function checkIfSiteEnabled(domain) {
 // ============================================
 // Floating Button
 // ============================================
-const BUTTON_POSITION_KEY = 'slasshy_button_position';
+const BUTTON_POSITION_KEY = 'ownstash_button_position';
 let isDragging = false;
 let dragStartX = 0;
 let dragStartY = 0;
@@ -185,7 +185,7 @@ function createFloatingButton() {
             return;
         }
 
-        console.log('[Slasshy] Button clicked. currentTrackUrl:', currentTrackUrl, 'fullCollectionUrl:', fullCollectionUrl);
+        console.log('[Ownstash] Button clicked. currentTrackUrl:', currentTrackUrl, 'fullCollectionUrl:', fullCollectionUrl);
 
         // Show dropdown if:
         // 1. We have both a track and a collection (playing a track from a playlist)
@@ -193,10 +193,10 @@ function createFloatingButton() {
         const showDropdown = currentTrackUrl && fullCollectionUrl && (currentTrackUrl !== fullCollectionUrl);
 
         if (showDropdown) {
-            console.log('[Slasshy] Showing dropdown menu');
+            console.log('[Ownstash] Showing dropdown menu');
             toggleDropdownMenu();
         } else {
-            console.log('[Slasshy] Direct download, no dropdown');
+            console.log('[Ownstash] Direct download, no dropdown');
             // Just download what we have
             handleDownloadClick();
         }
@@ -276,19 +276,19 @@ function updateButtonForCollection() {
         if (arrow) arrow.style.display = 'inline';
         if (textEl) textEl.textContent = 'Track';
         if (tooltip) tooltip.textContent = 'Click for options • Drag to move';
-        console.log('[Slasshy] Button updated: dropdown mode');
+        console.log('[Ownstash] Button updated: dropdown mode');
     } else if (fullCollectionUrl && !currentTrackUrl) {
         // Only have collection (e.g., viewing a playlist but not playing)
         if (arrow) arrow.style.display = 'none';
         if (textEl) textEl.textContent = 'Playlist';
         if (tooltip) tooltip.textContent = 'Downloads all tracks';
-        console.log('[Slasshy] Button updated: playlist mode');
+        console.log('[Ownstash] Button updated: playlist mode');
     } else {
         // Regular single track/video
         if (arrow) arrow.style.display = 'none';
         if (textEl) textEl.textContent = 'Download';
         if (tooltip) tooltip.textContent = 'Drag to move • Click to send';
-        console.log('[Slasshy] Button updated: single item mode');
+        console.log('[Ownstash] Button updated: single item mode');
     }
 }
 
@@ -475,7 +475,7 @@ async function handleDownloadClick(urlOverride = null) {
     // Check if runtime is valid BEFORE trying to send
     if (!isRuntimeValid()) {
         showFeedback('Please reload page', 'error', 3000);
-        console.error('[Slasshy] Extension context is invalid. Page reload required.');
+        console.error('[Ownstash] Extension context is invalid. Page reload required.');
         return;
     }
 
@@ -494,7 +494,7 @@ async function handleDownloadClick(urlOverride = null) {
             timeoutPromise
         ]);
 
-        console.log('[Slasshy Content] Response:', response);
+        console.log('[Ownstash Content] Response:', response);
 
         if (response && response.success) {
             showFeedback('Sent! ✓', 'success', 2000);
@@ -508,7 +508,7 @@ async function handleDownloadClick(urlOverride = null) {
         }
     } catch (e) {
         // Extension error or timeout
-        console.error('[Slasshy Content] Failed to send:', e);
+        console.error('[Ownstash Content] Failed to send:', e);
 
         // Handle "Extension context invalidated" specifically
         if (e.message && e.message.includes('Extension context invalidated')) {
@@ -704,7 +704,7 @@ function findYouTubeMusicCurrentTrack() {
 
         return null;
     } catch (e) {
-        console.error('[Slasshy] Error finding current YouTube Music track:', e);
+        console.error('[Ownstash] Error finding current YouTube Music track:', e);
         return null;
     }
 }
