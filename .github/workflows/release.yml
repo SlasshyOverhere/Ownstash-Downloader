@@ -103,13 +103,13 @@ jobs:
             - Uses synchronized app versions across package.json, Cargo.toml, and tauri.conf.json
             - Includes signed updater assets and `latest.json`
             - Windows installer and updater bundles are attached below
-            - Stable latest installer URL: `https://github.com/${{ github.repository }}/releases/latest/download/ownstash-downloader-windows-x86_64-setup.exe`
+            - Stable latest installer URL: `https://github.com/${{ github.repository }}/releases/latest/download/ownstash-downloader-windows-x64-setup.exe`
           generateReleaseNotes: true
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           includeUpdaterJson: true
           updaterJsonPreferNsis: true
-          assetNamePattern: ownstash-downloader-[platform]-[arch][setup][ext]
+          assetNamePattern: ownstash-downloader-windows-x64[setup][ext]
           retryAttempts: 2
 
       - name: Mark release as latest
