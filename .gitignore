@@ -33,6 +33,8 @@ src-tauri/*.tar.gz
 # Chrome Extension
 chrome-extension/packed/
 chrome-extension/dist/
+chrome-extension/chrome-extension.rar
+chrome-extension/firefox-version/
 
 # Logs and databases
 *.log
@@ -45,6 +47,7 @@ chrome-extension/dist/
 .DS_Store
 Thumbs.db
 desktop.ini
+nul
 *.bak
 
 # IDE
@@ -91,8 +94,8 @@ public/New folder/
 *.nupkg
 
 # Documentation (except README)
-*.md
-*.txt
+# *.md
+# *.txt
 !README.md
 
 # Scripts (dev/setup tools)
