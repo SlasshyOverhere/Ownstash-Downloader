@@ -50,8 +50,8 @@
             "binaries/ffprobe.exe"
         ],
         "category": "Utility",
-        "shortDescription": "Media downloader supporting 1000+ platforms",
-        "longDescription": "Ownstash Downloader is a cross-platform media downloader, organizer, and converter.",
+        "shortDescription": "Fast desktop media downloader for 1000+ platforms",
+        "longDescription": "Ownstash Downloader is a desktop-first media downloader powered by yt-dlp and SpotDL, built for fast local downloads from supported platforms.",
         "windows": {
             "certificateThumbprint": null,
             "digestAlgorithm": "sha256",
