@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { motion, useScroll, useTransform, useInView, AnimatePresence } from 'framer-motion';
+import { motion, useScroll, useTransform, useInView } from 'framer-motion';
 import {
-    ArrowRight, Shield, Zap, Download, Lock, Smartphone, Globe,
-    Chrome, Youtube, Music, Video, HardDrive, Cpu, Gauge,
-    CloudLightning, Fingerprint, Server, Waves, Play, CheckCircle2,
+    ArrowRight, Zap, Download, Globe,
+    Youtube, Music, Video, HardDrive, Cpu, Gauge,
+    CloudLightning, Waves, Play, CheckCircle2,
     Sparkles, ArrowDown, Terminal, Hash, Network, Code2
 } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -109,7 +109,7 @@ const GridBackground = () => (
 // --- Component: Terminal Demo ---
 const TerminalDemo = () => {
     const [lines, setLines] = useState<string[]>([
-        "> initializing slasshy_core v2.0...",
+        "> initializing ownstash_core v2.0...",
     ]);
     const ref = useRef(null);
     const isInView = useInView(ref, { once: true, margin: "-100px" });
@@ -118,15 +118,15 @@ const TerminalDemo = () => {
         if (!isInView) return;
 
         const sequence = [
-            { text: "> connecting to secure_vault...", delay: 800 },
-            { text: "> handshake established (AES-256-GCM)", delay: 1600 },
-            { text: "> allocating memory for 8K buffer...", delay: 2400 },
+            { text: "> connecting to source endpoint...", delay: 800 },
+            { text: "> fetching formats with yt-dlp...", delay: 1600 },
+            { text: "> allocating memory for high-bitrate stream...", delay: 2400 },
             { text: "> thread_pool: 32 workers active", delay: 3000 },
-            { text: "> downloading chunk_01 [################] 100%", delay: 3800 },
-            { text: "> downloading chunk_02 [################] 100%", delay: 4200 },
-            { text: "> encrypting stream...", delay: 4800 },
-            { text: "> verify: integrity_check passed", delay: 5500 },
-            { text: "> transfer complete. file secure.", delay: 6200 },
+            { text: "> downloading video_track [################] 100%", delay: 3800 },
+            { text: "> downloading audio_track [################] 100%", delay: 4200 },
+            { text: "> muxing streams with ffmpeg...", delay: 4800 },
+            { text: "> verify: output_integrity passed", delay: 5500 },
+            { text: "> transfer complete. file saved.", delay: 6200 },
             { text: "> waiting for next job...", delay: 7000 },
         ];
 
@@ -173,7 +173,7 @@ const TerminalDemo = () => {
                                 <div className="w-3 h-3 rounded-full bg-yellow-500/20 border border-yellow-500/50" />
                                 <div className="w-3 h-3 rounded-full bg-green-500/20 border border-green-500/50" />
                             </div>
-                            <div className="flex-1 text-center text-xs font-mono text-zinc-500">slasshy-cli — rust — 80x24</div>
+                            <div className="flex-1 text-center text-xs font-mono text-zinc-500">ownstash-cli — rust — 80x24</div>
                         </div>
 
                         {/* Terminal Body */}
@@ -267,7 +267,7 @@ const Hero = () => {
                     className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-sm text-white/80 mb-8 backdrop-blur-sm"
                 >
                     <Sparkles className="h-4 w-4 mr-2 text-white" />
-                    v2.0 Now Available with Cloud Vault & 8K Support
+                    v2.0 Now Available with Faster Fetch + 8K Support
                 </motion.div>
 
                 <motion.h1
@@ -306,9 +306,8 @@ const Hero = () => {
                     transition={{ duration: 0.8, delay: 0.4 }}
                     className="text-lg md:text-xl text-zinc-400 max-w-[700px] mb-12 leading-relaxed"
                 >
-                    The world's most advanced privacy-focused media downloader.
-                    Military-grade AES-256 encryption, 8K video support, multi-threaded Rust engine,
-                    and a secure vault that syncs across all your devices.
+                    Download-only by design. Fast metadata fetch, reliable format detection,
+                    and a multi-threaded Rust engine built for stable high-speed downloads.
                 </motion.p>
 
                 <motion.div
@@ -345,7 +344,7 @@ const Hero = () => {
                     {[
                         { value: 1000, suffix: '+', label: 'Supported Sites' },
                         { value: 100, suffix: '%', label: 'Free Forever' },
-                        { value: 256, suffix: '-bit', label: 'Encryption' },
+                        { value: 32, suffix: '', label: 'Parallel Workers' },
                         { value: 8, suffix: 'K', label: 'Max Resolution' },
                     ].map((stat, i) => (
                         <div key={i} className="text-center">
@@ -417,9 +416,9 @@ const FeatureCard = ({ icon: Icon, title, description, delay }: any) => {
 const FeaturesSection = () => {
     const features = [
         {
-            icon: Shield,
-            title: "Military-Grade Encryption",
-            description: "Your data is secured with AES-256-GCM encryption. Zero-knowledge architecture means even we can't see what you store.",
+            icon: Zap,
+            title: "Instant Metadata Fetch",
+            description: "Optimized probing pipeline returns title, thumbnail, duration, and formats quickly so users can start downloads without waiting.",
             gradient: "bg-gradient-to-br from-white/10 to-transparent"
         },
         {
@@ -435,21 +434,21 @@ const FeaturesSection = () => {
             gradient: "bg-gradient-to-br from-white/10 to-transparent"
         },
         {
-            icon: Smartphone,
-            title: "Cross-Device Sync",
-            description: "Your encrypted vault syncs seamlessly using your own Google Drive. No third-party servers. Your data, your control.",
+            icon: Video,
+            title: "Accurate 4K/8K Format Mapping",
+            description: "Quality selector is driven from actual source formats so available 4K streams stay selectable and download correctly.",
             gradient: "bg-gradient-to-br from-white/10 to-transparent"
         },
         {
-            icon: Chrome,
-            title: "Browser Extension",
-            description: "One-click downloads directly from your browser. Automatically detects media on the page and queues it for download.",
+            icon: CloudLightning,
+            title: "Adaptive Retry + Resume",
+            description: "Connection drops are handled automatically with retries and resume support to keep long downloads moving.",
             gradient: "bg-gradient-to-br from-white/10 to-transparent"
         },
         {
-            icon: Fingerprint,
-            title: "Biometric Vault Lock",
-            description: "Secure your vault with PIN, password, or biometric authentication. Auto-lock after inactivity keeps your files safe.",
+            icon: Globe,
+            title: "1000+ Platform Support",
+            description: "Built on yt-dlp and SpotDL support so one app handles YouTube, Spotify, SoundCloud, Vimeo, TikTok, and many more.",
             gradient: "bg-gradient-to-br from-white/10 to-transparent"
         },
     ];
@@ -470,7 +469,7 @@ const FeaturesSection = () => {
                         </span>
                     </h2>
                     <p className="text-zinc-400 text-lg max-w-2xl mx-auto">
-                        Every feature designed with privacy, performance, and flexibility in mind.
+                        Every feature is focused on speed, reliability, and download quality.
                     </p>
                 </motion.div>
 
@@ -506,15 +505,15 @@ const SpecRow = ({ icon: Icon, label, value, highlight }: any) => (
 
 const TechnicalSpecs = () => {
     const specs = [
-        { icon: Shield, label: "Encryption Standard", value: "AES-256-GCM", highlight: true },
-        { icon: Lock, label: "Key Derivation", value: "Argon2id (v19)" },
-        { icon: Cpu, label: "Download Engine", value: "Multi-threaded Rust" },
+        { icon: Cpu, label: "Download Engine", value: "Multi-threaded Rust", highlight: true },
+        { icon: Gauge, label: "Metadata Fetch", value: "Parallel format probes" },
+        { icon: CloudLightning, label: "Transport", value: "HTTP/2 + HTTP/3" },
+        { icon: Youtube, label: "Primary Stack", value: "yt-dlp + SpotDL" },
         { icon: Gauge, label: "Max Connections", value: "32 parallel" },
         { icon: Video, label: "Max Resolution", value: "7680 × 4320 (8K)" },
         { icon: Waves, label: "Audio Quality", value: "Up to 320kbps / FLAC" },
-        { icon: HardDrive, label: "Storage Backend", value: "SQLite + GDrive" },
-        { icon: Server, label: "Cloud Sync", value: "End-to-end encrypted" },
-        { icon: CloudLightning, label: "Protocol Support", value: "HTTP/2 + HTTP/3" },
+        { icon: HardDrive, label: "Storage Mode", value: "Local downloads only" },
+        { icon: Download, label: "Resilience", value: "Auto retry + resume" },
         { icon: Globe, label: "Supported Sites", value: "1000+ platforms" },
     ];
 
@@ -532,12 +531,11 @@ const TechnicalSpecs = () => {
                             <span className="text-sm font-medium text-zinc-500 uppercase tracking-widest mb-4 block">Technical Specifications</span>
                             <h2 className="text-4xl md:text-5xl font-bold mb-6">
                                 <span className="bg-clip-text text-transparent bg-gradient-to-r from-white to-zinc-500">
-                                    Enterprise-Grade Tech
+                                    Performance-Focused Stack
                                 </span>
                             </h2>
                             <p className="text-zinc-400 text-lg mb-8 leading-relaxed">
-                                Built on a foundation of security and performance. Every component is carefully selected
-                                and optimized for the best possible experience.
+                                Built for fast fetch, stable transfers, and accurate format handling from source to final file.
                             </p>
                         </motion.div>
 
@@ -628,15 +626,15 @@ const TechnicalSpecs = () => {
                                         className="bg-zinc-900/50 rounded-xl p-4 flex items-center gap-3"
                                         whileHover={{ scale: 1.02 }}
                                     >
-                                        <Shield className="text-white h-5 w-5" />
-                                        <span className="text-sm text-zinc-300">Encrypted</span>
+                                        <Gauge className="text-white h-5 w-5" />
+                                        <span className="text-sm text-zinc-300">Speed Optimized</span>
                                     </motion.div>
                                     <motion.div
                                         className="bg-zinc-900/50 rounded-xl p-4 flex items-center gap-3"
                                         whileHover={{ scale: 1.02 }}
                                     >
-                                        <Lock className="text-white h-5 w-5" />
-                                        <span className="text-sm text-zinc-300">Vault Synced</span>
+                                        <CheckCircle2 className="text-white h-5 w-5" />
+                                        <span className="text-sm text-zinc-300">Mux Completed</span>
                                     </motion.div>
                                 </div>
                             </div>
@@ -666,7 +664,7 @@ const CTASection = () => (
                     </span>
                 </h2>
                 <p className="text-xl text-zinc-400 max-w-2xl mx-auto mb-10">
-                    Join thousands of power users who trust Slasshy OmniDownloader for their media downloads.
+                    Join power users who rely on Ownstash Downloader for fast, high-quality media downloads.
                     Free forever. No strings attached.
                 </p>
 
@@ -687,67 +685,6 @@ const CTASection = () => (
     </section>
 );
 
-// --- Login Modal ---
-const LoginModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => (
-    <AnimatePresence>
-        {isOpen && (
-            <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4"
-                onClick={onClose}
-            >
-                <motion.div
-                    initial={{ scale: 0.9, opacity: 0, y: 20 }}
-                    animate={{ scale: 1, opacity: 1, y: 0 }}
-                    exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                    onClick={(e) => e.stopPropagation()}
-                    className="bg-zinc-950 w-full max-w-md rounded-3xl border border-white/10 shadow-2xl overflow-hidden relative"
-                >
-                    <button
-                        onClick={onClose}
-                        className="absolute top-6 right-6 text-zinc-500 hover:text-white transition-colors text-xl z-20 hover:rotate-90 duration-300"
-                    >
-                        ✕
-                    </button>
-
-                    <div className="p-8">
-                        <div className="flex items-center gap-3 mb-2 justify-center">
-                            <div className="h-10 w-10 rounded-xl bg-white flex items-center justify-center text-black">
-                                <Zap className="h-6 w-6 fill-current" />
-                            </div>
-                            <span className="text-2xl font-bold">Get Started</span>
-                        </div>
-                        <p className="text-center text-zinc-400 mb-8">
-                            Join millions of users downloading safely.
-                        </p>
-
-                        <div className="space-y-4">
-                            <p className="text-center text-zinc-500 py-4 border border-dashed border-white/10 rounded-xl">
-                                Registration is currently closed.
-                            </p>
-                        </div>
-
-                        <p className="mt-8 text-center text-xs text-zinc-500">
-                            By signing in, you agree to our{' '}
-                            <a href="#" className="underline hover:text-white">Terms</a> and{' '}
-                            <a href="#" className="underline hover:text-white">Privacy Policy</a>.
-                        </p>
-                    </div>
-
-                    <div className="bg-zinc-900/50 py-4 px-6 border-t border-white/5 text-center">
-                        <div className="flex items-center justify-center gap-2 text-xs text-zinc-500">
-                            <Shield className="h-3 w-3" />
-                            Protected with AES-256 Encryption
-                        </div>
-                    </div>
-                </motion.div>
-            </motion.div>
-        )}
-    </AnimatePresence>
-);
-
 // --- FAQ Section ---
 const FAQSection = () => {
     return (
@@ -763,39 +700,39 @@ const FAQSection = () => {
                         Frequently Asked Questions
                     </h2>
                     <p className="text-zinc-400">
-                        Everything you need to know about Slasshy OmniDownloader.
+                        Everything you need to know about Ownstash Downloader.
                     </p>
                 </motion.div>
 
                 <Accordion type="single" collapsible className="w-full">
                     <AccordionItem value="item-1">
-                        <AccordionTrigger className="text-lg">Is Slasshy OmniDownloader really free?</AccordionTrigger>
+                        <AccordionTrigger className="text-lg">Is Ownstash Downloader really free?</AccordionTrigger>
                         <AccordionContent className="text-zinc-400 text-base leading-relaxed">
-                            Yes, Slasshy OmniDownloader is 100% free and open-source. We believe privacy and unrestricted internet access are fundamental rights. There are no hidden fees, subscriptions, or ads.
+                            Yes. Ownstash Downloader is free to use with no subscriptions and no paywall for core download features.
                         </AccordionContent>
                     </AccordionItem>
                     <AccordionItem value="item-2">
-                        <AccordionTrigger className="text-lg">How does the encryption work?</AccordionTrigger>
+                        <AccordionTrigger className="text-lg">How do tool updates work?</AccordionTrigger>
                         <AccordionContent className="text-zinc-400 text-base leading-relaxed">
-                            We use military-grade AES-256-GCM encryption. Your files are encrypted locally on your device before they are ever synced. The encryption keys are derived from your password using Argon2id, ensuring that not even we can access your data.
+                            The app can check local vs latest versions of yt-dlp and SpotDL, then prompt you to update directly when newer releases are available.
                         </AccordionContent>
                     </AccordionItem>
                     <AccordionItem value="item-3">
                         <AccordionTrigger className="text-lg">Which platforms are supported?</AccordionTrigger>
                         <AccordionContent className="text-zinc-400 text-base leading-relaxed">
-                            Slasshy OmniDownloader supports downloading from over 1000 websites, including YouTube, Spotify, SoundCloud, Twitch, Vimeo, and many more. It handles video, audio, and playlists seamlessly.
+                            Ownstash Downloader supports 1000+ websites, including YouTube, Spotify, SoundCloud, Twitch, Vimeo, TikTok, and more.
                         </AccordionContent>
                     </AccordionItem>
                     <AccordionItem value="item-4">
                         <AccordionTrigger className="text-lg">Where are my files stored?</AccordionTrigger>
                         <AccordionContent className="text-zinc-400 text-base leading-relaxed">
-                            Your files are stored locally on your device by default. If you enable Cloud Sync, an encrypted copy is stored in your personal Google Drive (App Folder), keeping you in full control of your storage.
+                            Files are stored locally on your device in your configured download location.
                         </AccordionContent>
                     </AccordionItem>
                     <AccordionItem value="item-5">
                         <AccordionTrigger className="text-lg">Is it legal to download videos?</AccordionTrigger>
                         <AccordionContent className="text-zinc-400 text-base leading-relaxed">
-                            Slasshy OmniDownloader is a tool for personal archiving and offline viewing. Laws regarding downloading content vary by country and platform. We encourage users to respect copyright laws and the terms of service of the platforms they use.
+                            Ownstash Downloader is intended for personal archiving and offline use. Always follow platform terms and local copyright laws.
                         </AccordionContent>
                     </AccordionItem>
                 </Accordion>
@@ -815,10 +752,10 @@ const Footer = () => (
                     </div>
                     <div className="flex flex-col -space-y-1">
                         <span className="text-lg font-bold tracking-tighter text-white">
-                            Slasshy
+                            Ownstash
                         </span>
                         <span className="text-[9px] uppercase tracking-[0.2em] font-semibold text-zinc-500">
-                            OmniDownloader
+                            Downloader
                         </span>
                     </div>
                 </div>
@@ -830,7 +767,7 @@ const Footer = () => (
                     <a href="#" className="text-zinc-500 hover:text-white transition-colors text-sm">Twitter</a>
                 </div>
 
-                <p className="text-zinc-600 text-sm">© 2025 Slasshy OmniDownloader. All rights reserved.</p>
+                <p className="text-zinc-600 text-sm">© {new Date().getFullYear()} Ownstash Downloader. All rights reserved.</p>
             </div>
         </div>
     </footer>
@@ -838,7 +775,6 @@ const Footer = () => (
 
 // --- Main Component ---
 export default function LandingPage() {
-    const [showLogin, setShowLogin] = useState(false);
     const [isScrolled, setIsScrolled] = useState(false);
 
     useEffect(() => {
@@ -871,10 +807,10 @@ export default function LandingPage() {
                         </div>
                         <div className="flex flex-col -space-y-1">
                             <span className="text-xl font-bold tracking-tighter text-white">
-                                Slasshy
+                                Ownstash
                             </span>
                             <span className="text-[10px] uppercase tracking-[0.2em] font-semibold text-zinc-500">
-                                OmniDownloader
+                                Downloader
                             </span>
                         </div>
                     </div>
@@ -921,8 +857,6 @@ export default function LandingPage() {
             <FAQSection />
             <CTASection />
             <Footer />
-
-            <LoginModal isOpen={showLogin} onClose={() => setShowLogin(false)} />
         </div>
     );
 }
