@@ -15,6 +15,14 @@ import {
     AccordionTrigger,
 } from './ui/accordion';
 
+const DEFAULT_WINDOWS_DOWNLOAD_URL =
+    'https://github.com/SlasshyOverhere/Ownstash-Downloader/releases/latest/download/ownstash-downloader-windows-x86_64-setup.exe';
+
+const resolveDownloadLink = (): string => {
+    const configuredLink = import.meta.env.VITE_DOWNLOAD_LINK?.trim();
+    return configuredLink || DEFAULT_WINDOWS_DOWNLOAD_URL;
+};
+
 // --- Utility: Mouse Position for Spotlight ---
 const useMousePosition = () => {
     const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
@@ -318,12 +326,7 @@ const Hero = () => {
                 >
                     <motion.button
                         onClick={() => {
-                            const downloadLink = import.meta.env.VITE_DOWNLOAD_LINK;
-                            if (downloadLink) {
-                                window.location.href = downloadLink;
-                            } else {
-                                document.getElementById('download')?.scrollIntoView();
-                            }
+                            window.location.href = resolveDownloadLink();
                         }}
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
@@ -670,10 +673,7 @@ const CTASection = () => (
 
                 <button
                     onClick={() => {
-                        const downloadLink = import.meta.env.VITE_DOWNLOAD_LINK;
-                        if (downloadLink) {
-                            window.location.href = downloadLink;
-                        }
+                        window.location.href = resolveDownloadLink();
                     }}
                     className="inline-flex items-center gap-2 text-lg font-semibold px-8 py-4 rounded-full bg-white text-black hover:bg-zinc-200 transition-all duration-300 shadow-[0_0_30px_rgba(255,255,255,0.2)] hover:scale-105 active:scale-95 group"
                 >
@@ -834,12 +834,7 @@ export default function LandingPage() {
 
                         <button
                             onClick={() => {
-                                const downloadLink = import.meta.env.VITE_DOWNLOAD_LINK;
-                                if (downloadLink) {
-                                    window.location.href = downloadLink;
-                                } else {
-                                    document.getElementById('download')?.scrollIntoView();
-                                }
+                                window.location.href = resolveDownloadLink();
                             }}
                             className="hidden md:inline-flex text-sm font-semibold px-6 py-2.5 rounded-full bg-white text-black hover:bg-zinc-200 transition-colors shadow-[0_0_20px_rgba(255,255,255,0.2)]"
                         >
