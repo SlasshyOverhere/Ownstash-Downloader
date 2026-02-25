@@ -4,9 +4,15 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 use warp::Filter;
 use std::fs;
+use uuid::Uuid;
+use lazy_static::lazy_static;
 
 // Global port for the media server
 pub const MEDIA_SERVER_PORT: u16 = 18456;
+
+lazy_static! {
+    static ref SERVER_TOKEN: String = Uuid::new_v4().to_string();
+}
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct MediaFileInfo {
@@ -17,6 +23,11 @@ pub struct MediaFileInfo {
 pub fn start_media_server(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         println!("[MediaServer] Starting on port {}", MEDIA_SERVER_PORT);
+        // Only log token in debug builds or keep it secret?
+        // Better to not log it to avoid leaking it in logs if logs are shared.
+        // But for debugging it helps. Let's keep it minimal.
+        #[cfg(debug_assertions)]
+        println!("[MediaServer] Security Token: {}", *SERVER_TOKEN);
         
         let stream_route = warp::path("stream")
             .and(warp::query::<std::collections::HashMap<String, String>>())
@@ -43,6 +54,23 @@ async fn handle_stream_request(
     use tokio::io::AsyncReadExt;
     use warp::http::StatusCode;
     use warp::http::Response;
+
+    // Verify token
+    if let Some(token) = params.get("token") {
+        if token != &*SERVER_TOKEN {
+            println!("[MediaServer] Invalid token access attempt");
+            return Ok(Response::builder()
+                .status(StatusCode::FORBIDDEN)
+                .body(warp::hyper::Body::from("Invalid access token"))
+                .unwrap());
+        }
+    } else {
+        println!("[MediaServer] Missing token access attempt");
+        return Ok(Response::builder()
+            .status(StatusCode::FORBIDDEN)
+            .body(warp::hyper::Body::from("Missing access token"))
+            .unwrap());
+    }
 
     let file_path = params.get("path").ok_or_else(warp::reject::not_found)?;
     let decoded_path = urlencoding::decode(file_path).map_err(|_| warp::reject::not_found())?.to_string();
@@ -126,7 +154,7 @@ async fn handle_stream_request(
 /// Get the streaming URL for a given file path
 pub fn get_stream_url(file_path: &str) -> String {
     let encoded_path = urlencoding::encode(file_path);
-    format!("http://127.0.0.1:{}/stream?path={}", MEDIA_SERVER_PORT, encoded_path)
+    format!("http://127.0.0.1:{}/stream?path={}&token={}", MEDIA_SERVER_PORT, encoded_path, *SERVER_TOKEN)
 }
 
 #[tauri::command]
