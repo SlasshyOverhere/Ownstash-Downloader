@@ -512,12 +512,15 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
 
                         <div className="relative glass rounded-2xl p-2 flex items-center gap-3">
                             {/* Platform indicator */}
-                            <div className={cn(
-                                'w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-300',
-                                detectedPlatform
-                                    ? `bg-gradient-to-br ${detectedPlatform.color}`
-                                    : 'bg-muted'
-                            )}>
+                            <div
+                                aria-hidden="true"
+                                className={cn(
+                                    'w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-300',
+                                    detectedPlatform
+                                        ? `bg-gradient-to-br ${detectedPlatform.color}`
+                                        : 'bg-muted'
+                                )}
+                            >
                                 {detectedPlatform ? (
                                     <detectedPlatform.icon className="w-6 h-6 text-white" />
                                 ) : (
@@ -527,6 +530,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
 
                             {/* Input */}
                             <input
+                                aria-label="Video or music URL"
                                 type="url"
                                 value={url}
                                 onChange={(e) => {
@@ -543,6 +547,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
 
                             {/* Download button */}
                             <button
+                                aria-label="Fetch media information"
                                 onClick={handleFetchInfo}
                                 disabled={
                                     !url.trim() ||

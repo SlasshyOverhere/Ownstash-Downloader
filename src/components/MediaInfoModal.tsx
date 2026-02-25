@@ -434,6 +434,7 @@ export function MediaInfoModal({
 
                                     {/* Close button */}
                                     <button
+                                        aria-label="Close"
                                         onClick={onClose}
                                         className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-white/10 transition-colors"
                                     >

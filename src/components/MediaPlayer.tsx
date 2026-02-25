@@ -252,6 +252,7 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
                         >
                             {/* Close Button */}
                             <button
+                                aria-label="Close"
                                 onClick={onClose}
                                 className={cn(
                                     "absolute top-4 right-4 z-50 p-2 rounded-full bg-black/50 hover:bg-black/70 transition-all",
@@ -371,6 +372,7 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
                                     <div className="flex items-center gap-4">
                                         {/* Play/Pause */}
                                         <button
+                                            aria-label={isPlaying ? "Pause" : "Play"}
                                             onClick={togglePlay}
                                             className="p-2 hover:bg-white/10 rounded-full transition-colors"
                                         >
@@ -383,6 +385,7 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
 
                                         {/* Skip Buttons */}
                                         <button
+                                            aria-label="Skip back 10 seconds"
                                             onClick={() => skip(-10)}
                                             className="p-2 hover:bg-white/10 rounded-full transition-colors"
                                             title="Skip back 10s"
@@ -390,6 +393,7 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
                                             <SkipBack className="w-5 h-5 text-white" />
                                         </button>
                                         <button
+                                            aria-label="Skip forward 10 seconds"
                                             onClick={() => skip(10)}
                                             className="p-2 hover:bg-white/10 rounded-full transition-colors"
                                             title="Skip forward 10s"
@@ -400,6 +404,7 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
                                         {/* Volume */}
                                         <div className="flex items-center gap-2">
                                             <button
+                                                aria-label={isMuted ? "Unmute" : "Mute"}
                                                 onClick={toggleMute}
                                                 className="p-2 hover:bg-white/10 rounded-full transition-colors"
                                             >
@@ -410,6 +415,7 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
                                                 )}
                                             </button>
                                             <input
+                                                aria-label="Volume"
                                                 type="range"
                                                 min="0"
                                                 max="1"
@@ -429,6 +435,7 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
                                     {/* Right Controls */}
                                     {!isAudio && (
                                         <button
+                                            aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
                                             onClick={toggleFullscreen}
                                             className="p-2 hover:bg-white/10 rounded-full transition-colors"
                                         >
