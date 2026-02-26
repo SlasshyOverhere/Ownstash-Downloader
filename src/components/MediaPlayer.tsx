@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -41,6 +41,7 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
     const [showControls, setShowControls] = useState(true);
     const [hasRetriedTranscode, setHasRetriedTranscode] = useState(false);
     const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const lastInteractionTime = useRef(Date.now());
 
     const [mediaSrc, setMediaSrc] = useState<string>('');
 
@@ -99,17 +100,22 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
 
     // Auto-hide controls
     useEffect(() => {
-        if (!isAudio && isPlaying) {
-            controlsTimeoutRef.current = setTimeout(() => {
-                setShowControls(false);
-            }, 3000);
-        }
+        if (!isAudio && isPlaying && showControls) {
+            const checkActivity = () => {
+                const timeSince = Date.now() - lastInteractionTime.current;
+                if (timeSince >= 3000) {
+                    setShowControls(false);
+                } else {
+                    controlsTimeoutRef.current = setTimeout(checkActivity, 3000 - timeSince);
+                }
+            };
+            // Start the check
+            controlsTimeoutRef.current = setTimeout(checkActivity, 3000);
 
-        return () => {
-            if (controlsTimeoutRef.current) {
-                clearTimeout(controlsTimeoutRef.current);
-            }
-        };
+            return () => {
+                if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+            };
+        }
     }, [isPlaying, showControls, isAudio]);
 
     const togglePlay = () => {
@@ -204,17 +210,10 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
         setIsLoading(false);
     };
 
-    const handleMouseMove = () => {
-        setShowControls(true);
-        if (controlsTimeoutRef.current) {
-            clearTimeout(controlsTimeoutRef.current);
-        }
-        if (!isAudio && isPlaying) {
-            controlsTimeoutRef.current = setTimeout(() => {
-                setShowControls(false);
-            }, 3000);
-        }
-    };
+    const handleMouseMove = useCallback(() => {
+        lastInteractionTime.current = Date.now();
+        if (!showControls) setShowControls(true);
+    }, [showControls]);
 
     const formatTime = (seconds: number): string => {
         const mins = Math.floor(seconds / 60);
