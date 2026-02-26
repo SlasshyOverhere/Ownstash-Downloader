@@ -4,9 +4,15 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 use warp::Filter;
 use std::fs;
+use uuid::Uuid;
+use lazy_static::lazy_static;
 
 // Global port for the media server
 pub const MEDIA_SERVER_PORT: u16 = 18456;
+
+lazy_static! {
+    static ref MEDIA_TOKEN: String = Uuid::new_v4().to_string();
+}
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct MediaFileInfo {
@@ -17,6 +23,7 @@ pub struct MediaFileInfo {
 pub fn start_media_server(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         println!("[MediaServer] Starting on port {}", MEDIA_SERVER_PORT);
+        println!("[MediaServer] Security Token: {}", *MEDIA_TOKEN);
         
         let stream_route = warp::path("stream")
             .and(warp::query::<std::collections::HashMap<String, String>>())
@@ -43,6 +50,15 @@ async fn handle_stream_request(
     use tokio::io::AsyncReadExt;
     use warp::http::StatusCode;
     use warp::http::Response;
+
+    // Verify token
+    if params.get("token") != Some(&*MEDIA_TOKEN) {
+        println!("[MediaServer] Unauthorized access attempt (invalid token)");
+        return Ok(Response::builder()
+            .status(StatusCode::FORBIDDEN)
+            .body(warp::hyper::Body::from("Unauthorized"))
+            .unwrap());
+    }
 
     let file_path = params.get("path").ok_or_else(warp::reject::not_found)?;
     let decoded_path = urlencoding::decode(file_path).map_err(|_| warp::reject::not_found())?.to_string();
@@ -126,7 +142,7 @@ async fn handle_stream_request(
 /// Get the streaming URL for a given file path
 pub fn get_stream_url(file_path: &str) -> String {
     let encoded_path = urlencoding::encode(file_path);
-    format!("http://127.0.0.1:{}/stream?path={}", MEDIA_SERVER_PORT, encoded_path)
+    format!("http://127.0.0.1:{}/stream?path={}&token={}", MEDIA_SERVER_PORT, encoded_path, *MEDIA_TOKEN)
 }
 
 #[tauri::command]
@@ -232,5 +248,60 @@ pub fn find_best_media_match(path: String, title: String) -> Result<MediaFileInf
             println!("[MediaServer] No matching file found for: '{}'", title_hint);
             Err(format!("File not found: '{}' in {}", title_hint, folder_path))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use warp::Reply;
+
+    #[tokio::test]
+    async fn test_handle_stream_request_auth() {
+        let mut params = std::collections::HashMap::new();
+        params.insert("path".to_string(), "test.mp4".to_string());
+
+        // Test 1: No token
+        let res = handle_stream_request(params.clone(), None).await;
+        match res {
+            Ok(reply) => {
+                let response = reply.into_response();
+                assert_eq!(response.status(), warp::http::StatusCode::FORBIDDEN);
+            },
+            Err(_) => panic!("Should return Ok response with Forbidden status for missing token"),
+        }
+
+        // Test 2: Invalid token
+        params.insert("token".to_string(), "invalid-token".to_string());
+        let res = handle_stream_request(params.clone(), None).await;
+        match res {
+            Ok(reply) => {
+                let response = reply.into_response();
+                assert_eq!(response.status(), warp::http::StatusCode::FORBIDDEN);
+            },
+            Err(_) => panic!("Should return Ok response with Forbidden status for invalid token"),
+        }
+
+        // Test 3: Valid token
+        params.insert("token".to_string(), MEDIA_TOKEN.to_string());
+        // This will fail with NotFound because the file doesn't exist,
+        // but that proves we passed the auth check.
+        let res = handle_stream_request(params.clone(), None).await;
+        match res {
+             Ok(_) => {
+                 // If file existed
+             },
+             Err(rejection) => {
+                 // If file not found, it returns rejection.
+                 assert!(rejection.is_not_found(), "Should return Not Found, got {:?}", rejection);
+             }
+        }
+    }
+
+    #[test]
+    fn test_get_stream_url_contains_token() {
+        let url = get_stream_url("/some/path/file.mp4");
+        assert!(url.contains("token="));
+        assert!(url.contains(&*MEDIA_TOKEN));
     }
 }
