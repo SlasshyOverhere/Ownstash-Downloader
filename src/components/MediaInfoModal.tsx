@@ -435,6 +435,7 @@ export function MediaInfoModal({
                                     {/* Close button */}
                                     <button
                                         onClick={onClose}
+                                        aria-label="Close"
                                         className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-white/10 transition-colors"
                                     >
                                         <X className="w-5 h-5" />
@@ -464,6 +465,7 @@ export function MediaInfoModal({
                                     <div className="flex gap-2 p-1 rounded-xl bg-muted/50 mb-4">
                                         <button
                                             onClick={() => setDownloadMode('video')}
+                                            aria-pressed={downloadMode === 'video'}
                                             className={cn(
                                                 'flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg transition-all text-sm',
                                                 downloadMode === 'video'
@@ -476,6 +478,7 @@ export function MediaInfoModal({
                                         </button>
                                         <button
                                             onClick={() => setDownloadMode('audio')}
+                                            aria-pressed={downloadMode === 'audio'}
                                             className={cn(
                                                 'flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg transition-all text-sm',
                                                 downloadMode === 'audio'
@@ -493,27 +496,30 @@ export function MediaInfoModal({
                                 {!isDirectFile && downloadMode === 'video' && (
                                     <div className="mb-4">
                                         <div className="flex items-center justify-between mb-2">
-                                            <h3 className="text-xs font-medium text-muted-foreground">Quality</h3>
+                                            <h3 className="text-xs font-medium text-muted-foreground" id="quality-label">Quality</h3>
                                             {maxVideoHeight > 0 && (
                                                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-white">
                                                     Max: {maxVideoHeight >= 2160 ? '4K' : maxVideoHeight >= 1440 ? '1440p' : `${maxVideoHeight}p`}
                                                 </span>
                                             )}
                                         </div>
-                                        <div className="grid grid-cols-3 gap-2">
+                                        <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-labelledby="quality-label">
                                             {qualityOptions.map((option) => {
                                                 const isDisabled = !isQualityAvailable(mediaInfo.formats, option.value);
+                                                const isSelected = selectedQuality === option.value;
 
                                                 return (
                                                     <button
                                                         key={option.value}
                                                         onClick={() => !isDisabled && setSelectedQuality(option.value)}
                                                         disabled={isDisabled}
+                                                        role="radio"
+                                                        aria-checked={isSelected}
                                                         className={cn(
                                                             'p-2 rounded-lg border transition-all text-left',
                                                             isDisabled
                                                                 ? 'border-white/5 opacity-40 cursor-not-allowed'
-                                                                : selectedQuality === option.value
+                                                                : isSelected
                                                                     ? 'border-white bg-white/10'
                                                                     : 'border-white/10 hover:border-white/20'
                                                         )}
@@ -537,12 +543,14 @@ export function MediaInfoModal({
                                 {/* Video Format Selection */}
                                 {!isDirectFile && downloadMode === 'video' && (
                                     <div className="mb-4">
-                                        <h3 className="text-xs font-medium text-muted-foreground mb-2">Output Format</h3>
-                                        <div className="grid grid-cols-3 gap-2">
+                                        <h3 className="text-xs font-medium text-muted-foreground mb-2" id="video-format-label">Output Format</h3>
+                                        <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-labelledby="video-format-label">
                                             {videoFormatOptions.map((option) => (
                                                 <button
                                                     key={option.value}
                                                     onClick={() => setVideoFormat(option.value)}
+                                                    role="radio"
+                                                    aria-checked={videoFormat === option.value}
                                                     className={cn(
                                                         'p-2 rounded-lg border transition-all text-left',
                                                         videoFormat === option.value
@@ -566,12 +574,14 @@ export function MediaInfoModal({
                                 {/* Audio Quality Selection */}
                                 {!isDirectFile && downloadMode === 'audio' && (
                                     <div className="mb-4">
-                                        <h3 className="text-xs font-medium text-muted-foreground mb-2">Audio Quality</h3>
-                                        <div className="grid grid-cols-4 gap-2">
+                                        <h3 className="text-xs font-medium text-muted-foreground mb-2" id="audio-quality-label">Audio Quality</h3>
+                                        <div className="grid grid-cols-4 gap-2" role="radiogroup" aria-labelledby="audio-quality-label">
                                             {audioQualityOptions.map((option) => (
                                                 <button
                                                     key={option.value}
                                                     onClick={() => setAudioQuality(option.value)}
+                                                    role="radio"
+                                                    aria-checked={audioQuality === option.value}
                                                     className={cn(
                                                         'p-2 rounded-lg border transition-all text-left',
                                                         audioQuality === option.value
@@ -595,12 +605,14 @@ export function MediaInfoModal({
                                 {/* Audio Format Selection */}
                                 {!isDirectFile && downloadMode === 'audio' && (
                                     <div className="mb-4">
-                                        <h3 className="text-xs font-medium text-muted-foreground mb-2">Audio Format</h3>
-                                        <div className="grid grid-cols-5 gap-2">
+                                        <h3 className="text-xs font-medium text-muted-foreground mb-2" id="audio-format-label">Audio Format</h3>
+                                        <div className="grid grid-cols-5 gap-2" role="radiogroup" aria-labelledby="audio-format-label">
                                             {audioFormatOptions.map((option) => (
                                                 <button
                                                     key={option.value}
                                                     onClick={() => setAudioFormat(option.value)}
+                                                    role="radio"
+                                                    aria-checked={audioFormat === option.value}
                                                     className={cn(
                                                         'p-2 rounded-lg border transition-all text-center',
                                                         audioFormat === option.value
@@ -701,6 +713,8 @@ export function MediaInfoModal({
                                     <div className="mb-4">
                                         <button
                                             onClick={() => setShowAdvanced(!showAdvanced)}
+                                            aria-expanded={showAdvanced}
+                                            aria-controls="advanced-formats"
                                             className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
                                         >
                                             <ChevronDown className={cn(
@@ -712,6 +726,7 @@ export function MediaInfoModal({
 
                                         {showAdvanced && (
                                             <motion.div
+                                                id="advanced-formats"
                                                 initial={{ opacity: 0, height: 0 }}
                                                 animate={{ opacity: 1, height: 'auto' }}
                                                 className="mt-2 space-y-1 max-h-32 overflow-y-auto"
