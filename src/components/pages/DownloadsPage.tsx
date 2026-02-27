@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, memo } from 'react';
 import { motion } from 'framer-motion';
 import {
     Download,
@@ -261,6 +261,24 @@ function DownloadCard({ item, onCancel, onDelete, onRetry, onOpenFolder, onPlay 
     );
 }
 
+// Memoized version of DownloadCard to prevent unnecessary re-renders
+const DownloadCardMemo = memo(DownloadCard, (prev, next) => {
+    return (
+        prev.item.id === next.item.id &&
+        prev.item.status === next.item.status &&
+        prev.item.progress === next.item.progress &&
+        prev.item.speed === next.item.speed &&
+        prev.item.eta === next.item.eta &&
+        prev.item.engine_badge === next.item.engine_badge &&
+        prev.item.title === next.item.title &&
+        prev.onCancel === next.onCancel &&
+        prev.onDelete === next.onDelete &&
+        prev.onRetry === next.onRetry &&
+        prev.onOpenFolder === next.onOpenFolder &&
+        prev.onPlay === next.onPlay
+    );
+});
+
 export function DownloadsPage() {
     const [downloads, setDownloads] = useState<DownloadItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -271,6 +289,18 @@ export function DownloadsPage() {
     const [playerFilePath, setPlayerFilePath] = useState('');
     const [playerTitle, setPlayerTitle] = useState('');
     const [playerIsAudio, setPlayerIsAudio] = useState(false);
+
+    const loadDownloads = useCallback(async () => {
+        try {
+            setIsLoading(true);
+            const data = await api.getDownloads();
+            setDownloads(data);
+        } catch (_err) {
+            toast.error('Failed to load downloads');
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
 
     // Load downloads and set up progress listeners
     useEffect(() => {
@@ -338,21 +368,9 @@ export function DownloadsPage() {
             if (unlistenYtdlp) unlistenYtdlp();
             if (unlistenSpotify) unlistenSpotify();
         };
-    }, []);
+    }, [loadDownloads]);
 
-    const loadDownloads = async () => {
-        try {
-            setIsLoading(true);
-            const data = await api.getDownloads();
-            setDownloads(data);
-        } catch (err) {
-            toast.error('Failed to load downloads');
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const handleCancel = async (id: string) => {
+    const handleCancel = useCallback(async (id: string) => {
         try {
             // Try to cancel yt-dlp download first
             try {
@@ -364,43 +382,43 @@ export function DownloadsPage() {
             toast.success('Download cancelled');
             await api.updateDownloadStatus(id, 'cancelled');
             loadDownloads();
-        } catch (err) {
+        } catch (_err) {
             toast.error('Failed to cancel download');
         }
-    };
+    }, [loadDownloads]);
 
-    const handleDelete = async (id: string) => {
+    const handleDelete = useCallback(async (id: string) => {
         try {
             await api.deleteDownload(id);
             setDownloads(prev => prev.filter(d => d.id !== id));
             toast.success('Download removed');
-        } catch (err) {
+        } catch (_err) {
             toast.error('Failed to remove download');
         }
-    };
+    }, []);
 
-    const handleClearAll = async () => {
+    const handleClearAll = useCallback(async () => {
         try {
             await api.clearDownloads();
             setDownloads([]);
             toast.success('All downloads cleared');
-        } catch (err) {
+        } catch (_err) {
             toast.error('Failed to clear downloads');
         }
-    };
+    }, []);
 
-    const handleOpenFolder = async (path: string, title: string, format: string) => {
+    const handleOpenFolder = useCallback(async (path: string, title: string, format: string) => {
         try {
             // Construct the likely filename from title and format
             // yt-dlp sanitizes titles, but we pass the original for matching
             const fileName = `${title}.${format}`;
             await api.openFolder(path, fileName);
-        } catch (err) {
+        } catch (_err) {
             toast.error('Failed to open folder');
         }
-    };
+    }, []);
 
-    const handlePlay = async (path: string, title: string) => {
+    const handlePlay = useCallback(async (path: string, title: string) => {
         try {
             const mediaInfo = await api.findMediaFile(path, title);
             const filePath = mediaInfo.file_path;
@@ -431,7 +449,7 @@ export function DownloadsPage() {
             const errorMsg = err instanceof Error ? err.message : 'Failed to find media file';
             toast.error(errorMsg);
         }
-    };
+    }, []);
 
     // Merge progress data with downloads
     const downloadsWithProgress: DownloadItem[] = downloads.map(download => {
@@ -509,7 +527,7 @@ export function DownloadsPage() {
                         </h2>
                         <motion.div variants={staggerContainer} className="space-y-3">
                             {activeDownloads.map(item => (
-                                <DownloadCard
+                                <DownloadCardMemo
                                     key={item.id}
                                     item={item}
                                     onCancel={handleCancel}
@@ -532,7 +550,7 @@ export function DownloadsPage() {
                         </h2>
                         <motion.div variants={staggerContainer} className="space-y-3">
                             {completedDownloads.map(item => (
-                                <DownloadCard
+                                <DownloadCardMemo
                                     key={item.id}
                                     item={item}
                                     onCancel={handleCancel}
@@ -557,7 +575,7 @@ export function DownloadsPage() {
                         </h2>
                         <motion.div variants={staggerContainer} className="space-y-3">
                             {failedDownloads.map(item => (
-                                <DownloadCard
+                                <DownloadCardMemo
                                     key={item.id}
                                     item={item}
                                     onCancel={handleCancel}
