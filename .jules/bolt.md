@@ -1,0 +1,4 @@
+## 2024-05-23 - History Page Performance Issue
+**Learning:** `HistoryPage.tsx` relies heavily on mapping components directly in the render method without `React.memo()`. This could cause unnecessary re-renders when filtering or re-rendering items, since the whole list changes state. Also, items like `DownloadHistoryCard` or `SearchHistoryCard` do not use `React.memo()`, which would improve performance if the parent component's state changes without affecting individual items. Same goes for `DownloadCard` in `DownloadsPage.tsx`.
+
+**Action:** Wrap the cards (i.e. `DownloadHistoryCard` and `SearchHistoryCard` and `DownloadCard`) in `React.memo` using `useCallback` or making sure props are stable to avoid unnecessary re-renders when other parent state updates (e.g. typing a search query, or receiving progress updates for other downloads).

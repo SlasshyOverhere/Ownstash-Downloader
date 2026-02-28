@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, memo } from 'react';
 import { motion } from 'framer-motion';
 import {
     Download,
@@ -75,7 +75,7 @@ interface DownloadCardProps {
     onPlay?: (path: string, title: string) => void;
 }
 
-function DownloadCard({ item, onCancel, onDelete, onRetry, onOpenFolder, onPlay }: DownloadCardProps) {
+const DownloadCard = memo(function DownloadCard({ item, onCancel, onDelete, onRetry, onOpenFolder, onPlay }: DownloadCardProps) {
     const { ref, tiltStyle, handlers } = use3DTilt({ maxTilt: 5, scale: 1.01 });
 
     // Determine type based on format
@@ -259,7 +259,7 @@ function DownloadCard({ item, onCancel, onDelete, onRetry, onOpenFolder, onPlay 
             </div>
         </motion.div>
     );
-}
+});
 
 export function DownloadsPage() {
     const [downloads, setDownloads] = useState<DownloadItem[]>([]);
@@ -340,7 +340,7 @@ export function DownloadsPage() {
         };
     }, []);
 
-    const loadDownloads = async () => {
+    const loadDownloads = useCallback(async () => {
         try {
             setIsLoading(true);
             const data = await api.getDownloads();
@@ -350,9 +350,9 @@ export function DownloadsPage() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, []);
 
-    const handleCancel = async (id: string) => {
+    const handleCancel = useCallback(async (id: string) => {
         try {
             // Try to cancel yt-dlp download first
             try {
@@ -367,9 +367,9 @@ export function DownloadsPage() {
         } catch (err) {
             toast.error('Failed to cancel download');
         }
-    };
+    }, [loadDownloads]);
 
-    const handleDelete = async (id: string) => {
+    const handleDelete = useCallback(async (id: string) => {
         try {
             await api.deleteDownload(id);
             setDownloads(prev => prev.filter(d => d.id !== id));
@@ -377,7 +377,7 @@ export function DownloadsPage() {
         } catch (err) {
             toast.error('Failed to remove download');
         }
-    };
+    }, []);
 
     const handleClearAll = async () => {
         try {
@@ -389,7 +389,7 @@ export function DownloadsPage() {
         }
     };
 
-    const handleOpenFolder = async (path: string, title: string, format: string) => {
+    const handleOpenFolder = useCallback(async (path: string, title: string, format: string) => {
         try {
             // Construct the likely filename from title and format
             // yt-dlp sanitizes titles, but we pass the original for matching
@@ -398,9 +398,9 @@ export function DownloadsPage() {
         } catch (err) {
             toast.error('Failed to open folder');
         }
-    };
+    }, []);
 
-    const handlePlay = async (path: string, title: string) => {
+    const handlePlay = useCallback(async (path: string, title: string) => {
         try {
             const mediaInfo = await api.findMediaFile(path, title);
             const filePath = mediaInfo.file_path;
@@ -431,7 +431,7 @@ export function DownloadsPage() {
             const errorMsg = err instanceof Error ? err.message : 'Failed to find media file';
             toast.error(errorMsg);
         }
-    };
+    }, []);
 
     // Merge progress data with downloads
     const downloadsWithProgress: DownloadItem[] = downloads.map(download => {
