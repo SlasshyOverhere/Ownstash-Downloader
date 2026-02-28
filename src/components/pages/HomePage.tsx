@@ -10,7 +10,8 @@ import {
     Loader2,
     AlertCircle,
     Instagram,
-    Twitter
+    Twitter,
+    X
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { staggerContainer, staggerItem, fadeInUp } from '@/lib/animations';
@@ -540,6 +541,21 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                                     'placeholder:text-muted-foreground/50'
                                 )}
                             />
+
+                            {/* Clear Input Button */}
+                            {url && (
+                                <button
+                                    onClick={() => {
+                                        setUrl('');
+                                        setError(null);
+                                    }}
+                                    className="p-1.5 text-muted-foreground hover:text-white rounded-lg hover:bg-white/10 transition-colors focus-visible:ring-2 focus-visible:ring-white/30 outline-none"
+                                    aria-label="Clear URL input"
+                                    title="Clear"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            )}
 
                             {/* Download button */}
                             <button
