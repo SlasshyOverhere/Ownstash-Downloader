@@ -1322,20 +1322,27 @@ pub async fn probe_direct_file(url: String) -> Result<DirectFileInfo, String> {
         .get("content-disposition")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| {
-            if let Some(pos) = s.find("filename=") {
+            let extracted = if let Some(pos) = s.find("filename=") {
                 let rest = &s[pos + 9..];
-                let name = rest.trim_start_matches('"')
+                rest.trim_start_matches('"')
                     .split('"').next()
                     .or_else(|| rest.split(';').next())
-                    .map(|s| s.trim().to_string());
-                name
+                    .map(|s| s.trim().to_string())
             } else if let Some(pos) = s.find("filename*=") {
                 let rest = &s[pos + 10..];
                 rest.split("''").nth(1)
                     .map(|s| urlencoding::decode(s).unwrap_or_else(|_| s.into()).to_string())
             } else {
                 None
-            }
+            };
+
+            // 🛡️ Sentinel: Prevent path traversal by extracting only the file name
+            extracted.map(|name| {
+                std::path::Path::new(&name)
+                    .file_name()
+                    .map(|f| f.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "download".to_string())
+            })
         });
     
     // Fallback to extract filename from URL path
