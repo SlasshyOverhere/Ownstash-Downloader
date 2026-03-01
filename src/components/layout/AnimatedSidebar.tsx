@@ -175,6 +175,7 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
                         <button
                             onClick={handleSignOut}
                             disabled={isSigningOut}
+                            aria-label="Sign Out"
                             className={cn(
                                 'w-full flex items-center py-2.5 rounded-xl',
                                 'text-muted-foreground hover:text-red-400 hover:bg-red-500/10',
@@ -205,6 +206,7 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
             <div className="p-3 border-t border-white/5">
                 <button
                     onClick={() => onPageChange('settings')}
+                    aria-label="Settings"
                     className={cn(
                         'w-full flex items-center py-2.5 rounded-xl transition-all duration-200',
                         'hover:bg-white/5 group relative overflow-hidden',
@@ -239,6 +241,7 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
             <div className="p-3 border-t border-white/5">
                 <button
                     onClick={() => setIsExpanded(!isExpanded)}
+                    aria-label={isExpanded ? "Collapse Sidebar" : "Expand Sidebar"}
                     className={cn(
                         'w-full flex items-center py-2.5 rounded-xl',
                         'text-muted-foreground hover:text-foreground hover:bg-white/5',
