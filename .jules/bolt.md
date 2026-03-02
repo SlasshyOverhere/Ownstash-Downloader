@@ -1,0 +1,4 @@
+
+## 2024-03-02 - Memoization of Download & History Cards
+**Learning:** In applications rendering lists of frequently updated items like active downloads (`DownloadCard`) or lists of past activity (`DownloadHistoryCard`, `SearchHistoryCard`), un-memoized component mapping can lead to significant wasted renders. While the parent components (`DownloadsPage`, `HistoryPage`) already used `.map()` and `useState`, the individual cards were missing `React.memo()`. As `DownloadsPage` processes progress events via `api.onDownloadProgress`, it updates a large state map which triggers re-renders of the list. Un-memoized list items are all re-rendered on every progress tick.
+**Action:** Always wrap list item components in `React.memo` (e.g. `const DownloadCard = React.memo(function DownloadCard(...)`) when they rely on a single `item` prop and callbacks, especially in lists that receive high-frequency updates (like download progress bars).
