@@ -475,7 +475,7 @@ impl SNDEEngine {
                     None
                 };
 
-                // 🛡️ Sentinel: Prevent path traversal by extracting only the file name
+                // Prevent path traversal by extracting only the final file component.
                 extracted.map(|name| {
                     std::path::Path::new(&name)
                         .file_name()
