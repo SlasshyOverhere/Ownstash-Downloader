@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
     Search,
@@ -69,7 +69,9 @@ interface DownloadHistoryCardProps {
     onOpenFolder: (path: string) => void;
 }
 
-function DownloadHistoryCard({ item, onDelete, onOpenFolder }: DownloadHistoryCardProps) {
+// ⚡ Bolt Optimization: Added React.memo to history cards to prevent full list re-renders
+// during search or filter operations, improving interaction responsiveness.
+const DownloadHistoryCard = React.memo(function DownloadHistoryCard({ item, onDelete, onOpenFolder }: DownloadHistoryCardProps) {
     const { ref, tiltStyle, handlers } = use3DTilt({ maxTilt: 5, scale: 1.01 });
 
     const getType = (): 'video' | 'audio' | 'file' => {
@@ -172,14 +174,15 @@ function DownloadHistoryCard({ item, onDelete, onOpenFolder }: DownloadHistoryCa
             </div>
         </motion.div>
     );
-}
+});
 
 interface SearchHistoryCardProps {
     item: SearchHistory;
     onSelect: (query: string) => void;
 }
 
-function SearchHistoryCard({ item, onSelect }: SearchHistoryCardProps) {
+// ⚡ Bolt Optimization: Added React.memo to prevent unnecessary list re-renders.
+const SearchHistoryCard = React.memo(function SearchHistoryCard({ item, onSelect }: SearchHistoryCardProps) {
     const { ref, tiltStyle, handlers } = use3DTilt({ maxTilt: 5, scale: 1.01 });
 
     return (
@@ -251,7 +254,7 @@ function SearchHistoryCard({ item, onSelect }: SearchHistoryCardProps) {
             </div>
         </motion.div>
     );
-}
+});
 
 export function HistoryPage() {
     const [activeTab, setActiveTab] = useState<HistoryTab>('downloads');
@@ -261,11 +264,7 @@ export function HistoryPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [filterStatus, setFilterStatus] = useState<'all' | 'completed' | 'failed'>('all');
 
-    useEffect(() => {
-        loadData();
-    }, []);
-
-    const loadData = async () => {
+    const loadData = React.useCallback(async () => {
         setIsLoading(true);
         try {
             const [dls, searches] = await Promise.all([
@@ -279,9 +278,13 @@ export function HistoryPage() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, []);
 
-    const handleDeleteDownload = async (id: string) => {
+    useEffect(() => {
+        loadData();
+    }, [loadData]);
+
+    const handleDeleteDownload = React.useCallback(async (id: string) => {
         try {
             await api.deleteDownload(id);
             setDownloads(prev => prev.filter(d => d.id !== id));
@@ -289,9 +292,9 @@ export function HistoryPage() {
         } catch (err) {
             toast.error('Failed to delete');
         }
-    };
+    }, []);
 
-    const handleClearDownloads = async () => {
+    const handleClearDownloads = React.useCallback(async () => {
         try {
             await api.clearDownloads();
             setDownloads([]);
@@ -299,9 +302,9 @@ export function HistoryPage() {
         } catch (err) {
             toast.error('Failed to clear history');
         }
-    };
+    }, []);
 
-    const handleClearSearchHistory = async () => {
+    const handleClearSearchHistory = React.useCallback(async () => {
         try {
             await api.clearSearchHistory();
             setSearchHistory([]);
@@ -309,21 +312,21 @@ export function HistoryPage() {
         } catch (err) {
             toast.error('Failed to clear history');
         }
-    };
+    }, []);
 
-    const handleSelectSearch = (query: string) => {
+    const handleSelectSearch = React.useCallback((query: string) => {
         // Copy to clipboard and show toast
         navigator.clipboard.writeText(query);
         toast.success('URL copied! Paste it on the Home page to download.');
-    };
+    }, []);
 
-    const handleOpenFolder = async (path: string) => {
+    const handleOpenFolder = React.useCallback(async (path: string) => {
         try {
             await api.openFolder(path);
         } catch (err) {
             toast.error('Failed to open folder');
         }
-    };
+    }, []);
 
     // Filter downloads
     const filteredDownloads = downloads.filter(item => {
