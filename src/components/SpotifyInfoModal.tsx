@@ -166,7 +166,6 @@ export function SpotifyInfoModal({
                             {/* Close button */}
                             <button
                                 onClick={onClose}
-                                aria-label="Close modal"
                                 className="absolute top-4 right-4 p-2 rounded-full bg-black/30 hover:bg-black/50 transition-colors"
                             >
                                 <X className="w-5 h-5" />

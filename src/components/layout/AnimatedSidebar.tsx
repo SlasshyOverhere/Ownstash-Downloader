@@ -239,8 +239,6 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
             <div className="p-3 border-t border-white/5">
                 <button
                     onClick={() => setIsExpanded(!isExpanded)}
-                    aria-label={isExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
-                    aria-expanded={isExpanded}
                     className={cn(
                         'w-full flex items-center py-2.5 rounded-xl',
                         'text-muted-foreground hover:text-foreground hover:bg-white/5',
