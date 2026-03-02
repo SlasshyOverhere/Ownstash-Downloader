@@ -142,6 +142,7 @@ function DownloadHistoryCard({ item, onDelete, onOpenFolder }: DownloadHistoryCa
                     {item.path && (
                         <button
                             onClick={() => onOpenFolder(item.path)}
+                            aria-label="Open download folder"
                             className="p-2 rounded-lg hover:bg-primary/20 text-primary transition-colors"
                             title="Open download folder"
                         >
@@ -153,6 +154,7 @@ function DownloadHistoryCard({ item, onDelete, onOpenFolder }: DownloadHistoryCa
                             navigator.clipboard.writeText(item.url);
                             toast.success('URL copied to clipboard');
                         }}
+                        aria-label="Copy URL"
                         className="p-2 rounded-lg hover:bg-white/10 transition-colors"
                         title="Copy URL"
                     >
@@ -160,6 +162,7 @@ function DownloadHistoryCard({ item, onDelete, onOpenFolder }: DownloadHistoryCa
                     </button>
                     <button
                         onClick={() => onDelete(item.id)}
+                        aria-label="Delete from history"
                         className="p-2 rounded-lg hover:bg-destructive/20 text-destructive transition-colors"
                         title="Delete from history"
                     >
@@ -227,6 +230,7 @@ function SearchHistoryCard({ item, onSelect }: SearchHistoryCardProps) {
                             navigator.clipboard.writeText(item.query);
                             toast.success('URL copied to clipboard');
                         }}
+                        aria-label="Copy URL"
                         className="p-2 rounded-lg hover:bg-white/10 transition-colors"
                         title="Copy URL"
                     >
@@ -237,6 +241,7 @@ function SearchHistoryCard({ item, onSelect }: SearchHistoryCardProps) {
                             e.stopPropagation();
                             window.open(item.query, '_blank');
                         }}
+                        aria-label="Open URL"
                         className="p-2 rounded-lg hover:bg-white/10 transition-colors"
                         title="Open URL"
                     >

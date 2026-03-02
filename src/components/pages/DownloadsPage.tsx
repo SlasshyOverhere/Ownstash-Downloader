@@ -138,6 +138,7 @@ function DownloadCard({ item, onCancel, onDelete, onRetry, onOpenFolder, onPlay 
                             {item.status === 'downloading' && (
                                 <button
                                     onClick={() => onCancel(item.id)}
+                                    aria-label="Cancel download"
                                     className="p-2 rounded-lg hover:bg-white/10 transition-colors"
                                     title="Cancel download"
                                 >
@@ -147,6 +148,7 @@ function DownloadCard({ item, onCancel, onDelete, onRetry, onOpenFolder, onPlay 
                             {item.status === 'failed' && onRetry && (
                                 <button
                                     onClick={() => onRetry(item)}
+                                    aria-label="Retry download"
                                     className="p-2 rounded-lg hover:bg-white/10 transition-colors"
                                     title="Retry download"
                                 >
@@ -155,6 +157,7 @@ function DownloadCard({ item, onCancel, onDelete, onRetry, onOpenFolder, onPlay 
                             )}
                             <button
                                 onClick={() => onDelete(item.id)}
+                                aria-label="Remove from list"
                                 className="p-2 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors"
                                 title="Remove from list"
                             >
