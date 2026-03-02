@@ -460,13 +460,12 @@ impl SNDEEngine {
             .and_then(|s| {
                 // Parse Content-Disposition: attachment; filename="something.zip"
                 // or Content-Disposition: attachment; filename*=UTF-8''something.zip
-                if let Some(pos) = s.find("filename=") {
+                let extracted = if let Some(pos) = s.find("filename=") {
                     let rest = &s[pos + 9..];
-                    let filename = rest.trim_start_matches('"')
+                    rest.trim_start_matches('"')
                         .split('"').next()
                         .or_else(|| rest.split(';').next())
-                        .map(|s| s.trim().to_string());
-                    filename
+                        .map(|s| s.trim().to_string())
                 } else if let Some(pos) = s.find("filename*=") {
                     let rest = &s[pos + 10..];
                     // Handle UTF-8 encoded filenames like: UTF-8''filename.ext
@@ -474,7 +473,15 @@ impl SNDEEngine {
                         .map(|s| urlencoding::decode(s).unwrap_or_else(|_| s.into()).to_string())
                 } else {
                     None
-                }
+                };
+
+                // Prevent path traversal by extracting only the final file component.
+                extracted.map(|name| {
+                    std::path::Path::new(&name)
+                        .file_name()
+                        .map(|f| f.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "download".to_string())
+                })
             });
 
         println!("[SNDE] Probe result: size={}, range={}, filename={:?}", content_length, supports_range, filename);
