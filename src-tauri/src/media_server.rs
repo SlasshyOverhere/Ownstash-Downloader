@@ -8,6 +8,10 @@ use std::fs;
 // Global port for the media server
 pub const MEDIA_SERVER_PORT: u16 = 18456;
 
+lazy_static::lazy_static! {
+    static ref SERVER_SECRET: String = uuid::Uuid::new_v4().to_string();
+}
+
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct MediaFileInfo {
     pub file_path: String,
@@ -43,6 +47,13 @@ async fn handle_stream_request(
     use tokio::io::AsyncReadExt;
     use warp::http::StatusCode;
     use warp::http::Response;
+
+    // Verify token
+    let token = params.get("token").ok_or_else(warp::reject::not_found)?;
+    if token != &*SERVER_SECRET {
+        println!("[MediaServer] Invalid token provided for stream request");
+        return Err(warp::reject::not_found());
+    }
 
     let file_path = params.get("path").ok_or_else(warp::reject::not_found)?;
     let decoded_path = urlencoding::decode(file_path).map_err(|_| warp::reject::not_found())?.to_string();
@@ -126,7 +137,7 @@ async fn handle_stream_request(
 /// Get the streaming URL for a given file path
 pub fn get_stream_url(file_path: &str) -> String {
     let encoded_path = urlencoding::encode(file_path);
-    format!("http://127.0.0.1:{}/stream?path={}", MEDIA_SERVER_PORT, encoded_path)
+    format!("http://127.0.0.1:{}/stream?path={}&token={}", MEDIA_SERVER_PORT, encoded_path, *SERVER_SECRET)
 }
 
 #[tauri::command]
@@ -232,5 +243,53 @@ pub fn find_best_media_match(path: String, title: String) -> Result<MediaFileInf
             println!("[MediaServer] No matching file found for: '{}'", title_hint);
             Err(format!("File not found: '{}' in {}", title_hint, folder_path))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use warp::test::request;
+    use std::io::Write;
+
+    #[tokio::test]
+    async fn test_stream_no_token() {
+        // Create a temporary file to test streaming
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join("test_media.txt");
+        let mut file = std::fs::File::create(&file_path).unwrap();
+        writeln!(file, "This is a test file for streaming.").unwrap();
+
+        let path_str = file_path.to_string_lossy().to_string();
+        let encoded_path = urlencoding::encode(&path_str);
+
+        // Construct the filter manually as in start_media_server
+        let stream_route = warp::path("stream")
+            .and(warp::query::<std::collections::HashMap<String, String>>())
+            .and(warp::header::optional::<String>("range"))
+            .and_then(handle_stream_request);
+
+        // Test request WITHOUT token
+        let response = request()
+            .path(&format!("/stream?path={}", encoded_path))
+            .reply(&stream_route)
+            .await;
+
+        // Expected behavior: Should fail (404 Not Found) due to missing token
+        // We return 404 to avoid leaking existence of files to unauthorized requests
+        assert_eq!(response.status(), 404, "Expected 404 Not Found without token");
+
+        // Test request WITH token
+        let token = &*SERVER_SECRET;
+        let response_with_token = request()
+            .path(&format!("/stream?path={}&token={}", encoded_path, token))
+            .reply(&stream_route)
+            .await;
+
+        // Expected behavior: Should succeed (200 OK) with correct token
+        assert_eq!(response_with_token.status(), 200, "Expected 200 OK with correct token");
+
+        // Clean up
+        let _ = std::fs::remove_file(file_path);
     }
 }
