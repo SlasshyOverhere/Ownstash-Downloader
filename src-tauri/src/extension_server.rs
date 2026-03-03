@@ -34,12 +34,6 @@ pub fn start_extension_server(app_handle: AppHandle) {
         let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
         
         rt.block_on(async move {
-            // CORS headers for Chrome extension
-            let cors = warp::cors()
-                .allow_any_origin()
-                .allow_methods(vec!["GET", "POST", "OPTIONS"])
-                .allow_headers(vec!["Content-Type"]);
-
             // Health check endpoint
             let health = warp::path("health")
                 .and(warp::get())
@@ -54,6 +48,7 @@ pub fn start_extension_server(app_handle: AppHandle) {
             let handle_clone = handle.clone();
             let download = warp::path("download")
                 .and(warp::post())
+                .and(warp::header::exact("x-extension-request", "true"))
                 .and(warp::body::json())
                 .map(move |body: serde_json::Value| {
                     if let Some(url) = body.get("url").and_then(|v| v.as_str()) {
@@ -77,81 +72,11 @@ pub fn start_extension_server(app_handle: AppHandle) {
                     }
                 });
 
-            // GET version for simple download (for browser URL bar testing)
-            let handle_clone2 = handle.clone();
-            let download_get = warp::path("download")
-                .and(warp::get())
-                .and(warp::query::<std::collections::HashMap<String, String>>())
-                .map(move |params: std::collections::HashMap<String, String>| {
-                    if let Some(url) = params.get("url") {
-                        println!("[ExtensionServer] Received download request (GET): {}", url);
-                        
-                        // Bring the window to front
-                        bring_window_to_front(&handle_clone2);
-                        
-                        // URL decode if needed
-                        let decoded_url = urlencoding::decode(url).unwrap_or_else(|_| url.clone().into());
-                        
-                        // Emit to frontend
-                        let _ = handle_clone2.emit("extension-download-request", decoded_url.as_ref());
-                        
-                        // Return HTML that auto-closes
-                        warp::reply::html(r#"
-                            <!DOCTYPE html>
-                            <html>
-                            <head>
-                                <title>Ownstash</title>
-                                <style>
-                                    body {
-                                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                                        display: flex;
-                                        align-items: center;
-                                        justify-content: center;
-                                        height: 100vh;
-                                        margin: 0;
-                                        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-                                        color: white;
-                                    }
-                                    .container {
-                                        text-align: center;
-                                        padding: 40px;
-                                    }
-                                    .checkmark {
-                                        font-size: 64px;
-                                        margin-bottom: 20px;
-                                    }
-                                    h1 { font-size: 24px; margin: 0 0 10px 0; }
-                                    p { color: #94a3b8; margin: 0; }
-                                </style>
-                            </head>
-                            <body>
-                                <div class="container">
-                                    <div class="checkmark">✓</div>
-                                    <h1>Sent to Ownstash!</h1>
-                                    <p>You can close this tab.</p>
-                                </div>
-                                <script>setTimeout(() => window.close(), 1500);</script>
-                            </body>
-                            </html>
-                        "#)
-                    } else {
-                        warp::reply::html(r#"
-                            <!DOCTYPE html>
-                            <html>
-                            <head><title>Error</title></head>
-                            <body>
-                                <h1>No URL provided</h1>
-                                <p>Use: ?url=YOUR_URL</p>
-                            </body>
-                            </html>
-                        "#)
-                    }
-                });
-
             // Vault download endpoint - receives intercepted downloads from extension
             let handle_clone3 = handle.clone();
             let vault_download = warp::path("vault-download")
                 .and(warp::post())
+                .and(warp::header::exact("x-extension-request", "true"))
                 .and(warp::body::json())
                 .map(move |body: serde_json::Value| {
                     let url = body.get("url").and_then(|v| v.as_str()).unwrap_or("");
@@ -191,9 +116,7 @@ pub fn start_extension_server(app_handle: AppHandle) {
             // Combine routes
             let routes = health
                 .or(download)
-                .or(download_get)
-                .or(vault_download)
-                .with(cors);
+                .or(vault_download);
 
             println!("[ExtensionServer] Starting on port {}", EXTENSION_SERVER_PORT);
             
