@@ -168,7 +168,8 @@ async function sendToApp(url) {
         const response = await fetch(`${EXTENSION_SERVER_URL}/download`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'x-extension-request': 'true'
             },
             body: JSON.stringify({ url: url }),
             signal: controller.signal
@@ -252,7 +253,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 const response = await fetch(`${EXTENSION_SERVER_URL}/download`, {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'x-extension-request': 'true'
                     },
                     body: JSON.stringify({ url: message.url }),
                     signal: controller.signal
@@ -518,7 +520,8 @@ async function sendToVault(url, filename, fileSize) {
         const response = await fetch(`${EXTENSION_SERVER_URL}/vault-download`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'x-extension-request': 'true'
             },
             body: JSON.stringify({
                 url: url,
