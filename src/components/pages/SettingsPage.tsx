@@ -65,11 +65,19 @@ function SettingRow({ label, value, action, onClick }: SettingRowProps) {
         <div
             className={cn(
                 'flex items-center justify-between py-3 border-b border-white/5 last:border-0',
-                onClick && 'cursor-pointer hover:bg-white/5 -mx-3 px-3 rounded-lg transition-colors'
+                onClick && 'cursor-pointer hover:bg-white/5 -mx-3 px-3 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background'
             )}
             onClick={onClick}
+            role={onClick ? 'button' : undefined}
+            tabIndex={onClick ? 0 : undefined}
+            onKeyDown={(e) => {
+                if (onClick && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault();
+                    onClick();
+                }
+            }}
         >
-            <span className="text-sm">{label}</span>
+            <span className="text-sm" id={`label-${label.replace(/\s+/g, '-').toLowerCase()}`}>{label}</span>
             <div className="flex items-center gap-2">
                 {value && <span className="text-sm text-muted-foreground truncate max-w-[200px]">{value}</span>}
                 {action}
@@ -82,14 +90,20 @@ function SettingRow({ label, value, action, onClick }: SettingRowProps) {
 interface ToggleProps {
     checked: boolean;
     onChange: (checked: boolean) => void;
+    'aria-label'?: string;
+    'aria-labelledby'?: string;
 }
 
-function Toggle({ checked, onChange }: ToggleProps) {
+function Toggle({ checked, onChange, 'aria-label': ariaLabel, 'aria-labelledby': ariaLabelledBy }: ToggleProps) {
     return (
         <button
+            role="switch"
+            aria-checked={checked}
+            aria-label={ariaLabel}
+            aria-labelledby={ariaLabelledBy}
             onClick={() => onChange(!checked)}
             className={cn(
-                'w-11 h-6 rounded-full transition-colors relative',
+                'w-11 h-6 rounded-full transition-colors relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                 checked ? 'bg-primary' : 'bg-muted'
             )}
         >
@@ -427,6 +441,7 @@ export function SettingsPage() {
                                     setEmbedThumbnails(checked);
                                     handleSaveSetting('embed_thumbnails', String(checked));
                                 }}
+                                aria-labelledby="label-embed-thumbnails"
                             />
                         }
                     />
@@ -439,6 +454,7 @@ export function SettingsPage() {
                                     setEmbedMetadata(checked);
                                     handleSaveSetting('embed_metadata', String(checked));
                                 }}
+                                aria-labelledby="label-embed-metadata"
                             />
                         }
                     />
@@ -452,6 +468,7 @@ export function SettingsPage() {
                                     setUseSponsorblock(checked);
                                     handleSaveSetting('use_sponsorblock', String(checked));
                                 }}
+                                aria-labelledby="label-remove-sponsors-(sponsorblock)"
                             />
                         }
                     />
@@ -748,6 +765,7 @@ export function SettingsPage() {
                                     setMinimizeToTray(checked);
                                     handleSaveSetting('minimize_to_tray', String(checked));
                                 }}
+                                aria-labelledby="label-minimize-to-system-tray"
                             />
                         }
                     />
@@ -772,6 +790,7 @@ export function SettingsPage() {
                                         console.error(e);
                                     }
                                 }}
+                                aria-labelledby="label-start-on-startup"
                             />
                         }
                     />
@@ -966,6 +985,7 @@ export function SettingsPage() {
                                     setAutoCheckAppUpdates(checked);
                                     handleSaveSetting('auto_check_app_updates', String(checked));
                                 }}
+                                aria-labelledby="label-auto-check-updates-on-startup"
                             />
                         }
                     />

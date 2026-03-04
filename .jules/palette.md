@@ -1,0 +1,3 @@
+## 2026-03-04 - Accessible Custom Controls
+**Learning:** Custom interactive elements (like the `Toggle` switch and `SettingRow` buttons) in this application frequently omit essential ARIA attributes (`role="switch"`, `role="button"`, `aria-checked`, `aria-label`) and keyboard support (`tabIndex`, `onKeyDown`, `focus-visible`), making them inaccessible to screen readers and keyboard navigation.
+**Action:** Always verify that custom controls have appropriate ARIA roles, states, and keyboard event handlers. Ensure that `focus-visible` utility classes are applied so keyboard focus is clear without degrading mouse user experience.
