@@ -82,14 +82,18 @@ function SettingRow({ label, value, action, onClick }: SettingRowProps) {
 interface ToggleProps {
     checked: boolean;
     onChange: (checked: boolean) => void;
+    'aria-label'?: string;
 }
 
-function Toggle({ checked, onChange }: ToggleProps) {
+function Toggle({ checked, onChange, 'aria-label': ariaLabel }: ToggleProps) {
     return (
         <button
+            role="switch"
+            aria-checked={checked}
+            aria-label={ariaLabel}
             onClick={() => onChange(!checked)}
             className={cn(
-                'w-11 h-6 rounded-full transition-colors relative',
+                'w-11 h-6 rounded-full transition-colors relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                 checked ? 'bg-primary' : 'bg-muted'
             )}
         >
@@ -427,6 +431,7 @@ export function SettingsPage() {
                                     setEmbedThumbnails(checked);
                                     handleSaveSetting('embed_thumbnails', String(checked));
                                 }}
+                                aria-label="Embed thumbnails"
                             />
                         }
                     />
@@ -439,6 +444,7 @@ export function SettingsPage() {
                                     setEmbedMetadata(checked);
                                     handleSaveSetting('embed_metadata', String(checked));
                                 }}
+                                aria-label="Embed metadata"
                             />
                         }
                     />
@@ -452,6 +458,7 @@ export function SettingsPage() {
                                     setUseSponsorblock(checked);
                                     handleSaveSetting('use_sponsorblock', String(checked));
                                 }}
+                                aria-label="Remove Sponsors (SponsorBlock)"
                             />
                         }
                     />
@@ -748,6 +755,7 @@ export function SettingsPage() {
                                     setMinimizeToTray(checked);
                                     handleSaveSetting('minimize_to_tray', String(checked));
                                 }}
+                                aria-label="Minimize to System Tray"
                             />
                         }
                     />
@@ -772,6 +780,7 @@ export function SettingsPage() {
                                         console.error(e);
                                     }
                                 }}
+                                aria-label="Start on Startup"
                             />
                         }
                     />
@@ -966,6 +975,7 @@ export function SettingsPage() {
                                     setAutoCheckAppUpdates(checked);
                                     handleSaveSetting('auto_check_app_updates', String(checked));
                                 }}
+                                aria-label="Auto-check updates on startup"
                             />
                         }
                     />
