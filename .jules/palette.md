@@ -1,0 +1,3 @@
+## 2024-06-18 - Accessibility for Custom Toggle Switches
+**Learning:** In Ownstash Downloader, there are multiple instances where custom components (like settings toggles and modal switch buttons) are built with generic HTML elements like `<button>` and `<div>`. These components are visually styled as toggle switches using Tailwind, but without proper ARIA attributes, they lack accessibility for screen readers and do not clearly convey their "switch" role or active state.
+**Action:** Always add `role="switch"` and `aria-checked={boolean}` to any custom interactive component acting as a toggle. Furthermore, ensure they have explicit keyboard focus styles (`focus-visible:ring-2`) so keyboard navigators can see which option is selected before interacting.

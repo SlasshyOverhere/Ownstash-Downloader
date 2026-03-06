@@ -87,9 +87,11 @@ interface ToggleProps {
 function Toggle({ checked, onChange }: ToggleProps) {
     return (
         <button
+            role="switch"
+            aria-checked={checked}
             onClick={() => onChange(!checked)}
             className={cn(
-                'w-11 h-6 rounded-full transition-colors relative',
+                'w-11 h-6 rounded-full transition-colors relative outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                 checked ? 'bg-primary' : 'bg-muted'
             )}
         >
