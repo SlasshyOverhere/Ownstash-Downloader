@@ -1,0 +1,3 @@
+## 2025-03-07 - Custom Toggle Buttons Accessibility
+**Learning:** Custom UI elements like toggles that use `<div>` or `<button>` tags without semantic roles are not announced correctly by screen readers. Users won't know they are switches or what their current state is.
+**Action:** When implementing or modifying custom toggle components, always ensure they have `role="switch"` and `aria-checked={state}` attributes to provide accurate semantic meaning to assistive technologies.
