@@ -602,7 +602,11 @@ pub async fn vault_export_file(
     let key = get_vault_key()?;
 
     let encrypted_path = get_vault_files_dir(&app_handle).join(&encrypted_name);
-    let dest_path = PathBuf::from(&destination_path).join(&original_name);
+
+    // Sanitize original_name to prevent path traversal vulnerabilities
+    let safe_original_name = PathBuf::from(&original_name).file_name()
+        .and_then(|n| n.to_str()).unwrap_or("unnamed_export").to_string();
+    let dest_path = PathBuf::from(&destination_path).join(&safe_original_name);
 
     if !encrypted_path.exists() {
         return Err(format!("Encrypted file not found: {}", file_id));
