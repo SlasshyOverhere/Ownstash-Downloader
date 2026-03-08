@@ -82,14 +82,18 @@ function SettingRow({ label, value, action, onClick }: SettingRowProps) {
 interface ToggleProps {
     checked: boolean;
     onChange: (checked: boolean) => void;
+    'aria-label'?: string;
 }
 
-function Toggle({ checked, onChange }: ToggleProps) {
+function Toggle({ checked, onChange, 'aria-label': ariaLabel }: ToggleProps) {
     return (
         <button
+            role="switch"
+            aria-checked={checked}
+            aria-label={ariaLabel}
             onClick={() => onChange(!checked)}
             className={cn(
-                'w-11 h-6 rounded-full transition-colors relative',
+                'w-11 h-6 rounded-full transition-colors relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                 checked ? 'bg-primary' : 'bg-muted'
             )}
         >
@@ -422,6 +426,7 @@ export function SettingsPage() {
                         label="Embed thumbnails"
                         action={
                             <Toggle
+                                aria-label="Embed thumbnails"
                                 checked={embedThumbnails}
                                 onChange={(checked) => {
                                     setEmbedThumbnails(checked);
@@ -434,6 +439,7 @@ export function SettingsPage() {
                         label="Embed metadata"
                         action={
                             <Toggle
+                                aria-label="Embed metadata"
                                 checked={embedMetadata}
                                 onChange={(checked) => {
                                     setEmbedMetadata(checked);
@@ -447,6 +453,7 @@ export function SettingsPage() {
                         value="Skip intros, outros & sponsors"
                         action={
                             <Toggle
+                                aria-label="Remove Sponsors"
                                 checked={useSponsorblock}
                                 onChange={(checked) => {
                                     setUseSponsorblock(checked);
@@ -743,6 +750,7 @@ export function SettingsPage() {
                         value="App stays running in background when closed"
                         action={
                             <Toggle
+                                aria-label="Minimize to System Tray"
                                 checked={minimizeToTray}
                                 onChange={(checked) => {
                                     setMinimizeToTray(checked);
@@ -756,6 +764,7 @@ export function SettingsPage() {
                         value="Launch app automatically when your PC starts"
                         action={
                             <Toggle
+                                aria-label="Start on Startup"
                                 checked={autostartEnabled}
                                 onChange={async (checked) => {
                                     setAutostartEnabled(checked);
@@ -961,6 +970,7 @@ export function SettingsPage() {
                         value={autoCheckAppUpdates ? 'Enabled' : 'Disabled'}
                         action={
                             <Toggle
+                                aria-label="Auto-check updates on startup"
                                 checked={autoCheckAppUpdates}
                                 onChange={(checked) => {
                                     setAutoCheckAppUpdates(checked);
