@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
     Search,
@@ -69,7 +69,7 @@ interface DownloadHistoryCardProps {
     onOpenFolder: (path: string) => void;
 }
 
-const DownloadHistoryCard = React.memo(function DownloadHistoryCard({ item, onDelete, onOpenFolder }: DownloadHistoryCardProps) {
+const DownloadHistoryCard = memo(function DownloadHistoryCard({ item, onDelete, onOpenFolder }: DownloadHistoryCardProps) {
     const { ref, tiltStyle, handlers } = use3DTilt({ maxTilt: 5, scale: 1.01 });
 
     const getType = (): 'video' | 'audio' | 'file' => {
@@ -179,7 +179,7 @@ interface SearchHistoryCardProps {
     onSelect: (query: string) => void;
 }
 
-const SearchHistoryCard = React.memo(function SearchHistoryCard({ item, onSelect }: SearchHistoryCardProps) {
+const SearchHistoryCard = memo(function SearchHistoryCard({ item, onSelect }: SearchHistoryCardProps) {
     const { ref, tiltStyle, handlers } = use3DTilt({ maxTilt: 5, scale: 1.01 });
 
     return (
@@ -260,6 +260,8 @@ export function HistoryPage() {
     const [searchHistory, setSearchHistory] = useState<SearchHistory[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [filterStatus, setFilterStatus] = useState<'all' | 'completed' | 'failed'>('all');
+    const deferredSearchQuery = useDeferredValue(searchQuery);
+    const normalizedSearchQuery = deferredSearchQuery.trim().toLowerCase();
 
     const loadData = useCallback(async () => {
         setIsLoading(true);
@@ -328,20 +330,21 @@ export function HistoryPage() {
     // Filter downloads
     const filteredDownloads = useMemo(() => {
         return downloads.filter(item => {
-            const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                item.platform?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                item.url.toLowerCase().includes(searchQuery.toLowerCase());
+            const matchesSearch = !normalizedSearchQuery ||
+                item.title.toLowerCase().includes(normalizedSearchQuery) ||
+                item.platform?.toLowerCase().includes(normalizedSearchQuery) ||
+                item.url.toLowerCase().includes(normalizedSearchQuery);
             const matchesStatus = filterStatus === 'all' || item.status === filterStatus;
             return matchesSearch && matchesStatus;
         });
-    }, [downloads, searchQuery, filterStatus]);
+    }, [downloads, filterStatus, normalizedSearchQuery]);
 
     // Filter search history
     const filteredSearches = useMemo(() => {
         return searchHistory.filter(item =>
-            item.query.toLowerCase().includes(searchQuery.toLowerCase())
+            item.query.toLowerCase().includes(normalizedSearchQuery)
         );
-    }, [searchHistory, searchQuery]);
+    }, [normalizedSearchQuery, searchHistory]);
 
     return (
         <motion.div
