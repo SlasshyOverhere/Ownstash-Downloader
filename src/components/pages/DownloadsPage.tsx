@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
     Download,
@@ -68,6 +68,7 @@ const statusColors: Record<string, string> = {
 
 interface DownloadCardProps {
     item: DownloadItem;
+    progress?: DownloadProgress;
     onCancel: (id: string) => void;
     onDelete: (id: string) => void;
     onRetry?: (item: DownloadItem) => void;
@@ -75,7 +76,7 @@ interface DownloadCardProps {
     onPlay?: (path: string, title: string) => void;
 }
 
-function DownloadCard({ item, onCancel, onDelete, onRetry, onOpenFolder, onPlay }: DownloadCardProps) {
+const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDelete, onRetry, onOpenFolder, onPlay }: DownloadCardProps) {
     const { ref, tiltStyle, handlers } = use3DTilt({ maxTilt: 5, scale: 1.01 });
 
     // Determine type based on format
@@ -86,8 +87,12 @@ function DownloadCard({ item, onCancel, onDelete, onRetry, onOpenFolder, onPlay 
     };
 
     const TypeIcon = typeIcons[getType()];
-    const progress = clampProgress(item.progress ?? 0);
-    const isActive = item.status === 'downloading' || item.status === 'paused';
+    const progressValue = clampProgress(progress?.progress ?? item.progress ?? 0);
+    const status = progress?.status ?? item.status;
+    const speed = progress?.speed ?? item.speed;
+    const eta = progress?.eta ?? item.eta;
+    const engineBadge = progress?.engine_badge ?? item.engine_badge;
+    const isActive = status === 'downloading' || status === 'paused' || status === 'pending';
 
     return (
         <motion.div
@@ -116,7 +121,7 @@ function DownloadCard({ item, onCancel, onDelete, onRetry, onOpenFolder, onPlay 
                         <motion.div
                             className="absolute inset-0 bg-gradient-to-t from-primary/30 to-transparent"
                             initial={{ height: 0 }}
-                            animate={{ height: `${progress}%` }}
+                            animate={{ height: `${progressValue}%` }}
                             style={{ bottom: 0, top: 'auto' }}
                         />
                     )}
@@ -135,7 +140,7 @@ function DownloadCard({ item, onCancel, onDelete, onRetry, onOpenFolder, onPlay 
 
                         {/* Actions */}
                         <div className="flex items-center gap-1 shrink-0">
-                            {item.status === 'downloading' && (
+                            {status === 'downloading' && (
                                 <button
                                     onClick={() => onCancel(item.id)}
                                     aria-label="Cancel download"
@@ -145,7 +150,7 @@ function DownloadCard({ item, onCancel, onDelete, onRetry, onOpenFolder, onPlay 
                                     <X className="w-4 h-4" />
                                 </button>
                             )}
-                            {item.status === 'failed' && onRetry && (
+                            {status === 'failed' && onRetry && (
                                 <button
                                     onClick={() => onRetry(item)}
                                     aria-label="Retry download"
@@ -171,35 +176,35 @@ function DownloadCard({ item, onCancel, onDelete, onRetry, onOpenFolder, onPlay 
                         <div className="mt-3">
                             <div className="flex items-center justify-between text-xs mb-1">
                                 <div className="flex items-center gap-2">
-                                    <span className={cn('capitalize flex items-center gap-1', statusColors[item.status])}>
-                                        {item.status === 'downloading' && (
+                                    <span className={cn('capitalize flex items-center gap-1', statusColors[status])}>
+                                        {status === 'downloading' && (
                                             <Loader2 className="w-3 h-3 animate-spin" />
                                         )}
-                                        {item.status}
+                                        {status}
                                     </span>
                                     {/* Engine Badge */}
-                                    {item.engine_badge && (
+                                    {engineBadge && (
                                         <span className={cn(
                                             'px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide',
-                                            item.engine_badge.includes('ACCELERATED') && 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-400 border border-cyan-500/30',
-                                            item.engine_badge.includes('SAFE') && 'bg-amber-500/20 text-amber-400 border border-amber-500/30',
-                                            item.engine_badge.includes('MEDIA') && 'bg-violet-500/20 text-violet-400 border border-violet-500/30'
+                                            engineBadge.includes('ACCELERATED') && 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-400 border border-cyan-500/30',
+                                            engineBadge.includes('SAFE') && 'bg-amber-500/20 text-amber-400 border border-amber-500/30',
+                                            engineBadge.includes('MEDIA') && 'bg-violet-500/20 text-violet-400 border border-violet-500/30'
                                         )}>
-                                            {item.engine_badge}
+                                            {engineBadge}
                                         </span>
                                     )}
                                 </div>
                                 <div className="flex items-center gap-3 text-muted-foreground">
-                                    {item.speed && <span>{item.speed}</span>}
-                                    {item.eta && <span>ETA: {item.eta}</span>}
-                                    <span>{progress.toFixed(1)}%</span>
+                                    {speed && <span>{speed}</span>}
+                                    {eta && <span>ETA: {eta}</span>}
+                                    <span>{progressValue.toFixed(1)}%</span>
                                 </div>
                             </div>
                             <div className="h-2 bg-muted/50 rounded-full overflow-hidden">
                                 <motion.div
                                     className="h-full bg-gradient-to-r from-primary to-accent rounded-full progress-shimmer"
                                     initial={{ width: 0 }}
-                                    animate={{ width: `${progress}%` }}
+                                    animate={{ width: `${progressValue}%` }}
                                     transition={{ type: 'tween', duration: 0.2, ease: 'easeOut' }}
                                 />
                             </div>
@@ -207,7 +212,7 @@ function DownloadCard({ item, onCancel, onDelete, onRetry, onOpenFolder, onPlay 
                     )}
 
                     {/* Completed indicator */}
-                    {item.status === 'completed' && (
+                    {status === 'completed' && (
                         <div className="mt-2 flex items-center justify-between">
                             <div className="flex items-center gap-2 text-white text-sm">
                                 <CheckCircle className="w-4 h-4" />
@@ -239,7 +244,7 @@ function DownloadCard({ item, onCancel, onDelete, onRetry, onOpenFolder, onPlay 
                     )}
 
                     {/* Failed indicator */}
-                    {item.status === 'failed' && (
+                    {status === 'failed' && (
                         <div className="mt-2 flex items-center gap-2 text-white/50 text-sm">
                             <AlertCircle className="w-4 h-4" />
                             <span>Download failed</span>
@@ -247,7 +252,7 @@ function DownloadCard({ item, onCancel, onDelete, onRetry, onOpenFolder, onPlay 
                     )}
 
                     {/* Cancelled indicator */}
-                    {item.status === 'cancelled' && (
+                    {status === 'cancelled' && (
                         <div className="mt-2 flex items-center gap-2 text-gray-400 text-sm">
                             <X className="w-4 h-4" />
                             <span>Cancelled</span>
@@ -262,7 +267,7 @@ function DownloadCard({ item, onCancel, onDelete, onRetry, onOpenFolder, onPlay 
             </div>
         </motion.div>
     );
-}
+});
 
 export function DownloadsPage() {
     const [downloads, setDownloads] = useState<DownloadItem[]>([]);
@@ -274,6 +279,18 @@ export function DownloadsPage() {
     const [playerFilePath, setPlayerFilePath] = useState('');
     const [playerTitle, setPlayerTitle] = useState('');
     const [playerIsAudio, setPlayerIsAudio] = useState(false);
+
+    const loadDownloads = useCallback(async () => {
+        try {
+            setIsLoading(true);
+            const data = await api.getDownloads();
+            setDownloads(data);
+        } catch (err) {
+            toast.error('Failed to load downloads');
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
 
     // Load downloads and set up progress listeners
     useEffect(() => {
@@ -341,21 +358,9 @@ export function DownloadsPage() {
             if (unlistenYtdlp) unlistenYtdlp();
             if (unlistenSpotify) unlistenSpotify();
         };
-    }, []);
+    }, [loadDownloads]);
 
-    const loadDownloads = async () => {
-        try {
-            setIsLoading(true);
-            const data = await api.getDownloads();
-            setDownloads(data);
-        } catch (err) {
-            toast.error('Failed to load downloads');
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const handleCancel = async (id: string) => {
+    const handleCancel = useCallback(async (id: string) => {
         try {
             // Try to cancel yt-dlp download first
             try {
@@ -370,29 +375,35 @@ export function DownloadsPage() {
         } catch (err) {
             toast.error('Failed to cancel download');
         }
-    };
+    }, [loadDownloads]);
 
-    const handleDelete = async (id: string) => {
+    const handleDelete = useCallback(async (id: string) => {
         try {
             await api.deleteDownload(id);
             setDownloads(prev => prev.filter(d => d.id !== id));
+            setProgressMap(prev => {
+                const next = new Map(prev);
+                next.delete(id);
+                return next;
+            });
             toast.success('Download removed');
         } catch (err) {
             toast.error('Failed to remove download');
         }
-    };
+    }, []);
 
-    const handleClearAll = async () => {
+    const handleClearAll = useCallback(async () => {
         try {
             await api.clearDownloads();
             setDownloads([]);
+            setProgressMap(new Map());
             toast.success('All downloads cleared');
         } catch (err) {
             toast.error('Failed to clear downloads');
         }
-    };
+    }, []);
 
-    const handleOpenFolder = async (path: string, title: string, format: string) => {
+    const handleOpenFolder = useCallback(async (path: string, title: string, format: string) => {
         try {
             // Construct the likely filename from title and format
             // yt-dlp sanitizes titles, but we pass the original for matching
@@ -401,9 +412,9 @@ export function DownloadsPage() {
         } catch (err) {
             toast.error('Failed to open folder');
         }
-    };
+    }, []);
 
-    const handlePlay = async (path: string, title: string) => {
+    const handlePlay = useCallback(async (path: string, title: string) => {
         try {
             const mediaInfo = await api.findMediaFile(path, title);
             const filePath = mediaInfo.file_path;
@@ -434,31 +445,28 @@ export function DownloadsPage() {
             const errorMsg = err instanceof Error ? err.message : 'Failed to find media file';
             toast.error(errorMsg);
         }
-    };
+    }, []);
 
-    // Merge progress data with downloads
-    const downloadsWithProgress: DownloadItem[] = downloads.map(download => {
-        const progress = progressMap.get(download.id);
-        if (progress) {
-            return {
-                ...download,
-                progress: progress.progress,
-                speed: progress.speed,
-                eta: progress.eta,
-                status: progress.status,
-                engine_badge: progress.engine_badge,
-            };
-        }
-        return download;
-    });
+    const activeDownloads = useMemo(() => (
+        downloads.filter((download) => {
+            const status = progressMap.get(download.id)?.status ?? download.status;
+            return status === 'downloading' || status === 'paused' || status === 'pending';
+        })
+    ), [downloads, progressMap]);
 
-    const activeDownloads = downloadsWithProgress.filter(d =>
-        d.status === 'downloading' || d.status === 'paused' || d.status === 'pending'
-    );
-    const completedDownloads = downloadsWithProgress.filter(d => d.status === 'completed');
-    const failedDownloads = downloadsWithProgress.filter(d =>
-        d.status === 'failed' || d.status === 'cancelled'
-    );
+    const completedDownloads = useMemo(() => (
+        downloads.filter((download) => {
+            const status = progressMap.get(download.id)?.status ?? download.status;
+            return status === 'completed';
+        })
+    ), [downloads, progressMap]);
+
+    const failedDownloads = useMemo(() => (
+        downloads.filter((download) => {
+            const status = progressMap.get(download.id)?.status ?? download.status;
+            return status === 'failed' || status === 'cancelled';
+        })
+    ), [downloads, progressMap]);
 
     return (
         <>
@@ -515,6 +523,7 @@ export function DownloadsPage() {
                                 <DownloadCard
                                     key={item.id}
                                     item={item}
+                                    progress={progressMap.get(item.id)}
                                     onCancel={handleCancel}
                                     onDelete={handleDelete}
                                 />
@@ -538,6 +547,7 @@ export function DownloadsPage() {
                                 <DownloadCard
                                     key={item.id}
                                     item={item}
+                                    progress={progressMap.get(item.id)}
                                     onCancel={handleCancel}
                                     onDelete={handleDelete}
                                     onOpenFolder={handleOpenFolder}
@@ -563,6 +573,7 @@ export function DownloadsPage() {
                                 <DownloadCard
                                     key={item.id}
                                     item={item}
+                                    progress={progressMap.get(item.id)}
                                     onCancel={handleCancel}
                                     onDelete={handleDelete}
                                 />

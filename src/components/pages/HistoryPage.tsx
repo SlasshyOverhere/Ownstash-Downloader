@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
     Search,
@@ -69,7 +69,7 @@ interface DownloadHistoryCardProps {
     onOpenFolder: (path: string) => void;
 }
 
-function DownloadHistoryCard({ item, onDelete, onOpenFolder }: DownloadHistoryCardProps) {
+const DownloadHistoryCard = memo(function DownloadHistoryCard({ item, onDelete, onOpenFolder }: DownloadHistoryCardProps) {
     const { ref, tiltStyle, handlers } = use3DTilt({ maxTilt: 5, scale: 1.01 });
 
     const getType = (): 'video' | 'audio' | 'file' => {
@@ -172,14 +172,14 @@ function DownloadHistoryCard({ item, onDelete, onOpenFolder }: DownloadHistoryCa
             </div>
         </motion.div>
     );
-}
+});
 
 interface SearchHistoryCardProps {
     item: SearchHistory;
     onSelect: (query: string) => void;
 }
 
-function SearchHistoryCard({ item, onSelect }: SearchHistoryCardProps) {
+const SearchHistoryCard = memo(function SearchHistoryCard({ item, onSelect }: SearchHistoryCardProps) {
     const { ref, tiltStyle, handlers } = use3DTilt({ maxTilt: 5, scale: 1.01 });
 
     return (
@@ -251,7 +251,7 @@ function SearchHistoryCard({ item, onSelect }: SearchHistoryCardProps) {
             </div>
         </motion.div>
     );
-}
+});
 
 export function HistoryPage() {
     const [activeTab, setActiveTab] = useState<HistoryTab>('downloads');
@@ -260,12 +260,10 @@ export function HistoryPage() {
     const [searchHistory, setSearchHistory] = useState<SearchHistory[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [filterStatus, setFilterStatus] = useState<'all' | 'completed' | 'failed'>('all');
+    const deferredSearchQuery = useDeferredValue(searchQuery);
+    const normalizedSearchQuery = deferredSearchQuery.trim().toLowerCase();
 
-    useEffect(() => {
-        loadData();
-    }, []);
-
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
         setIsLoading(true);
         try {
             const [dls, searches] = await Promise.all([
@@ -279,9 +277,13 @@ export function HistoryPage() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, []);
 
-    const handleDeleteDownload = async (id: string) => {
+    useEffect(() => {
+        loadData();
+    }, [loadData]);
+
+    const handleDeleteDownload = useCallback(async (id: string) => {
         try {
             await api.deleteDownload(id);
             setDownloads(prev => prev.filter(d => d.id !== id));
@@ -289,9 +291,9 @@ export function HistoryPage() {
         } catch (err) {
             toast.error('Failed to delete');
         }
-    };
+    }, []);
 
-    const handleClearDownloads = async () => {
+    const handleClearDownloads = useCallback(async () => {
         try {
             await api.clearDownloads();
             setDownloads([]);
@@ -299,9 +301,9 @@ export function HistoryPage() {
         } catch (err) {
             toast.error('Failed to clear history');
         }
-    };
+    }, []);
 
-    const handleClearSearchHistory = async () => {
+    const handleClearSearchHistory = useCallback(async () => {
         try {
             await api.clearSearchHistory();
             setSearchHistory([]);
@@ -309,35 +311,40 @@ export function HistoryPage() {
         } catch (err) {
             toast.error('Failed to clear history');
         }
-    };
+    }, []);
 
-    const handleSelectSearch = (query: string) => {
+    const handleSelectSearch = useCallback((query: string) => {
         // Copy to clipboard and show toast
         navigator.clipboard.writeText(query);
         toast.success('URL copied! Paste it on the Home page to download.');
-    };
+    }, []);
 
-    const handleOpenFolder = async (path: string) => {
+    const handleOpenFolder = useCallback(async (path: string) => {
         try {
             await api.openFolder(path);
         } catch (err) {
             toast.error('Failed to open folder');
         }
-    };
+    }, []);
 
     // Filter downloads
-    const filteredDownloads = downloads.filter(item => {
-        const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            item.platform?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            item.url.toLowerCase().includes(searchQuery.toLowerCase());
-        const matchesStatus = filterStatus === 'all' || item.status === filterStatus;
-        return matchesSearch && matchesStatus;
-    });
+    const filteredDownloads = useMemo(() => {
+        return downloads.filter(item => {
+            const matchesSearch = !normalizedSearchQuery ||
+                item.title.toLowerCase().includes(normalizedSearchQuery) ||
+                item.platform?.toLowerCase().includes(normalizedSearchQuery) ||
+                item.url.toLowerCase().includes(normalizedSearchQuery);
+            const matchesStatus = filterStatus === 'all' || item.status === filterStatus;
+            return matchesSearch && matchesStatus;
+        });
+    }, [downloads, filterStatus, normalizedSearchQuery]);
 
     // Filter search history
-    const filteredSearches = searchHistory.filter(item =>
-        item.query.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const filteredSearches = useMemo(() => {
+        return searchHistory.filter(item =>
+            item.query.toLowerCase().includes(normalizedSearchQuery)
+        );
+    }, [normalizedSearchQuery, searchHistory]);
 
     return (
         <motion.div
