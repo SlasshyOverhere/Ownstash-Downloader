@@ -3199,7 +3199,7 @@ dependencies = [
 
 [[package]]
 name = "ownstash-downloader"
-version = "1.0.7"
+version = "1.0.4"
 dependencies = [
  "aes-gcm",
  "argon2",
