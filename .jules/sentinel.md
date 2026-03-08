@@ -1,4 +1,0 @@
-## 2025-03-07 - Rust PathBuf::join() Path Traversal
-**Vulnerability:** A Path Traversal vulnerability existed in `src-tauri/src/vault.rs` within the `vault_export_file` command. The command concatenated user-provided (or cloud-provided) filenames directly to a destination directory path using `PathBuf::from(&destination_path).join(&original_name)`.
-**Learning:** In Rust, `PathBuf::join()` replaces the base path entirely if the appended path is absolute, and resolves relative segments like `../`. Since `original_name` can be controlled by untrusted sources, this allows an attacker to extract files outside of the intended `destination_path` folder.
-**Prevention:** Always sanitize paths or filenames derived from external sources before appending them. In Rust, you can safely extract just the filename portion from an untrusted path string using `PathBuf::from(&untrusted_input).file_name().and_then(|n| n.to_str()).unwrap_or("fallback_name")` before calling `.join()`.

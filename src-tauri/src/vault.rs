@@ -104,6 +104,57 @@ fn get_vault_files_dir(app_handle: &AppHandle) -> PathBuf {
     get_vault_dir(app_handle).join("files")
 }
 
+fn sanitize_file_name(value: &str, fallback: &str) -> String {
+    PathBuf::from(value)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty() && *name != "." && *name != "..")
+        .unwrap_or(fallback)
+        .to_string()
+}
+
+fn sanitize_encrypted_name(encrypted_name: &str) -> Result<String, String> {
+    let safe_name = sanitize_file_name(encrypted_name, "");
+    if safe_name.is_empty() {
+        return Err("Invalid encrypted file name".to_string());
+    }
+
+    if safe_name.ends_with(ENCRYPTED_EXTENSION) || safe_name.ends_with(LEGACY_EXTENSION) {
+        Ok(safe_name)
+    } else {
+        Err(format!("Invalid encrypted file extension: {}", safe_name))
+    }
+}
+
+fn alternate_encrypted_name(encrypted_name: &str) -> Option<String> {
+    if let Some(name) = encrypted_name.strip_suffix(ENCRYPTED_EXTENSION) {
+        Some(format!("{}{}", name, LEGACY_EXTENSION))
+    } else if let Some(name) = encrypted_name.strip_suffix(LEGACY_EXTENSION) {
+        Some(format!("{}{}", name, ENCRYPTED_EXTENSION))
+    } else {
+        None
+    }
+}
+
+fn resolve_encrypted_file_path(app_handle: &AppHandle, encrypted_name: &str) -> Result<PathBuf, String> {
+    let files_dir = get_vault_files_dir(app_handle);
+    let safe_name = sanitize_encrypted_name(encrypted_name)?;
+    let file_path = files_dir.join(&safe_name);
+
+    if file_path.exists() {
+        return Ok(file_path);
+    }
+
+    if let Some(alt_name) = alternate_encrypted_name(&safe_name) {
+        let alt_path = files_dir.join(&alt_name);
+        if alt_path.exists() {
+            return Ok(alt_path);
+        }
+    }
+
+    Err(format!("File not found: {}", safe_name))
+}
+
 // NOTE: Local index.json is NO LONGER USED
 // The vault index is now stored ONLY in Google Drive (encrypted with PIN)
 // This eliminates the security weakness of having file names visible locally
@@ -601,16 +652,10 @@ pub async fn vault_export_file(
     // Get the decryption key
     let key = get_vault_key()?;
 
-    let encrypted_path = get_vault_files_dir(&app_handle).join(&encrypted_name);
-
-    // Sanitize original_name to prevent path traversal vulnerabilities
-    let safe_original_name = PathBuf::from(&original_name).file_name()
-        .and_then(|n| n.to_str()).unwrap_or("unnamed_export").to_string();
+    let encrypted_path = resolve_encrypted_file_path(&app_handle, &encrypted_name)
+        .map_err(|_| format!("Encrypted file not found: {}", file_id))?;
+    let safe_original_name = sanitize_file_name(&original_name, "unnamed_export");
     let dest_path = PathBuf::from(&destination_path).join(&safe_original_name);
-
-    if !encrypted_path.exists() {
-        return Err(format!("Encrypted file not found: {}", file_id));
-    }
 
     // Decrypt in background thread to avoid blocking UI
     let enc_clone = encrypted_path.clone();
@@ -638,11 +683,8 @@ pub async fn vault_get_temp_playback_path(
     // Get the decryption key
     let key = get_vault_key()?;
 
-    let encrypted_path = get_vault_files_dir(&app_handle).join(&encrypted_name);
-    
-    if !encrypted_path.exists() {
-        return Err(format!("Encrypted file not found: {}", file_id));
-    }
+    let encrypted_path = resolve_encrypted_file_path(&app_handle, &encrypted_name)
+        .map_err(|_| format!("Encrypted file not found: {}", file_id))?;
     
     // Create temp directory inside vault (more secure than system temp)
     let temp_dir = get_vault_dir(&app_handle).join("temp");
@@ -650,7 +692,7 @@ pub async fn vault_get_temp_playback_path(
         .map_err(|e| format!("Failed to create temp directory: {}", e))?;
     
     // Use UUID + extension only for temp file (no original name traces for privacy)
-    let file_extension = PathBuf::from(&original_name)
+    let file_extension = PathBuf::from(sanitize_file_name(&original_name, "temp.bin"))
         .extension()
         .map(|e| format!(".{}", e.to_string_lossy()))
         .unwrap_or_else(|| ".tmp".to_string());
@@ -877,23 +919,7 @@ pub fn vault_wipe_local_config(app_handle: AppHandle) -> Result<(), String> {
 /// Supports both .slasshy (new) and .vault (legacy) extensions
 #[tauri::command]
 pub fn vault_check_local_file(app_handle: AppHandle, encrypted_name: String) -> bool {
-    let files_dir = get_vault_files_dir(&app_handle);
-    let file_path = files_dir.join(&encrypted_name);
-    
-    if file_path.exists() {
-        return true;
-    }
-    
-    // Also check for alternate extension
-    let alt_path = if encrypted_name.ends_with(".slasshy") {
-        files_dir.join(encrypted_name.replace(".slasshy", ".vault"))
-    } else if encrypted_name.ends_with(".vault") {
-        files_dir.join(encrypted_name.replace(".vault", ".slasshy"))
-    } else {
-        return false;
-    };
-    
-    alt_path.exists()
+    resolve_encrypted_file_path(&app_handle, &encrypted_name).is_ok()
 }
 
 /// Get encrypted file content as base64 for cloud upload
@@ -903,25 +929,7 @@ pub async fn vault_get_file_base64(
     app_handle: AppHandle,
     encrypted_name: String,
 ) -> Result<String, String> {
-    let files_dir = get_vault_files_dir(&app_handle);
-    let mut file_path = files_dir.join(&encrypted_name);
-    
-    // Check if file exists, try alternate extension if not
-    if !file_path.exists() {
-        let alt_path = if encrypted_name.ends_with(".slasshy") {
-            files_dir.join(encrypted_name.replace(".slasshy", ".vault"))
-        } else if encrypted_name.ends_with(".vault") {
-            files_dir.join(encrypted_name.replace(".vault", ".slasshy"))
-        } else {
-            return Err(format!("File not found: {}", encrypted_name));
-        };
-        
-        if alt_path.exists() {
-            file_path = alt_path;
-        } else {
-            return Err(format!("File not found: {}", encrypted_name));
-        }
-    }
+    let file_path = resolve_encrypted_file_path(&app_handle, &encrypted_name)?;
     
     // Read file in background thread to avoid blocking
     let path_clone = file_path.clone();
@@ -946,12 +954,13 @@ pub async fn vault_save_file_base64(
     base64_content: String,
 ) -> Result<(), String> {
     let files_dir = get_vault_files_dir(&app_handle);
+    let safe_encrypted_name = sanitize_encrypted_name(&encrypted_name)?;
     
     // Ensure directory exists
     fs::create_dir_all(&files_dir)
         .map_err(|e| format!("Failed to create vault directory: {}", e))?;
     
-    let file_path = files_dir.join(&encrypted_name);
+    let file_path = files_dir.join(&safe_encrypted_name);
     
     // Decode base64 in background thread
     let content = tokio::task::spawn_blocking(move || {
@@ -971,7 +980,7 @@ pub async fn vault_save_file_base64(
     .map_err(|e| format!("Task error: {}", e))?
     .map_err(|e| format!("Failed to write file: {}", e))?;
     
-    println!("[Vault] Saved cloud file: {}", encrypted_name);
+    println!("[Vault] Saved cloud file: {}", safe_encrypted_name);
     Ok(())
 }
 
@@ -983,8 +992,9 @@ pub fn vault_rename_file(
     new_name: String,
 ) -> Result<(), String> {
     let files_dir = get_vault_files_dir(&app_handle);
-    let old_path = files_dir.join(&old_name);
-    let new_path = files_dir.join(&new_name);
+    let old_path = resolve_encrypted_file_path(&app_handle, &old_name)?;
+    let safe_new_name = sanitize_encrypted_name(&new_name)?;
+    let new_path = files_dir.join(&safe_new_name);
     
     if !old_path.exists() {
         return Err(format!("File not found: {}", old_name));
@@ -997,7 +1007,7 @@ pub fn vault_rename_file(
     fs::rename(&old_path, &new_path)
         .map_err(|e| format!("Failed to rename file: {}", e))?;
     
-    println!("[Vault] Renamed {} -> {}", old_name, new_name);
+    println!("[Vault] Renamed {} -> {}", old_name, safe_new_name);
     Ok(())
 }
 
@@ -1010,25 +1020,7 @@ pub fn vault_get_files_dir_path(app_handle: AppHandle) -> String {
 /// Get file size of an encrypted file
 #[tauri::command]
 pub fn vault_get_file_size(app_handle: AppHandle, encrypted_name: String) -> Result<u64, String> {
-    let files_dir = get_vault_files_dir(&app_handle);
-    let mut file_path = files_dir.join(&encrypted_name);
-    
-    // Check if file exists, try alternate extension if not
-    if !file_path.exists() {
-        let alt_path = if encrypted_name.ends_with(".slasshy") {
-            files_dir.join(encrypted_name.replace(".slasshy", ".vault"))
-        } else if encrypted_name.ends_with(".vault") {
-            files_dir.join(encrypted_name.replace(".vault", ".slasshy"))
-        } else {
-            return Err(format!("File not found: {}", encrypted_name));
-        };
-        
-        if alt_path.exists() {
-            file_path = alt_path;
-        } else {
-            return Err(format!("File not found: {}", encrypted_name));
-        }
-    }
+    let file_path = resolve_encrypted_file_path(&app_handle, &encrypted_name)?;
     
     let metadata = fs::metadata(&file_path)
         .map_err(|e| format!("Failed to get file metadata: {}", e))?;
@@ -1242,21 +1234,8 @@ pub async fn vault_extract_folder_file(
     // Get the decryption key
     let key = get_vault_key()?;
     
-    let mut encrypted_path = get_vault_files_dir(&app_handle).join(&encrypted_name);
-    if !encrypted_path.exists() {
-        // Try alternate extension
-        let alt_name = if encrypted_name.ends_with(".slasshy") {
-            encrypted_name.replace(".slasshy", ".vault")
-        } else {
-            encrypted_name.replace(".vault", ".slasshy")
-        };
-        let alt_path = get_vault_files_dir(&app_handle).join(&alt_name);
-        if alt_path.exists() {
-            encrypted_path = alt_path;
-        } else {
-            return Err(format!("Encrypted folder not found: {}", file_id));
-        }
-    }
+    let encrypted_path = resolve_encrypted_file_path(&app_handle, &encrypted_name)
+        .map_err(|_| format!("Encrypted folder not found: {}", file_id))?;
     
     // Create temp directory for extraction
     let temp_dir = get_vault_dir(&app_handle).join("temp");
@@ -1508,19 +1487,8 @@ pub async fn vault_list_folder_contents(
     // Get the decryption key
     let key = get_vault_key()?;
     
-    let encrypted_path = get_vault_files_dir(&app_handle).join(&encrypted_name);
-    if !encrypted_path.exists() {
-        // Try alternate extension
-        let alt_name = if encrypted_name.ends_with(".slasshy") {
-            encrypted_name.replace(".slasshy", ".vault")
-        } else {
-            encrypted_name.replace(".vault", ".slasshy")
-        };
-        let alt_path = get_vault_files_dir(&app_handle).join(&alt_name);
-        if !alt_path.exists() {
-            return Err(format!("Encrypted folder not found: {}", file_id));
-        }
-    }
+    let encrypted_path = resolve_encrypted_file_path(&app_handle, &encrypted_name)
+        .map_err(|_| format!("Encrypted folder not found: {}", file_id))?;
     
     // Create temp directory
     let temp_dir = get_vault_dir(&app_handle).join("temp");
@@ -1753,26 +1721,8 @@ pub async fn vault_convert_to_folder(
     println!("[Vault] Converting file to folder: {}", file_id);
     
     let key = get_vault_key()?;
-    let files_dir = get_vault_files_dir(&app_handle);
-    let mut encrypted_path = files_dir.join(&encrypted_name);
-    
-    // Check for file with alternate extension
-    if !encrypted_path.exists() {
-        let alt_name = if encrypted_name.ends_with(".slasshy") {
-            encrypted_name.replace(".slasshy", ".vault")
-        } else if encrypted_name.ends_with(".vault") {
-            encrypted_name.replace(".vault", ".slasshy")
-        } else {
-            return Err(format!("File not found: {}", encrypted_name));
-        };
-        let alt_path = files_dir.join(&alt_name);
-        if alt_path.exists() {
-            encrypted_path = alt_path;
-            println!("[Vault] Using alternate extension: {}", alt_name);
-        } else {
-            return Err(format!("Encrypted file not found: {} (checked both extensions)", file_id));
-        }
-    }
+    let encrypted_path = resolve_encrypted_file_path(&app_handle, &encrypted_name)
+        .map_err(|_| format!("Encrypted file not found: {} (checked both extensions)", file_id))?;
     
     // Create temp path for decryption
     let temp_dir = app_handle.path().temp_dir().map_err(|e| e.to_string())?;
