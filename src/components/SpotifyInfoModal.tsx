@@ -374,11 +374,13 @@ export function SpotifyInfoModal({
 
                                 {/* Embed Lyrics Toggle */}
                                 <button
+                                    type="button"
                                     role="switch"
                                     aria-checked={embedLyrics}
+                                    aria-label="Embed lyrics"
                                     onClick={() => setEmbedLyrics(!embedLyrics)}
                                     className={cn(
-                                        "w-full flex items-center justify-between px-4 py-3 rounded-xl transition-colors",
+                                        "w-full flex items-center justify-between px-4 py-3 rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-black",
                                         embedLyrics ? "bg-white/10" : "bg-muted/50 hover:bg-muted"
                                     )}
                                 >
