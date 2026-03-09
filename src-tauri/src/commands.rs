@@ -21,17 +21,23 @@ pub async fn open_folder(path: String, file_name: Option<String>) -> Result<(), 
 
     // Determine the actual path to use
     let actual_path = if let Some(ref name) = file_name {
+        // Prevent path traversal by extracting only the final file component
+        let safe_name = std::path::Path::new(name)
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or("");
+
         // If file_name is provided, construct full path
-        let file_path = base_path.join(name);
+        let file_path = base_path.join(safe_name);
         if file_path.exists() {
             file_path
         } else {
             // Try to find a similar file (matching by title prefix)
             if let Ok(entries) = std::fs::read_dir(base_path) {
-                let file_stem = std::path::Path::new(name)
+                let file_stem = std::path::Path::new(safe_name)
                     .file_stem()
                     .and_then(|s| s.to_str())
-                    .unwrap_or(name);
+                    .unwrap_or(safe_name);
                 
                 for entry in entries.flatten() {
                     if let Some(entry_stem) = entry.path().file_stem().and_then(|s| s.to_str()) {
