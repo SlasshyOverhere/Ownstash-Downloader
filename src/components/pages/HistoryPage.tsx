@@ -20,6 +20,7 @@ import { staggerContainer, staggerItem, fadeInUp } from '@/lib/animations';
 import { use3DTilt } from '@/hooks/use3DTilt';
 import { toast } from 'sonner';
 import api, { SearchHistory, Download as DownloadType, formatBytes } from '@/services/api';
+import { confirm } from '@tauri-apps/plugin-dialog';
 
 type HistoryTab = 'downloads' | 'searches';
 
@@ -294,6 +295,12 @@ export function HistoryPage() {
     }, []);
 
     const handleClearDownloads = useCallback(async () => {
+        const confirmed = await confirm(
+            'Are you sure you want to clear your download history? This action cannot be undone.',
+            { title: 'Clear Download History', kind: 'warning' }
+        );
+        if (!confirmed) return;
+
         try {
             await api.clearDownloads();
             setDownloads([]);
@@ -304,6 +311,12 @@ export function HistoryPage() {
     }, []);
 
     const handleClearSearchHistory = useCallback(async () => {
+        const confirmed = await confirm(
+            'Are you sure you want to clear your search history? This action cannot be undone.',
+            { title: 'Clear Search History', kind: 'warning' }
+        );
+        if (!confirmed) return;
+
         try {
             await api.clearSearchHistory();
             setSearchHistory([]);
