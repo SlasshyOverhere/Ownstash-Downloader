@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, memo } from 'react';
 import { motion } from 'framer-motion';
 import {
     Link,
@@ -59,7 +59,7 @@ interface QuickStatProps {
     gradient: string;
 }
 
-function QuickStat({ title, value, icon: Icon, gradient }: QuickStatProps) {
+const QuickStat = memo(function QuickStat({ title, value, icon: Icon, gradient }: QuickStatProps) {
     const { ref, tiltStyle, handlers } = use3DTilt({ maxTilt: 10 });
 
     return (
@@ -77,7 +77,7 @@ function QuickStat({ title, value, icon: Icon, gradient }: QuickStatProps) {
             <p className="text-sm text-muted-foreground">{title}</p>
         </motion.div>
     );
-}
+});
 
 interface HomePageProps {
     onNavigateToDownloads?: () => void;
@@ -97,8 +97,9 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
     const [stats, setStats] = useState({ downloads: 0, storage: '0 MB', platforms: 0 });
     const [downloadPath, setDownloadPath] = useState<string>('');
 
-    const detectedPlatform = detectPlatform(url);
-    const isSpotify = isSpotifyUrl(url);
+    // Memoize the platform detection to avoid running regexes on every render
+    const detectedPlatform = useMemo(() => detectPlatform(url), [url]);
+    const isSpotify = useMemo(() => isSpotifyUrl(url), [url]);
 
     useEffect(() => {
         loadStats();

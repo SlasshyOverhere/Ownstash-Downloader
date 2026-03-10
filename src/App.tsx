@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Toaster, toast } from 'sonner';
 import { listen } from '@tauri-apps/api/event';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -196,9 +196,14 @@ function App() {
     }, []);
 
     // Clear extension URL after it's been consumed
-    const handleExtensionUrlConsumed = () => {
+    const handleExtensionUrlConsumed = useCallback(() => {
         setExtensionUrl(null);
-    };
+    }, []);
+
+    // Memoize navigation callback to prevent re-rendering HomePage on every App render
+    const handleNavigateToDownloads = useCallback(() => {
+        setCurrentPage('downloads');
+    }, []);
 
     // Loading state while checking auth
     if (loading) {
@@ -217,7 +222,7 @@ function App() {
             case 'home':
                 return (
                     <HomePage
-                        onNavigateToDownloads={() => setCurrentPage('downloads')}
+                        onNavigateToDownloads={handleNavigateToDownloads}
                         extensionUrl={extensionUrl}
                         onExtensionUrlConsumed={handleExtensionUrlConsumed}
                     />
@@ -231,7 +236,7 @@ function App() {
             default:
                 return (
                     <HomePage
-                        onNavigateToDownloads={() => setCurrentPage('downloads')}
+                        onNavigateToDownloads={handleNavigateToDownloads}
                         extensionUrl={extensionUrl}
                         onExtensionUrlConsumed={handleExtensionUrlConsumed}
                     />
