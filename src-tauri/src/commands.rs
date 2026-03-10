@@ -124,6 +124,29 @@ pub async fn open_with_external_player(file_path: String, player_path: Option<St
                 return Err(format!("Player not found: {}", player));
             }
             
+            // SECURITY: Prevent Command Injection / Arbitrary Code Execution
+            // Validate that the provided executable is a known media player
+            let allowed_players = [
+                "vlc", "vlc.exe",
+                "mpv", "mpv.exe",
+                "mpc-hc", "mpc-hc.exe", "mpc-hc64.exe",
+                "wmplayer.exe",
+                "iina",
+                "quicktime player",
+                "potplayermini64.exe", "potplayermini.exe", "potplayer.exe"
+            ];
+
+            let file_name = player_file.file_name()
+                .and_then(|n| n.to_str())
+                .map(|s| s.to_lowercase())
+                .unwrap_or_default();
+
+            let is_allowed = allowed_players.iter().any(|&p| file_name == p);
+
+            if !is_allowed {
+                return Err(format!("Security restriction: Executable '{}' is not an allowed media player", file_name));
+            }
+
             #[cfg(target_os = "windows")]
             {
                 Command::new(&player)
