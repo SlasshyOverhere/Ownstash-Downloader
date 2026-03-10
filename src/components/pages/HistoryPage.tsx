@@ -1,5 +1,6 @@
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
+import { confirm } from '@tauri-apps/plugin-dialog';
 import {
     Search,
     Trash2,
@@ -294,6 +295,13 @@ export function HistoryPage() {
     }, []);
 
     const handleClearDownloads = useCallback(async () => {
+        const confirmed = await confirm('Are you sure you want to clear all download history? This action cannot be undone.', {
+            title: 'Clear Download History',
+            kind: 'warning',
+        });
+
+        if (!confirmed) return;
+
         try {
             await api.clearDownloads();
             setDownloads([]);
@@ -304,6 +312,13 @@ export function HistoryPage() {
     }, []);
 
     const handleClearSearchHistory = useCallback(async () => {
+        const confirmed = await confirm('Are you sure you want to clear all search history? This action cannot be undone.', {
+            title: 'Clear Search History',
+            kind: 'warning',
+        });
+
+        if (!confirmed) return;
+
         try {
             await api.clearSearchHistory();
             setSearchHistory([]);

@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
+import { confirm } from '@tauri-apps/plugin-dialog';
 import {
     Download,
     X,
@@ -393,6 +394,13 @@ export function DownloadsPage() {
     }, []);
 
     const handleClearAll = useCallback(async () => {
+        const confirmed = await confirm('Are you sure you want to clear all downloads? This action cannot be undone.', {
+            title: 'Clear All Downloads',
+            kind: 'warning',
+        });
+
+        if (!confirmed) return;
+
         try {
             await api.clearDownloads();
             setDownloads([]);
