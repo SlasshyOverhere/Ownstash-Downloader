@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { motion } from 'framer-motion';
 import {
     Link,
@@ -59,7 +59,7 @@ interface QuickStatProps {
     gradient: string;
 }
 
-function QuickStat({ title, value, icon: Icon, gradient }: QuickStatProps) {
+const QuickStat = memo(function QuickStat({ title, value, icon: Icon, gradient }: QuickStatProps) {
     const { ref, tiltStyle, handlers } = use3DTilt({ maxTilt: 10 });
 
     return (
@@ -77,7 +77,7 @@ function QuickStat({ title, value, icon: Icon, gradient }: QuickStatProps) {
             <p className="text-sm text-muted-foreground">{title}</p>
         </motion.div>
     );
-}
+});
 
 interface HomePageProps {
     onNavigateToDownloads?: () => void;
