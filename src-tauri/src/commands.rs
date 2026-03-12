@@ -21,27 +21,37 @@ pub async fn open_folder(path: String, file_name: Option<String>) -> Result<(), 
 
     // Determine the actual path to use
     let actual_path = if let Some(ref name) = file_name {
-        // If file_name is provided, construct full path
-        let file_path = base_path.join(name);
-        if file_path.exists() {
-            file_path
+        // Sanitize name to prevent path traversal
+        let safe_name = std::path::Path::new(name)
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or("");
+
+        if safe_name.is_empty() {
+            base_path.to_path_buf()
         } else {
-            // Try to find a similar file (matching by title prefix)
-            if let Ok(entries) = std::fs::read_dir(base_path) {
-                let file_stem = std::path::Path::new(name)
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or(name);
-                
-                for entry in entries.flatten() {
-                    if let Some(entry_stem) = entry.path().file_stem().and_then(|s| s.to_str()) {
-                        if entry_stem.starts_with(file_stem) {
-                            return open_path_in_explorer(&entry.path());
+            // If file_name is provided, construct full path
+            let file_path = base_path.join(safe_name);
+            if file_path.exists() {
+                file_path
+            } else {
+                // Try to find a similar file (matching by title prefix)
+                if let Ok(entries) = std::fs::read_dir(base_path) {
+                    let file_stem = std::path::Path::new(safe_name)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or(safe_name);
+
+                    for entry in entries.flatten() {
+                        if let Some(entry_stem) = entry.path().file_stem().and_then(|s| s.to_str()) {
+                            if entry_stem.starts_with(file_stem) {
+                                return open_path_in_explorer(&entry.path());
+                            }
                         }
                     }
                 }
+                base_path.to_path_buf()
             }
-            base_path.to_path_buf()
         }
     } else {
         base_path.to_path_buf()
