@@ -1,0 +1,3 @@
+## 2024-05-24 - Accessible Custom Button Groups
+**Learning:** Custom UI components that act like radio buttons or tabs (e.g., format selectors, quality toggles) require explicit ARIA roles (`role="radiogroup"`, `role="radio"`, `role="tablist"`, `role="tab"`) and states (`aria-checked`, `aria-selected`). Visual indicators like checkmark icons are usually hidden from screen readers (`aria-hidden="true"`), so state must be explicitly communicated.
+**Action:** When implementing custom selection groups in the future, always apply appropriate ARIA roles and explicitly manage the `aria-checked` or `aria-selected` state. Also ensure visible focus styles are present using utility classes like `focus-visible:ring-2`.
