@@ -369,30 +369,34 @@ export function HistoryPage() {
             </motion.div>
 
             {/* Tabs */}
-            <motion.div variants={fadeInUp} className="flex gap-2 p-1 rounded-xl bg-muted/30">
+            <motion.div variants={fadeInUp} className="flex gap-2 p-1 rounded-xl bg-muted/30" role="tablist">
                 <button
+                    role="tab"
+                    aria-selected={activeTab === 'downloads'}
                     onClick={() => setActiveTab('downloads')}
                     className={cn(
-                        'flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg transition-all',
+                        'flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg transition-all focus-visible:ring-2 focus-visible:ring-white/50 outline-none',
                         activeTab === 'downloads'
                             ? 'bg-white text-black font-semibold'
                             : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
                     )}
                 >
-                    <Video className="w-5 h-5" />
+                    <Video className="w-5 h-5" aria-hidden="true" />
                     <span className="font-medium">Downloads</span>
                     <span className="text-xs opacity-70">({downloads.length})</span>
                 </button>
                 <button
+                    role="tab"
+                    aria-selected={activeTab === 'searches'}
                     onClick={() => setActiveTab('searches')}
                     className={cn(
-                        'flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg transition-all',
+                        'flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg transition-all focus-visible:ring-2 focus-visible:ring-white/50 outline-none',
                         activeTab === 'searches'
                             ? 'bg-white text-black font-semibold'
                             : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
                     )}
                 >
-                    <Search className="w-5 h-5" />
+                    <Search className="w-5 h-5" aria-hidden="true" />
                     <span className="font-medium">Search History</span>
                     <span className="text-xs opacity-70">({searchHistory.length})</span>
                 </button>
@@ -414,13 +418,15 @@ export function HistoryPage() {
 
                 {/* Filter buttons (for downloads) */}
                 {activeTab === 'downloads' && (
-                    <div className="flex items-center gap-1 glass rounded-xl p-1">
+                    <div className="flex items-center gap-1 glass rounded-xl p-1" role="radiogroup" aria-label="Filter downloads">
                         {(['all', 'completed', 'failed'] as const).map((status) => (
                             <button
                                 key={status}
+                                role="radio"
+                                aria-checked={filterStatus === status}
                                 onClick={() => setFilterStatus(status)}
                                 className={cn(
-                                    'px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all',
+                                    'px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all focus-visible:ring-2 focus-visible:ring-white/50 outline-none',
                                     filterStatus === status
                                         ? 'bg-white text-black'
                                         : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
