@@ -120,6 +120,12 @@ pub async fn open_with_external_player(file_path: String, player_path: Option<St
         Some(player) => {
             // Use custom player
             let player_file = std::path::Path::new(&player);
+
+            // Security: Enforce absolute path to prevent ACE via PATH manipulation
+            if !player_file.is_absolute() {
+                return Err(format!("Player path must be an absolute path for security reasons: {}", player));
+            }
+
             if !player_file.exists() {
                 return Err(format!("Player not found: {}", player));
             }
