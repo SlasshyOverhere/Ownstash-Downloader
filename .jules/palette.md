@@ -1,0 +1,3 @@
+## 2024-05-24 - Add ARIA Roles to Interactive List Selections
+**Learning:** Custom interactive lists/grids (like quality or format selectors) built with standard `<button>` tags lack the semantic meaning of radio buttons. Screen readers don't announce them as part of a group or indicate their selection state without explicit ARIA attributes. Additionally, lacking `focus-visible` styles makes them hard to navigate via keyboard.
+**Action:** When creating custom radio groups or tab lists using generic elements (`<div>`, `<button>`), always add `role="radiogroup"` to the container, `role="radio"` and `aria-checked` to the items, and include `focus-visible` utility classes for keyboard accessibility.
