@@ -21,8 +21,14 @@ pub async fn open_folder(path: String, file_name: Option<String>) -> Result<(), 
 
     // Determine the actual path to use
     let actual_path = if let Some(ref name) = file_name {
+        // Security: Prevent path traversal by extracting only the filename
+        let safe_name = std::path::Path::new(name)
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or("");
+
         // If file_name is provided, construct full path
-        let file_path = base_path.join(name);
+        let file_path = base_path.join(safe_name);
         if file_path.exists() {
             file_path
         } else {
