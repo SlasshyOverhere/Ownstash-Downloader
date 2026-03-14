@@ -462,11 +462,16 @@ export function MediaInfoModal({
 
                                 {/* Download Mode Toggle - Only for media streams */}
                                 {!isDirectFile && (
-                                    <div className="flex gap-2 p-1 rounded-xl bg-muted/50 mb-4">
+                                    <div
+                                        className="flex gap-2 p-1 rounded-xl bg-muted/50 mb-4"
+                                        role="tablist"
+                                    >
                                         <button
+                                            role="tab"
+                                            aria-selected={downloadMode === 'video'}
                                             onClick={() => setDownloadMode('video')}
                                             className={cn(
-                                                'flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg transition-all text-sm',
+                                                'flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg transition-all text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                                                 downloadMode === 'video'
                                                     ? 'bg-white text-black font-semibold'
                                                     : 'text-muted-foreground hover:bg-white/5'
@@ -476,9 +481,11 @@ export function MediaInfoModal({
                                             <span className="font-medium">Video</span>
                                         </button>
                                         <button
+                                            role="tab"
+                                            aria-selected={downloadMode === 'audio'}
                                             onClick={() => setDownloadMode('audio')}
                                             className={cn(
-                                                'flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg transition-all text-sm',
+                                                'flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg transition-all text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                                                 downloadMode === 'audio'
                                                     ? 'bg-white text-black font-semibold'
                                                     : 'text-muted-foreground hover:bg-white/5'
@@ -501,17 +508,19 @@ export function MediaInfoModal({
                                                 </span>
                                             )}
                                         </div>
-                                        <div className="grid grid-cols-3 gap-2">
+                                        <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Quality">
                                             {qualityOptions.map((option) => {
                                                 const isDisabled = !isQualityAvailable(mediaInfo.formats, option.value);
 
                                                 return (
                                                     <button
                                                         key={option.value}
+                                                        role="radio"
+                                                        aria-checked={selectedQuality === option.value}
                                                         onClick={() => !isDisabled && setSelectedQuality(option.value)}
                                                         disabled={isDisabled}
                                                         className={cn(
-                                                            'p-2 rounded-lg border transition-all text-left',
+                                                            'p-2 rounded-lg border transition-all text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                                                             isDisabled
                                                                 ? 'border-white/5 opacity-40 cursor-not-allowed'
                                                                 : selectedQuality === option.value
@@ -539,13 +548,15 @@ export function MediaInfoModal({
                                 {!isDirectFile && downloadMode === 'video' && (
                                     <div className="mb-4">
                                         <h3 className="text-xs font-medium text-muted-foreground mb-2">Output Format</h3>
-                                        <div className="grid grid-cols-3 gap-2">
+                                        <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Output Format">
                                             {videoFormatOptions.map((option) => (
                                                 <button
                                                     key={option.value}
+                                                    role="radio"
+                                                    aria-checked={videoFormat === option.value}
                                                     onClick={() => setVideoFormat(option.value)}
                                                     className={cn(
-                                                        'p-2 rounded-lg border transition-all text-left',
+                                                        'p-2 rounded-lg border transition-all text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                                                         videoFormat === option.value
                                                             ? 'border-white bg-white/10'
                                                             : 'border-white/10 hover:border-white/20'
@@ -568,13 +579,15 @@ export function MediaInfoModal({
                                 {!isDirectFile && downloadMode === 'audio' && (
                                     <div className="mb-4">
                                         <h3 className="text-xs font-medium text-muted-foreground mb-2">Audio Quality</h3>
-                                        <div className="grid grid-cols-4 gap-2">
+                                        <div className="grid grid-cols-4 gap-2" role="radiogroup" aria-label="Audio Quality">
                                             {audioQualityOptions.map((option) => (
                                                 <button
                                                     key={option.value}
+                                                    role="radio"
+                                                    aria-checked={audioQuality === option.value}
                                                     onClick={() => setAudioQuality(option.value)}
                                                     className={cn(
-                                                        'p-2 rounded-lg border transition-all text-left',
+                                                        'p-2 rounded-lg border transition-all text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                                                         audioQuality === option.value
                                                             ? 'border-white bg-white/10'
                                                             : 'border-white/10 hover:border-white/20'
@@ -597,13 +610,15 @@ export function MediaInfoModal({
                                 {!isDirectFile && downloadMode === 'audio' && (
                                     <div className="mb-4">
                                         <h3 className="text-xs font-medium text-muted-foreground mb-2">Audio Format</h3>
-                                        <div className="grid grid-cols-5 gap-2">
+                                        <div className="grid grid-cols-5 gap-2" role="radiogroup" aria-label="Audio Format">
                                             {audioFormatOptions.map((option) => (
                                                 <button
                                                     key={option.value}
+                                                    role="radio"
+                                                    aria-checked={audioFormat === option.value}
                                                     onClick={() => setAudioFormat(option.value)}
                                                     className={cn(
-                                                        'p-2 rounded-lg border transition-all text-center',
+                                                        'p-2 rounded-lg border transition-all text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                                                         audioFormat === option.value
                                                             ? 'border-white bg-white/10'
                                                             : 'border-white/10 hover:border-white/20'
