@@ -105,7 +105,9 @@ fn get_vault_files_dir(app_handle: &AppHandle) -> PathBuf {
 }
 
 fn sanitize_file_name(value: &str, fallback: &str) -> String {
-    PathBuf::from(value)
+    // Normalize path separators to prevent cross-OS path traversal
+    let normalized = value.replace('\\', "/");
+    PathBuf::from(&normalized)
         .file_name()
         .and_then(|name| name.to_str())
         .filter(|name| !name.is_empty() && *name != "." && *name != "..")
@@ -1954,4 +1956,20 @@ pub async fn vault_convert_to_folder(
     
     println!("[Vault] Converted successfully. Found {} entries.", entries.len());
     Ok(entries)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sanitize_file_name() {
+        assert_eq!(sanitize_file_name("valid.txt", "fallback"), "valid.txt");
+        assert_eq!(sanitize_file_name("path/to/file.txt", "fallback"), "file.txt");
+        assert_eq!(sanitize_file_name("C:\\Windows\\System32\\cmd.exe", "fallback"), "cmd.exe");
+        assert_eq!(sanitize_file_name("..\\..\\etc\\passwd", "fallback"), "passwd");
+        assert_eq!(sanitize_file_name("..", "fallback"), "fallback");
+        assert_eq!(sanitize_file_name(".", "fallback"), "fallback");
+        assert_eq!(sanitize_file_name("", "fallback"), "fallback");
+    }
 }
