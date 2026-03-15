@@ -14,6 +14,7 @@ import {
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import api from '@/services/api';
+import { confirm } from '@tauri-apps/plugin-dialog';
 
 // Define plugin status types
 type PluginStatus = 'not_installed' | 'installing' | 'installed' | 'error';
@@ -103,7 +104,7 @@ export function AddonsPage() {
   };
 
   const handleUninstall = async (addonId: string) => {
-    if (!confirm('Are you sure you want to uninstall this add-on? This action cannot be undone.')) {
+    if (!(await confirm('Are you sure you want to uninstall this add-on? This action cannot be undone.'))) {
       return;
     }
 
@@ -130,7 +131,7 @@ export function AddonsPage() {
   };
 
   const handleReinstall = async (addonId: string) => {
-    if (!confirm('Are you sure you want to reinstall this add-on? This will remove the current installation and install fresh.')) {
+    if (!(await confirm('Are you sure you want to reinstall this add-on? This will remove the current installation and install fresh.'))) {
       return;
     }
 
