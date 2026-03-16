@@ -1,0 +1,4 @@
+## 2024-05-24 - Fix Arbitrary Code Execution in open_with_external_player
+**Vulnerability:** The `open_with_external_player` Tauri command takes `player_path: Option<String>` directly from the frontend and uses `Command::new(&player_path)` without any validation. Since the frontend provides the full absolute path, an attacker who controls the frontend could supply arbitrary absolute paths (e.g., `cmd.exe` or `bash`) and execute arbitrary code.
+**Learning:** Using `std::process::Command::new()` in Rust with user-provided executable paths is a vector for Arbitrary Code Execution (ACE), even if `Path::exists()` is checked.
+**Prevention:** Avoid allowing the frontend to specify absolute executable paths. Instead, validate absolute paths and signatures, or use Tauri's scoped `shell` plugin. Or, require the user to configure custom players in the backend settings rather than relying on frontend input for the path.
