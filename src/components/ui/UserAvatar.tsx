@@ -37,7 +37,7 @@ export function UserAvatar({ photoURL, displayName, email, size = 'md', classNam
             {hasValidPhoto ? (
                 <img
                     src={photoURL!}
-                    alt=""
+                    alt={displayName || email || "User avatar"}
                     className="w-full h-full rounded-full object-cover"
                     onError={() => setImageError(true)}
                 />
