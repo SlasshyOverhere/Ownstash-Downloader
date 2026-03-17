@@ -1,0 +1,3 @@
+## 2024-05-24 - Custom Tabs Accessibility
+**Learning:** Custom interactive UI elements like the Download Mode toggle ("Video" vs "Audio Only") built from `div` and `button` elements are inaccessible by default. Screen readers won't announce them correctly and keyboard navigation provides no visual feedback.
+**Action:** When building custom toggle groups or tabs, always manually implement proper ARIA roles (`role="tablist"` on container, `role="tab"` on items), dynamic states (`aria-selected`), relationship attributes (`aria-controls`), and `focus-visible` utility classes for keyboard navigation.

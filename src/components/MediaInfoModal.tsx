@@ -462,11 +462,18 @@ export function MediaInfoModal({
 
                                 {/* Download Mode Toggle - Only for media streams */}
                                 {!isDirectFile && (
-                                    <div className="flex gap-2 p-1 rounded-xl bg-muted/50 mb-4">
+                                    <div
+                                        role="tablist"
+                                        aria-label="Download mode"
+                                        className="flex gap-2 p-1 rounded-xl bg-muted/50 mb-4"
+                                    >
                                         <button
+                                            role="tab"
+                                            aria-selected={downloadMode === 'video'}
+                                            aria-controls="options-panel"
                                             onClick={() => setDownloadMode('video')}
                                             className={cn(
-                                                'flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg transition-all text-sm',
+                                                'flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg transition-all text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-black',
                                                 downloadMode === 'video'
                                                     ? 'bg-white text-black font-semibold'
                                                     : 'text-muted-foreground hover:bg-white/5'
@@ -476,9 +483,12 @@ export function MediaInfoModal({
                                             <span className="font-medium">Video</span>
                                         </button>
                                         <button
+                                            role="tab"
+                                            aria-selected={downloadMode === 'audio'}
+                                            aria-controls="options-panel"
                                             onClick={() => setDownloadMode('audio')}
                                             className={cn(
-                                                'flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg transition-all text-sm',
+                                                'flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg transition-all text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-black',
                                                 downloadMode === 'audio'
                                                     ? 'bg-white text-black font-semibold'
                                                     : 'text-muted-foreground hover:bg-white/5'
@@ -492,7 +502,7 @@ export function MediaInfoModal({
 
                                 {/* Quality Selection */}
                                 {!isDirectFile && downloadMode === 'video' && (
-                                    <div className="mb-4">
+                                    <div id="options-panel" className="mb-4">
                                         <div className="flex items-center justify-between mb-2">
                                             <h3 className="text-xs font-medium text-muted-foreground">Quality</h3>
                                             {maxVideoHeight > 0 && (
@@ -621,7 +631,7 @@ export function MediaInfoModal({
 
                                 {/* Options - only for media streams */}
                                 {!isDirectFile && (
-                                    <div className="mb-4">
+                                    <div id={downloadMode === 'audio' ? 'options-panel' : undefined} className="mb-4">
                                         <h3 className="text-xs font-medium text-muted-foreground mb-2">Options</h3>
                                         <div className="space-y-2">
                                             <label className="flex items-center justify-between p-2.5 rounded-lg border border-white/10 cursor-pointer hover:bg-white/5 transition-colors">
