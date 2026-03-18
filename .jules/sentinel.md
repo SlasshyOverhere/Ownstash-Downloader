@@ -1,0 +1,4 @@
+## 2024-06-25 - Arbitrary Code Execution via External Player Path
+**Vulnerability:** The `open_with_external_player` Tauri command previously accepted an arbitrary `player_path: Option<String>` from the frontend. This path was then executed using `std::process::Command::new()`, allowing an attacker or compromised frontend script to run arbitrary executables on the host machine.
+**Learning:** Passing executable paths from the frontend to the backend to be spawned in a shell/process is inherently dangerous, even if the user manually configured it via the UI previously.
+**Prevention:** Instead of passing the configuration payload from the frontend to the backend, the backend should independently and securely query the user configuration (e.g. via `db.get_setting("external_player_path")`) from the `AppState` to determine the executable path.

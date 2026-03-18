@@ -109,13 +109,16 @@ fn open_path_in_explorer(path: &std::path::Path) -> Result<(), String> {
 /// Open a file with an external player
 /// If player_path is provided, use that specific player; otherwise use system default
 #[tauri::command]
-pub async fn open_with_external_player(file_path: String, player_path: Option<String>) -> Result<(), String> {
+pub async fn open_with_external_player(state: tauri::State<'_, AppState>, file_path: String) -> Result<(), String> {
     let file = std::path::Path::new(&file_path);
     
     if !file.exists() {
         return Err(format!("File does not exist: {}", file_path));
     }
     
+    let db = state.db.lock().map_err(|_| "Failed to lock database".to_string())?;
+    let player_path = db.get_setting("external_player_path").unwrap_or(None);
+
     match player_path {
         Some(player) => {
             // Use custom player
