@@ -1,0 +1,3 @@
+## 2024-05-24 - Add Native Confirmation Dialog for Destructive Actions
+**Learning:** Using `@tauri-apps/plugin-dialog` `confirm` function provides a non-blocking native OS dialog. It's much better than the browser's blocking `window.confirm`.
+**Action:** When implementing confirmation dialogs in Tauri frontends, always use the `confirm` function from `@tauri-apps/plugin-dialog` to trigger a non-blocking native OS dialog, rather than using the browser's blocking `window.confirm`.
