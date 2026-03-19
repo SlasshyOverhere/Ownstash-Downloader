@@ -1,0 +1,3 @@
+## 2024-03-19 - ARIA roles for custom interactive elements
+**Learning:** Custom interactive elements that act as mutually exclusive options (like format or quality selectors in a modal) require `role="radiogroup"` on the container and `role="radio"` with `aria-checked` on the individual items for screen readers to understand them. Additionally, `focus-visible` utility classes are needed to ensure keyboard navigation works properly, especially since these custom controls might not have default focus rings.
+**Action:** Always implement `role="radiogroup"`, `role="radio"`, dynamic `aria-checked`, and `focus-visible` classes on custom grids/lists of selectable options.
