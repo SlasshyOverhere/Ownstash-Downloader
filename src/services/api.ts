@@ -307,8 +307,8 @@ export const api = {
         return invoke('play_file', { path, title });
     },
 
-    async openWithExternalPlayer(filePath: string, playerPath?: string): Promise<void> {
-        return invoke('open_with_external_player', { filePath, playerPath });
+    async openWithExternalPlayer(filePath: string): Promise<void> {
+        return invoke('open_with_external_player', { filePath });
     },
 
     async findMediaFile(path: string, title: string): Promise<MediaFileInfo> {
