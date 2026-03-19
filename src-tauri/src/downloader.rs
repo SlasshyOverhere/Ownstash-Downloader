@@ -1442,17 +1442,17 @@ pub async fn get_default_download_path(app_handle: AppHandle) -> Result<String, 
 #[tauri::command]
 pub async fn get_download_folder_size(path: String) -> Result<i64, String> {
     use std::fs;
-    use std::path::Path;
+    use std::path::PathBuf;
     
-    fn calculate_dir_size(path: &Path) -> std::io::Result<u64> {
+    fn calculate_dir_size(path: &std::path::Path) -> std::io::Result<u64> {
         let mut total_size = 0u64;
         
         if path.is_dir() {
             for entry in fs::read_dir(path)? {
                 let entry = entry?;
-                let path = entry.path();
-                if path.is_dir() {
-                    total_size += calculate_dir_size(&path)?;
+                let entry_path = entry.path();
+                if entry_path.is_dir() {
+                    total_size += calculate_dir_size(&entry_path)?;
                 } else {
                     total_size += entry.metadata()?.len();
                 }
@@ -1464,12 +1464,18 @@ pub async fn get_download_folder_size(path: String) -> Result<i64, String> {
         Ok(total_size)
     }
     
-    let path = Path::new(&path);
-    if !path.exists() {
-        return Ok(0);
-    }
-    
-    calculate_dir_size(path)
-        .map(|size| size as i64)
-        .map_err(|e| format!("Failed to calculate folder size: {}", e))
+    // ⚡ Bolt: Offload recursive synchronous FS operations to Tokio's blocking thread pool
+    // to prevent starvation of the async runtime, improving responsiveness.
+    tokio::task::spawn_blocking(move || {
+        let p = PathBuf::from(path);
+        if !p.exists() {
+            return Ok(0);
+        }
+
+        calculate_dir_size(&p)
+            .map(|size| size as i64)
+            .map_err(|e| format!("Failed to calculate folder size: {}", e))
+    })
+    .await
+    .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
 }

@@ -1,0 +1,3 @@
+## 2024-06-25 - Offload recursive synchronous FS traversal to blocking thread pool
+**Learning:** In Tauri async commands (using Tokio), performing synchronous recursive filesystem operations (like `std::fs::read_dir` and `fs::metadata` for calculating folder sizes) blocks the underlying Tokio worker thread. Since Tauri spawns async commands on the main async runtime, blocking these threads can cause other async tasks and UI events to hang or respond slowly.
+**Action:** Always wrap heavy synchronous filesystem operations (especially recursive ones like folder size calculation) in `tokio::task::spawn_blocking` to execute them on Tokio's dedicated blocking thread pool, preventing thread starvation and ensuring UI responsiveness.
