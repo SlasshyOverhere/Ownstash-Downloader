@@ -138,12 +138,12 @@ const DownloadHistoryCard = memo(function DownloadHistoryCard({ item, onDelete, 
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                     {item.path && (
                         <button
                             onClick={() => onOpenFolder(item.path)}
                             aria-label="Open download folder"
-                            className="p-2 rounded-lg hover:bg-primary/20 text-primary transition-colors"
+                            className="p-2 rounded-lg hover:bg-primary/20 text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                             title="Open download folder"
                         >
                             <FolderOpen className="w-4 h-4" />
@@ -155,7 +155,7 @@ const DownloadHistoryCard = memo(function DownloadHistoryCard({ item, onDelete, 
                             toast.success('URL copied to clipboard');
                         }}
                         aria-label="Copy URL"
-                        className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+                        className="p-2 rounded-lg hover:bg-white/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                         title="Copy URL"
                     >
                         <Copy className="w-4 h-4" />
@@ -163,7 +163,7 @@ const DownloadHistoryCard = memo(function DownloadHistoryCard({ item, onDelete, 
                     <button
                         onClick={() => onDelete(item.id)}
                         aria-label="Delete from history"
-                        className="p-2 rounded-lg hover:bg-destructive/20 text-destructive transition-colors"
+                        className="p-2 rounded-lg hover:bg-destructive/20 text-destructive transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                         title="Delete from history"
                     >
                         <Trash2 className="w-4 h-4" />
@@ -191,8 +191,16 @@ const SearchHistoryCard = memo(function SearchHistoryCard({ item, onSelect }: Se
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, x: -100 }}
-            className="glass-hover rounded-2xl p-4 border-glow group cursor-pointer"
+            className="glass-hover rounded-2xl p-4 border-glow group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             onClick={() => onSelect(item.query)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelect(item.query);
+                }
+            }}
         >
             <div className="flex items-center gap-4">
                 {/* Thumbnail */}
@@ -223,7 +231,7 @@ const SearchHistoryCard = memo(function SearchHistoryCard({ item, onSelect }: Se
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                     <button
                         onClick={(e) => {
                             e.stopPropagation();
@@ -231,7 +239,7 @@ const SearchHistoryCard = memo(function SearchHistoryCard({ item, onSelect }: Se
                             toast.success('URL copied to clipboard');
                         }}
                         aria-label="Copy URL"
-                        className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+                        className="p-2 rounded-lg hover:bg-white/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                         title="Copy URL"
                     >
                         <Copy className="w-4 h-4" />
@@ -242,7 +250,7 @@ const SearchHistoryCard = memo(function SearchHistoryCard({ item, onSelect }: Se
                             window.open(item.query, '_blank');
                         }}
                         aria-label="Open URL"
-                        className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+                        className="p-2 rounded-lg hover:bg-white/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                         title="Open URL"
                     >
                         <ExternalLink className="w-4 h-4" />
@@ -369,11 +377,13 @@ export function HistoryPage() {
             </motion.div>
 
             {/* Tabs */}
-            <motion.div variants={fadeInUp} className="flex gap-2 p-1 rounded-xl bg-muted/30">
+            <motion.div variants={fadeInUp} className="flex gap-2 p-1 rounded-xl bg-muted/30" role="tablist" aria-label="History categories">
                 <button
+                    role="tab"
+                    aria-selected={activeTab === 'downloads'}
                     onClick={() => setActiveTab('downloads')}
                     className={cn(
-                        'flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg transition-all',
+                        'flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                         activeTab === 'downloads'
                             ? 'bg-white text-black font-semibold'
                             : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
@@ -384,9 +394,11 @@ export function HistoryPage() {
                     <span className="text-xs opacity-70">({downloads.length})</span>
                 </button>
                 <button
+                    role="tab"
+                    aria-selected={activeTab === 'searches'}
                     onClick={() => setActiveTab('searches')}
                     className={cn(
-                        'flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg transition-all',
+                        'flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                         activeTab === 'searches'
                             ? 'bg-white text-black font-semibold'
                             : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
@@ -414,13 +426,15 @@ export function HistoryPage() {
 
                 {/* Filter buttons (for downloads) */}
                 {activeTab === 'downloads' && (
-                    <div className="flex items-center gap-1 glass rounded-xl p-1">
+                    <div className="flex items-center gap-1 glass rounded-xl p-1" role="radiogroup" aria-label="Filter downloads">
                         {(['all', 'completed', 'failed'] as const).map((status) => (
                             <button
                                 key={status}
+                                role="radio"
+                                aria-checked={filterStatus === status}
                                 onClick={() => setFilterStatus(status)}
                                 className={cn(
-                                    'px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all',
+                                    'px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                                     filterStatus === status
                                         ? 'bg-white text-black'
                                         : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
