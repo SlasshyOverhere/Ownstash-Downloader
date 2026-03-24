@@ -107,17 +107,25 @@ fn open_path_in_explorer(path: &std::path::Path) -> Result<(), String> {
 }
 
 /// Open a file with an external player
-/// If player_path is provided, use that specific player; otherwise use system default
+/// If player_path is configured in the database, use that specific player; otherwise use system default
 #[tauri::command]
-pub async fn open_with_external_player(file_path: String, player_path: Option<String>) -> Result<(), String> {
+pub async fn open_with_external_player(
+    state: State<'_, AppState>,
+    file_path: String,
+) -> Result<(), String> {
     let file = std::path::Path::new(&file_path);
     
     if !file.exists() {
         return Err(format!("File does not exist: {}", file_path));
     }
     
+    // Security Fix: Do not accept `player_path` from frontend.
+    // To prevent Arbitrary Code Execution (ACE), we fetch the path securely from the trusted backend config.
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let player_path = db.get_setting("external_player_path").map_err(|e| e.to_string())?;
+
     match player_path {
-        Some(player) => {
+        Some(player) if !player.trim().is_empty() => {
             // Use custom player
             let player_file = std::path::Path::new(&player);
             if !player_file.exists() {
@@ -141,7 +149,7 @@ pub async fn open_with_external_player(file_path: String, player_path: Option<St
                     .map_err(|e| format!("Failed to open with player: {}", e))?;
             }
         }
-        None => {
+        _ => {
             // Use system default
             open_file_with_default_app(file)?;
         }
