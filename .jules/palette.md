@@ -1,0 +1,3 @@
+## 2024-03-24 - Make hover-revealed action elements accessible
+**Learning:** Elements that rely on `opacity-0 group-hover:opacity-100` for visual reveal on hover create accessibility issues for keyboard-only users, as they cannot hover. Even if child buttons are keyboard focusable, they remain invisible (opacity 0) while focused, making users blind to the action they might accidentally trigger.
+**Action:** Always pair `group-hover:opacity-100` with `focus-within:opacity-100` on the container so that tabbing into any of its child interactive elements correctly reveals the entire action group.
