@@ -1,0 +1,3 @@
+## 2024-03-24 - React Render Cycle Bypass for High-Frequency Animations
+**Learning:** For high-frequency events like `mousemove` that trigger rapid state updates, using React's `useState` can cause expensive and unnecessary re-renders that block the main thread.
+**Action:** Use a `useRef` to hold the DOM element and imperatively mutate its `style.transform` directly to bypass the React render cycle. Ensure that the imperatively mutated properties (like `transform`) are omitted from the component's React `style` prop, otherwise React will overwrite the imperative changes during unrelated renders.
