@@ -1,0 +1,4 @@
+## 2026-03-25 - Arbitrary Code Execution via Command::new
+**Vulnerability:** The `open_with_external_player` Tauri IPC command allowed the frontend to provide an arbitrary executable path via `player_path` that was directly passed into `std::process::Command::new()` and executed, enabling Arbitrary Code Execution.
+**Learning:** Relying on frontend-provided executable paths, even when validated loosely (e.g. checking file existence), compromises the security boundary. Attackers can supply absolute paths to dangerous binaries (like cmd.exe or /bin/sh).
+**Prevention:** External executable paths should strictly be resolved from the secure backend database (e.g., via `state.db.lock().unwrap().get_setting()`) instead of accepting them from IPC arguments. Frontends should only invoke the command.
