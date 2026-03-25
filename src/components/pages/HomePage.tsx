@@ -536,6 +536,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                                 }}
                                 onKeyDown={handleKeyDown}
                                 placeholder="Paste URL here..."
+                                aria-label="Media URL to download"
                                 className={cn(
                                     'flex-1 bg-transparent border-none outline-none text-lg',
                                     'placeholder:text-muted-foreground/50'

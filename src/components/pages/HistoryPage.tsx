@@ -13,7 +13,8 @@ import {
     Loader2,
     ExternalLink,
     Copy,
-    FolderOpen
+    FolderOpen,
+    X
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { staggerContainer, staggerItem, fadeInUp } from '@/lib/animations';
@@ -402,14 +403,25 @@ export function HistoryPage() {
             <motion.div variants={fadeInUp} className="flex gap-3">
                 {/* Search */}
                 <div className="flex-1 relative">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground pointer-events-none" />
                     <input
                         type="text"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder={`Search ${activeTab}...`}
-                        className="w-full h-12 pl-12 pr-4 rounded-xl glass bg-transparent border-none outline-none focus:ring-2 focus:ring-primary/50"
+                        aria-label={`Search ${activeTab}`}
+                        className="w-full h-12 pl-12 pr-12 rounded-xl glass bg-transparent border-none outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                     />
+                    {searchQuery && (
+                        <button
+                            onClick={() => setSearchQuery('')}
+                            className="absolute right-4 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground rounded-lg hover:bg-white/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                            aria-label="Clear search"
+                            title="Clear search"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    )}
                 </div>
 
                 {/* Filter buttons (for downloads) */}
