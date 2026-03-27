@@ -1,0 +1,3 @@
+## 2024-06-25 - React re-renders from rapid state updates in hooks
+**Learning:** High-frequency animations (like mouse movement tracking in `use3DTilt`) cause excessive component re-renders when using `useState` for rapid state updates.
+**Action:** Bypass the React render cycle by avoiding `useState` for rapid state updates. Instead, use a `useRef` to hold the DOM element and directly mutate its `style.transform` property to prevent excessive and expensive component re-renders.
