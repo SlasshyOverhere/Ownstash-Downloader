@@ -20,6 +20,7 @@ import { use3DTilt } from '@/hooks/use3DTilt';
 import { toast } from 'sonner';
 import api, { Download as DownloadType, DownloadProgress, SpotifyDownloadProgress, formatBytes } from '@/services/api';
 import { MediaPlayer } from '@/components/MediaPlayer';
+import { confirm } from '@tauri-apps/plugin-dialog';
 
 interface DownloadItem extends DownloadType {
     progress?: number;
@@ -394,6 +395,8 @@ export function DownloadsPage() {
 
     const handleClearAll = useCallback(async () => {
         try {
+            const confirmed = await confirm('Are you sure you want to clear all downloads?', { title: 'Clear Downloads', kind: 'warning' });
+            if (!confirmed) return;
             await api.clearDownloads();
             setDownloads([]);
             setProgressMap(new Map());
