@@ -408,19 +408,25 @@ export function HistoryPage() {
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder={`Search ${activeTab}...`}
+                        aria-label="Search history"
                         className="w-full h-12 pl-12 pr-4 rounded-xl glass bg-transparent border-none outline-none focus:ring-2 focus:ring-primary/50"
                     />
                 </div>
 
                 {/* Filter buttons (for downloads) */}
                 {activeTab === 'downloads' && (
-                    <div className="flex items-center gap-1 glass rounded-xl p-1">
+                    <div
+                        className="flex items-center gap-1 glass rounded-xl p-1"
+                        role="group"
+                        aria-label="Filter downloads by status"
+                    >
                         {(['all', 'completed', 'failed'] as const).map((status) => (
                             <button
                                 key={status}
                                 onClick={() => setFilterStatus(status)}
+                                aria-pressed={filterStatus === status}
                                 className={cn(
-                                    'px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all',
+                                    'px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all focus-visible:ring-2 focus-visible:ring-white/30 outline-none',
                                     filterStatus === status
                                         ? 'bg-white text-black'
                                         : 'text-muted-foreground hover:text-foreground hover:bg-white/5'

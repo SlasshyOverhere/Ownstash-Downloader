@@ -485,6 +485,7 @@ export function DownloadsPage() {
                     <div className="flex items-center gap-2">
                         <button
                             onClick={loadDownloads}
+                            aria-label="Refresh downloads"
                             className="px-4 py-2 rounded-xl glass-hover text-sm font-medium flex items-center gap-2"
                         >
                             <RefreshCw className={cn('w-4 h-4', isLoading && 'animate-spin')} />
@@ -493,6 +494,7 @@ export function DownloadsPage() {
                         {downloads.length > 0 && (
                             <button
                                 onClick={handleClearAll}
+                                aria-label="Clear all downloads"
                                 className="px-4 py-2 rounded-xl glass-hover text-sm font-medium text-red-400"
                             >
                                 Clear All

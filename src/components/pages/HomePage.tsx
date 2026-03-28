@@ -536,6 +536,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                                 }}
                                 onKeyDown={handleKeyDown}
                                 placeholder="Paste URL here..."
+                                aria-label="Media URL"
                                 className={cn(
                                     'flex-1 bg-transparent border-none outline-none text-lg',
                                     'placeholder:text-muted-foreground/50'
@@ -564,6 +565,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                                     !url.trim() ||
                                     isLoading
                                 }
+                                aria-label={isSpotify ? 'Fetch Spotify info' : 'Fetch media info'}
                                 className={cn(
                                     'btn-neon flex items-center gap-2',
                                     'disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100',
