@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, MouseEvent } from 'react';
+import { useRef, useCallback, MouseEvent } from 'react';
 
 interface TiltState {
     rotateX: number;
@@ -24,7 +24,7 @@ export function use3DTilt(options: Use3DTiltOptions = {}) {
     const ref = useRef<HTMLDivElement>(null);
     const animationFrameRef = useRef<number | null>(null);
     const latestTiltRef = useRef<TiltState>({ rotateX: 0, rotateY: 0, scale: 1 });
-    const [tilt, setTilt] = useState<TiltState>({ rotateX: 0, rotateY: 0, scale: 1 });
+    // Removed useState to bypass React's render cycle for high-frequency animations
 
     const scheduleTiltUpdate = useCallback((nextTilt: TiltState) => {
         latestTiltRef.current = nextTilt;
@@ -35,9 +35,12 @@ export function use3DTilt(options: Use3DTiltOptions = {}) {
 
         animationFrameRef.current = requestAnimationFrame(() => {
             animationFrameRef.current = null;
-            setTilt(latestTiltRef.current);
+            if (ref.current) {
+                // Direct DOM mutation avoids expensive component re-renders
+                ref.current.style.transform = `perspective(${perspective}px) rotateX(${latestTiltRef.current.rotateX}deg) rotateY(${latestTiltRef.current.rotateY}deg) scale(${latestTiltRef.current.scale})`;
+            }
         });
-    }, []);
+    }, [perspective]);
 
     const handleMouseMove = useCallback((e: MouseEvent<HTMLDivElement>) => {
         if (!ref.current) return;
@@ -75,11 +78,13 @@ export function use3DTilt(options: Use3DTiltOptions = {}) {
         }
         const resetTilt = { rotateX: 0, rotateY: 0, scale: 1 };
         latestTiltRef.current = resetTilt;
-        setTilt(resetTilt);
-    }, []);
+        if (ref.current) {
+            ref.current.style.transform = `perspective(${perspective}px) rotateX(0deg) rotateY(0deg) scale(1)`;
+        }
+    }, [perspective]);
 
     const tiltStyle = {
-        transform: `perspective(${perspective}px) rotateX(${tilt.rotateX}deg) rotateY(${tilt.rotateY}deg) scale(${tilt.scale})`,
+        // transform is excluded from React styles to avoid overwriting imperative changes
         transition: `transform ${speed}ms cubic-bezier(0.03, 0.98, 0.52, 0.99)`,
     };
 

@@ -1,0 +1,3 @@
+## 2024-05-24 - Bypass React Render Cycle for High-Frequency Animations
+**Learning:** High-frequency events like mouse movement for animations (e.g., `use3DTilt`) trigger too many React re-renders when using `useState`, potentially blocking the main thread and slowing down the UI, especially for list-heavy components that rely heavily on `React.memo` like `DownloadsPage` and `HistoryPage`.
+**Action:** For rapid state updates, use a `useRef` to hold the DOM element and directly mutate `element.style.transform`. Make sure to exclude the mutated property from the React `style` object so it doesn't get overwritten during unrelated re-renders.
