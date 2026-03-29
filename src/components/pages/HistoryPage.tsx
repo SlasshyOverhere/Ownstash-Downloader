@@ -13,7 +13,8 @@ import {
     Loader2,
     ExternalLink,
     Copy,
-    FolderOpen
+    FolderOpen,
+    X
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { staggerContainer, staggerItem, fadeInUp } from '@/lib/animations';
@@ -405,11 +406,22 @@ export function HistoryPage() {
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                     <input
                         type="text"
+                        aria-label="Search history"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder={`Search ${activeTab}...`}
-                        className="w-full h-12 pl-12 pr-4 rounded-xl glass bg-transparent border-none outline-none focus:ring-2 focus:ring-primary/50"
+                        className="w-full h-12 pl-12 pr-12 rounded-xl glass bg-transparent border-none outline-none focus:ring-2 focus:ring-primary/50"
                     />
+                    {searchQuery && (
+                        <button
+                            onClick={() => setSearchQuery('')}
+                            aria-label="Clear search"
+                            className="absolute right-4 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                            title="Clear"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    )}
                 </div>
 
                 {/* Filter buttons (for downloads) */}

@@ -1,0 +1,3 @@
+## 2024-05-18 - Added Clear Search Button & ARIA Labels to Text Inputs
+**Learning:** Text inputs serving as search bars or main application actions frequently lack an easy way to clear them or adequate screen reader context. Users can be frustrated trying to backspace long search queries or URLs.
+**Action:** When working on inputs without associated visible `<label>` tags, ensure they have descriptive `aria-label`s. Also, for long text inputs like search bars, adding a conditionally rendered "Clear" button (`X` icon) drastically improves the usability of the text field. Ensure the clear button itself is keyboard accessible with `focus-visible` ring styling and an `aria-label`.

@@ -529,6 +529,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                             {/* Input */}
                             <input
                                 type="url"
+                                aria-label="Media URL"
                                 value={url}
                                 onChange={(e) => {
                                     setUrl(e.target.value);
