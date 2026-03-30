@@ -1,0 +1,4 @@
+## 2024-03-30 - Command Injection in open_path_in_explorer
+**Vulnerability:** In `src-tauri/src/commands.rs`, `open_path_in_explorer` on Windows uses `.raw_arg()` with `explorer.exe /select,<path>`. This bypasses Rust's standard argument escaping. If the path contains spaces or special characters, they are passed raw to the shell, introducing a command injection vulnerability.
+**Learning:** Using `.raw_arg()` to format paths for `explorer.exe` bypasses necessary escaping. Rust's `.arg()` properly handles quoting for strings with spaces and special characters. `explorer.exe /select,path` works perfectly fine using `.arg(format!("/select,{}", path))` without `.raw_arg()`.
+**Prevention:** Avoid `.raw_arg()` when passing user-influenced strings like file paths to external processes. Rely on `.arg()` and let the standard library handle proper escaping and quoting across OSes.
