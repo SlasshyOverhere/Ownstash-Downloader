@@ -1,0 +1,3 @@
+## 2024-05-24 - Bypass React Render Cycle for High-Frequency Animations
+**Learning:** Using `useState` to store properties like `rotateX`, `rotateY`, and `scale` for high-frequency events like `mousemove` causes extremely expensive React component re-renders. When these components are deeply nested or part of large lists (like `DownloadsPage` or `HistoryPage`), this can cause noticeable lag and jittery animations.
+**Action:** For high-frequency animations (e.g., mouse movement tracking), bypass the React render cycle entirely. Avoid `useState` for rapid state updates. Instead, use a `useRef` to hold the DOM element and directly mutate its `style.transform` property within a `requestAnimationFrame` callback to prevent excessive re-renders and main thread blocking.
