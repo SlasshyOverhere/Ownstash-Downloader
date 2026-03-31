@@ -1,0 +1,4 @@
+## 2025-02-28 - Arbitrary Code Execution (ACE) via Tauri `Command::new` using Frontend Supplied Path
+**Vulnerability:** A Tauri command `open_with_external_player` spawned a process using `Command::new(&player)` where `player` was an executable path provided directly by the frontend as a parameter `player_path`. This is a vector for Arbitrary Code Execution if an attacker exploits XSS to invoke the command with arbitrary executables.
+**Learning:** Never trust frontend-supplied file paths or names when launching processes via `std::process::Command` in a Tauri backend. Simple validation or existence checks do not mitigate the risk.
+**Prevention:** Executable paths must be securely retrieved directly from the backend state (e.g. database settings `state.db.lock().unwrap().get_setting("external_player_path")`) rather than accepted from frontend IPC arguments.
