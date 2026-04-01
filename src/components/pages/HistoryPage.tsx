@@ -138,7 +138,7 @@ const DownloadHistoryCard = memo(function DownloadHistoryCard({ item, onDelete, 
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                     {item.path && (
                         <button
                             onClick={() => onOpenFolder(item.path)}
@@ -223,7 +223,7 @@ const SearchHistoryCard = memo(function SearchHistoryCard({ item, onSelect }: Se
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                     <button
                         onClick={(e) => {
                             e.stopPropagation();
@@ -272,7 +272,7 @@ export function HistoryPage() {
             ]);
             setDownloads(dls);
             setSearchHistory(searches);
-        } catch (err) {
+        } catch {
             toast.error('Failed to load history');
         } finally {
             setIsLoading(false);
@@ -288,7 +288,7 @@ export function HistoryPage() {
             await api.deleteDownload(id);
             setDownloads(prev => prev.filter(d => d.id !== id));
             toast.success('Removed from history');
-        } catch (err) {
+        } catch {
             toast.error('Failed to delete');
         }
     }, []);
@@ -298,7 +298,7 @@ export function HistoryPage() {
             await api.clearDownloads();
             setDownloads([]);
             toast.success('Download history cleared');
-        } catch (err) {
+        } catch {
             toast.error('Failed to clear history');
         }
     }, []);
@@ -308,7 +308,7 @@ export function HistoryPage() {
             await api.clearSearchHistory();
             setSearchHistory([]);
             toast.success('Search history cleared');
-        } catch (err) {
+        } catch {
             toast.error('Failed to clear history');
         }
     }, []);
@@ -322,7 +322,7 @@ export function HistoryPage() {
     const handleOpenFolder = useCallback(async (path: string) => {
         try {
             await api.openFolder(path);
-        } catch (err) {
+        } catch {
             toast.error('Failed to open folder');
         }
     }, []);
@@ -369,11 +369,15 @@ export function HistoryPage() {
             </motion.div>
 
             {/* Tabs */}
-            <motion.div variants={fadeInUp} className="flex gap-2 p-1 rounded-xl bg-muted/30">
+            <motion.div variants={fadeInUp} className="flex gap-2 p-1 rounded-xl bg-muted/30" role="tablist" aria-label="History Categories">
                 <button
                     onClick={() => setActiveTab('downloads')}
+                    role="tab"
+                    aria-selected={activeTab === 'downloads'}
+                    id="tab-downloads"
+                    aria-controls="panel-downloads"
                     className={cn(
-                        'flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg transition-all',
+                        'flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                         activeTab === 'downloads'
                             ? 'bg-white text-black font-semibold'
                             : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
@@ -385,8 +389,12 @@ export function HistoryPage() {
                 </button>
                 <button
                     onClick={() => setActiveTab('searches')}
+                    role="tab"
+                    aria-selected={activeTab === 'searches'}
+                    id="tab-searches"
+                    aria-controls="panel-searches"
                     className={cn(
-                        'flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg transition-all',
+                        'flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                         activeTab === 'searches'
                             ? 'bg-white text-black font-semibold'
                             : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
@@ -419,8 +427,9 @@ export function HistoryPage() {
                             <button
                                 key={status}
                                 onClick={() => setFilterStatus(status)}
+                                aria-pressed={filterStatus === status}
                                 className={cn(
-                                    'px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all',
+                                    'px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                                     filterStatus === status
                                         ? 'bg-white text-black'
                                         : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
@@ -442,7 +451,13 @@ export function HistoryPage() {
 
             {/* Downloads List */}
             {!isLoading && activeTab === 'downloads' && (
-                <motion.div variants={staggerContainer} className="space-y-3">
+                <motion.div
+                    variants={staggerContainer}
+                    className="space-y-3"
+                    role="tabpanel"
+                    id="panel-downloads"
+                    aria-labelledby="tab-downloads"
+                >
                     {filteredDownloads.map(item => (
                         <DownloadHistoryCard
                             key={item.id}
@@ -456,7 +471,13 @@ export function HistoryPage() {
 
             {/* Search History List */}
             {!isLoading && activeTab === 'searches' && (
-                <motion.div variants={staggerContainer} className="space-y-3">
+                <motion.div
+                    variants={staggerContainer}
+                    className="space-y-3"
+                    role="tabpanel"
+                    id="panel-searches"
+                    aria-labelledby="tab-searches"
+                >
                     {filteredSearches.map(item => (
                         <SearchHistoryCard
                             key={item.id}

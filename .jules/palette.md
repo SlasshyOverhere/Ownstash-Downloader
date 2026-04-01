@@ -1,0 +1,3 @@
+## 2025-04-01 - History Page Accessibility Upgrades
+**Learning:** Custom interactive UI elements in this repository (e.g., custom tabs built from divs/buttons) lack proper ARIA roles (`role="tablist"`, `role="tab"`), dynamic states (`aria-selected`), and specific focus-visible utility classes for keyboard navigation. Hover-revealed action elements are also inaccessible via keyboard.
+**Action:** When working on custom interactive elements or hover states, ensure semantic HTML attributes are manually implemented and `focus-within:opacity-100` is applied alongside `focus-visible:ring-primary` for comprehensive keyboard accessibility.
