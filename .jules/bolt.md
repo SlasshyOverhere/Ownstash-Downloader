@@ -1,0 +1,3 @@
+## 2024-05-24 - React Render Cycle Bypass for High-Frequency Animations
+**Learning:** High-frequency events (like `mousemove` used in 3D tilt effects) trigger rapid state updates when using `useState`, causing excessive and expensive React component re-renders that can block the main thread and jank animations.
+**Action:** For continuous, high-frequency DOM style updates (like 3D tilt tracking mouse movement), bypass the React render cycle completely. Store the DOM element in a `useRef` and imperatively mutate its `style.transform` property within a `requestAnimationFrame` callback to achieve 60fps without triggering React renders.
