@@ -1,0 +1,4 @@
+## 2024-05-18 - Command Injection in Windows Explorer via `raw_arg`
+**Vulnerability:** The application used `.raw_arg()` in `std::process::Command` to invoke `explorer.exe /select,<path>` on Windows. This bypassed Rust's built-in argument quoting and escaping, creating a command injection vulnerability if a user-supplied file path contained special shell characters (e.g., `&` or `"`).
+**Learning:** `raw_arg` is explicitly dangerous because it instructs Rust not to quote or escape the argument. While the original author likely used it because `explorer.exe`'s `/select` syntax requires the comma attached without spaces, Rust's standard `.arg()` method correctly handles this syntax while safely quoting the entire argument string if needed.
+**Prevention:** Never use `.raw_arg()` for user-supplied or externally-sourced strings, especially file paths. Always use `.arg()`, which provides automatic, safe quoting and escaping across operating systems.

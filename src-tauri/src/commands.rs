@@ -54,12 +54,11 @@ fn open_path_in_explorer(path: &std::path::Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         if path.is_file() {
-            // Use raw_arg to bypass Rust's argument escaping
-            // explorer.exe /select,<path> needs the comma directly attached
+            // Use arg instead of raw_arg to prevent command injection. Rust's escaping handles spaces safely.
             let path_str = path.to_string_lossy().replace("/", "\\");
             let full_arg = format!("/select,{}", path_str);
             Command::new("explorer.exe")
-                .raw_arg(&full_arg)
+                .arg(&full_arg)
                 .spawn()
                 .map_err(|e| format!("Failed to open folder: {}", e))?;
         } else {
