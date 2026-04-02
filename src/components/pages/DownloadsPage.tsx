@@ -393,6 +393,8 @@ export function DownloadsPage() {
     }, []);
 
     const handleClearAll = useCallback(async () => {
+        if (!window.confirm('Are you sure you want to clear all downloads from your history? This will not delete the actual files.')) return;
+
         try {
             await api.clearDownloads();
             setDownloads([]);
