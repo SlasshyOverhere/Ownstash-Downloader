@@ -138,12 +138,12 @@ const DownloadHistoryCard = memo(function DownloadHistoryCard({ item, onDelete, 
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                     {item.path && (
                         <button
                             onClick={() => onOpenFolder(item.path)}
                             aria-label="Open download folder"
-                            className="p-2 rounded-lg hover:bg-primary/20 text-primary transition-colors"
+                            className="p-2 rounded-lg hover:bg-primary/20 text-primary transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                             title="Open download folder"
                         >
                             <FolderOpen className="w-4 h-4" />
@@ -155,7 +155,7 @@ const DownloadHistoryCard = memo(function DownloadHistoryCard({ item, onDelete, 
                             toast.success('URL copied to clipboard');
                         }}
                         aria-label="Copy URL"
-                        className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+                        className="p-2 rounded-lg hover:bg-white/10 transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                         title="Copy URL"
                     >
                         <Copy className="w-4 h-4" />
@@ -163,7 +163,7 @@ const DownloadHistoryCard = memo(function DownloadHistoryCard({ item, onDelete, 
                     <button
                         onClick={() => onDelete(item.id)}
                         aria-label="Delete from history"
-                        className="p-2 rounded-lg hover:bg-destructive/20 text-destructive transition-colors"
+                        className="p-2 rounded-lg hover:bg-destructive/20 text-destructive transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                         title="Delete from history"
                     >
                         <Trash2 className="w-4 h-4" />
@@ -223,7 +223,7 @@ const SearchHistoryCard = memo(function SearchHistoryCard({ item, onSelect }: Se
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                     <button
                         onClick={(e) => {
                             e.stopPropagation();
@@ -231,7 +231,7 @@ const SearchHistoryCard = memo(function SearchHistoryCard({ item, onSelect }: Se
                             toast.success('URL copied to clipboard');
                         }}
                         aria-label="Copy URL"
-                        className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+                        className="p-2 rounded-lg hover:bg-white/10 transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                         title="Copy URL"
                     >
                         <Copy className="w-4 h-4" />
@@ -242,7 +242,7 @@ const SearchHistoryCard = memo(function SearchHistoryCard({ item, onSelect }: Se
                             window.open(item.query, '_blank');
                         }}
                         aria-label="Open URL"
-                        className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+                        className="p-2 rounded-lg hover:bg-white/10 transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                         title="Open URL"
                     >
                         <ExternalLink className="w-4 h-4" />
@@ -294,6 +294,7 @@ export function HistoryPage() {
     }, []);
 
     const handleClearDownloads = useCallback(async () => {
+        if (!window.confirm('Are you sure you want to clear download history?')) return;
         try {
             await api.clearDownloads();
             setDownloads([]);
@@ -304,6 +305,7 @@ export function HistoryPage() {
     }, []);
 
     const handleClearSearchHistory = useCallback(async () => {
+        if (!window.confirm('Are you sure you want to clear search history?')) return;
         try {
             await api.clearSearchHistory();
             setSearchHistory([]);
@@ -361,7 +363,7 @@ export function HistoryPage() {
                 </div>
                 <button
                     onClick={activeTab === 'downloads' ? handleClearDownloads : handleClearSearchHistory}
-                    className="px-4 py-2 rounded-xl glass-hover text-sm font-medium text-destructive flex items-center gap-2"
+                    className="px-4 py-2 rounded-xl glass-hover text-sm font-medium text-destructive flex items-center gap-2 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 >
                     <Trash2 className="w-4 h-4" />
                     Clear {activeTab === 'downloads' ? 'Downloads' : 'Searches'}

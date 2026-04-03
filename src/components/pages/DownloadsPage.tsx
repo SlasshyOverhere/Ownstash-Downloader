@@ -144,7 +144,7 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
                                 <button
                                     onClick={() => onCancel(item.id)}
                                     aria-label="Cancel download"
-                                    className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+                                    className="p-2 rounded-lg hover:bg-white/10 transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                                     title="Cancel download"
                                 >
                                     <X className="w-4 h-4" />
@@ -154,7 +154,7 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
                                 <button
                                     onClick={() => onRetry(item)}
                                     aria-label="Retry download"
-                                    className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+                                    className="p-2 rounded-lg hover:bg-white/10 transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                                     title="Retry download"
                                 >
                                     <RefreshCw className="w-4 h-4" />
@@ -163,7 +163,7 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
                             <button
                                 onClick={() => onDelete(item.id)}
                                 aria-label="Remove from list"
-                                className="p-2 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors"
+                                className="p-2 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                                 title="Remove from list"
                             >
                                 <Trash2 className="w-4 h-4" />
@@ -222,7 +222,7 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
                                 {onPlay && item.path && (
                                     <button
                                         onClick={() => onPlay(item.path, item.title)}
-                                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium transition-colors"
+                                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                                         title="Play file"
                                     >
                                         <Play className="w-4 h-4" />
@@ -232,7 +232,7 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
                                 {onOpenFolder && item.path && (
                                     <button
                                         onClick={() => onOpenFolder(item.path, item.title, item.format || 'mp4')}
-                                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/20 hover:bg-primary/30 text-primary text-sm font-medium transition-colors"
+                                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/20 hover:bg-primary/30 text-primary text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                                         title="Open download folder"
                                     >
                                         <FolderOpen className="w-4 h-4" />
@@ -393,6 +393,7 @@ export function DownloadsPage() {
     }, []);
 
     const handleClearAll = useCallback(async () => {
+        if (!window.confirm('Are you sure you want to clear all downloads?')) return;
         try {
             await api.clearDownloads();
             setDownloads([]);
@@ -485,7 +486,7 @@ export function DownloadsPage() {
                     <div className="flex items-center gap-2">
                         <button
                             onClick={loadDownloads}
-                            className="px-4 py-2 rounded-xl glass-hover text-sm font-medium flex items-center gap-2"
+                            className="px-4 py-2 rounded-xl glass-hover text-sm font-medium flex items-center gap-2 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                         >
                             <RefreshCw className={cn('w-4 h-4', isLoading && 'animate-spin')} />
                             Refresh
@@ -493,7 +494,7 @@ export function DownloadsPage() {
                         {downloads.length > 0 && (
                             <button
                                 onClick={handleClearAll}
-                                className="px-4 py-2 rounded-xl glass-hover text-sm font-medium text-red-400"
+                                className="px-4 py-2 rounded-xl glass-hover text-sm font-medium text-red-400 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                             >
                                 Clear All
                             </button>
