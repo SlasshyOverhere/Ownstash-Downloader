@@ -1,0 +1,4 @@
+## 2025-03-09 - Fix Arbitrary Code Execution in open_with_external_player
+**Vulnerability:** The Tauri IPC command `open_with_external_player` accepted an arbitrary executable path (`player_path`) directly from the frontend request. This allows an attacker who compromises the frontend (e.g., via XSS) to execute any command on the host system.
+**Learning:** Never trust frontend input for system-level execution paths in Tauri. Always fetch sensitive configurations (like external executable paths) securely from the backend's internal state or database.
+**Prevention:** Instead of taking the path as a command argument from the frontend, use `state.db.lock().unwrap().get_setting("external_player_path")` to retrieve the securely configured path directly on the Rust backend.
