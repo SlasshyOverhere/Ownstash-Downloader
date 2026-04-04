@@ -393,6 +393,7 @@ export function DownloadsPage() {
     }, []);
 
     const handleClearAll = useCallback(async () => {
+        if (!window.confirm('Are you sure you want to clear all downloads?')) return;
         try {
             await api.clearDownloads();
             setDownloads([]);
