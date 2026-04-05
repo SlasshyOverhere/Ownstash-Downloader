@@ -1,0 +1,4 @@
+## 2025-02-21 - [Fix Arbitrary Code Execution and Command Injection in External Applications Launcher]
+**Vulnerability:** The application was susceptible to Arbitrary Code Execution via Tauri IPC and command injection because it accepted `player_path` directly from the frontend to launch an external process with `std::process::Command::new()`, and used `.raw_arg()` with `explorer.exe /select` without escaping paths.
+**Learning:** Resolving executable paths securely from the backend's internal configuration state via `state.db.lock()` avoids depending on easily compromised frontend input. `raw_arg()` bypasses the Rust standard library's robust input escaping strategies, thus inadvertently enabling injection of arbitrary commands.
+**Prevention:** Avoid invoking commands with user-supplied inputs as the target executable paths and prevent the usage of `.raw_arg()` over `.arg()` when spawning commands with external executables.
