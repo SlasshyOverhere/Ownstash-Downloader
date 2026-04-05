@@ -1,0 +1,3 @@
+## 2025-04-05 - Optimize use3DTilt by bypassing React Render Cycle
+**Learning:** For high-frequency interactions like `mousemove` tracking in 3D tilt effects, relying on `useState` causes the consuming component (and its children) to unnecessarily re-render on every frame. This can severely block the main thread.
+**Action:** When creating hooks that track rapid mouse/animation state, prefer keeping an internal `useRef` to the target DOM node and mutatively updating `.style.transform` over a `useState` -> `style` prop flow. Always omit the mutated property from React's declarative `style` object to prevent React from clobbering the imperative changes during unrelated renders.
