@@ -294,6 +294,7 @@ export function HistoryPage() {
     }, []);
 
     const handleClearDownloads = useCallback(async () => {
+        if (!window.confirm('Are you sure you want to clear your download history?')) return;
         try {
             await api.clearDownloads();
             setDownloads([]);
@@ -304,6 +305,7 @@ export function HistoryPage() {
     }, []);
 
     const handleClearSearchHistory = useCallback(async () => {
+        if (!window.confirm('Are you sure you want to clear your search history?')) return;
         try {
             await api.clearSearchHistory();
             setSearchHistory([]);
