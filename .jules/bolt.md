@@ -1,0 +1,3 @@
+## 2025-04-06 - Optimizing High-Frequency Mouse Events in React
+**Learning:** High-frequency events like `mousemove` trigger excessive unmemoized re-renders when tied to React's `useState`, causing main thread blocking and jank. Standard memoization isn't enough to prevent the overhead of the React reconciliation cycle during such rapid updates.
+**Action:** For continuous, rapid style updates (like 3D tilt tracking), bypass the React render cycle completely by using `useRef` to store state and imperatively mutate the DOM element's style (e.g., `ref.current.style.transform`) within a `requestAnimationFrame` loop. Ensure the mutated property is removed from the React style prop to prevent conflicts.
