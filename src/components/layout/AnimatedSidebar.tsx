@@ -89,6 +89,7 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
                             className={cn(
                                 'w-full flex items-center py-2.5 rounded-xl transition-all duration-200',
                                 'hover:bg-white/5 group relative overflow-hidden',
+                                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                                 isExpanded ? 'gap-3 px-3 justify-start' : 'gap-0 px-0 justify-center',
                                 isActive && 'bg-primary/10 border border-primary/20'
                             )}
@@ -180,6 +181,7 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
                                 'w-full flex items-center py-2.5 rounded-xl',
                                 'text-muted-foreground hover:text-red-400 hover:bg-red-500/10',
                                 'transition-all duration-200 group',
+                                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                                 isExpanded ? 'gap-3 px-3 justify-start' : 'gap-0 px-0 justify-center',
                                 isSigningOut && 'opacity-50 cursor-not-allowed'
                             )}
@@ -210,6 +212,7 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
                     className={cn(
                         'w-full flex items-center py-2.5 rounded-xl transition-all duration-200',
                         'hover:bg-white/5 group relative overflow-hidden',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                         isExpanded ? 'gap-3 px-3 justify-start' : 'gap-0 px-0 justify-center',
                         currentPage === 'settings' && 'bg-primary/10 border border-primary/20'
                     )}
@@ -246,6 +249,7 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
                         'w-full flex items-center py-2.5 rounded-xl',
                         'text-muted-foreground hover:text-foreground hover:bg-white/5',
                         'transition-all duration-200',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                         isExpanded ? 'gap-3 px-3 justify-start' : 'gap-0 px-0 justify-center'
                     )}
                 >

@@ -549,7 +549,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                                         setUrl('');
                                         setError(null);
                                     }}
-                                    className="p-1.5 text-muted-foreground hover:text-white rounded-lg hover:bg-white/10 transition-colors focus-visible:ring-2 focus-visible:ring-white/30 outline-none"
+                                    className="p-1.5 text-muted-foreground hover:text-white rounded-lg hover:bg-white/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                                     aria-label="Clear URL input"
                                     title="Clear"
                                 >

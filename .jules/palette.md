@@ -1,0 +1,3 @@
+## 2024-05-20 - Focus States Need Sufficient Contrast in Themed Interfaces
+**Learning:** When adding focus rings (`focus-visible:ring-primary`) in interfaces with varying gradients and dark themes, a single ring can easily get lost against the background if it lacks contrast.
+**Action:** Always combine the primary focus ring color with a background-colored offset (`focus-visible:ring-offset-2 focus-visible:ring-offset-background`) to guarantee the focus indicator remains distinctly visible regardless of the underlying container's color.
