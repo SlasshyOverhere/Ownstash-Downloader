@@ -72,6 +72,42 @@ pub struct SpotifyDownloader {
     ffmpeg_path: Option<String>,
 }
 
+/// Redact a URL to only show scheme + host, stripping query params and path.
+/// Example: "https://example.com/path?token=secret" → "https://example.com/[REDACTED]"
+fn redact_url(url: &str) -> String {
+    if let Some(scheme_end) = url.find("://") {
+        let after_scheme = &url[scheme_end + 3..];
+        let host = after_scheme
+            .split('/')
+            .next()
+            .unwrap_or(after_scheme);
+        let scheme = &url[..scheme_end + 3];
+        format!("{}{}/[REDACTED]", scheme, host)
+    } else {
+        "[REDACTED_URL]".to_string()
+    }
+}
+
+/// Redact any URLs found in external tool output (stdout/stderr).
+fn redact_external_output(output: &str) -> String {
+    let mut result = String::with_capacity(output.len());
+    let mut remaining = output;
+    while let Some(pos) = remaining.find("http") {
+        // Check if this looks like a URL start
+        let url_start = pos;
+        let url_end = remaining[url_start..]
+            .find(|c: char| c.is_whitespace() || c == '"' || c == '\'' || c == ')' || c == '>')
+            .map(|e| url_start + e)
+            .unwrap_or(remaining.len());
+        let url = &remaining[url_start..url_end];
+        result.push_str(&remaining[..url_start]);
+        result.push_str(&redact_url(url));
+        remaining = &remaining[url_end..];
+    }
+    result.push_str(remaining);
+    result
+}
+
 impl SpotifyDownloader {
     /// Creates a new Command that won't show a console window on Windows
     #[cfg(windows)]
@@ -336,7 +372,7 @@ impl SpotifyDownloader {
         );
         println!(
             "[SpotifyDownloader] Download URL: {}",
-            asset.browser_download_url
+            redact_url(&asset.browser_download_url)
         );
         println!("[SpotifyDownloader] Target path: {:?}", target_path);
 
@@ -639,7 +675,7 @@ impl SpotifyDownloader {
         let current_path = std::env::var("PATH").unwrap_or_default();
         let new_path = format!("{};{}", binaries_dir.replace("/", "\\"), current_path);
         
-        println!("[SpotDL] Getting track info for: {}", request.url);
+        println!("[SpotDL] Getting track info for: {}", redact_url(&request.url));
         
         let save_output = Self::create_hidden_command(&spotdl_path_clean)
             .args([
@@ -763,7 +799,7 @@ impl SpotifyDownloader {
                     }
                     Ok(output) => {
                         let stderr = String::from_utf8_lossy(&output.stderr);
-                        println!("[SpotDL] Failed to get YouTube URL: {}", stderr);
+                        println!("[SpotDL] Failed to get YouTube URL: {}", redact_external_output(&stderr));
                         None
                     }
                     Err(e) => {
@@ -773,7 +809,7 @@ impl SpotifyDownloader {
                 };
 
                 if let Some(yt_url) = youtube_url {
-                    println!("[SpotDL] Found YouTube URL: {}", yt_url);
+                    println!("[SpotDL] Found YouTube URL: {}", redact_url(&yt_url));
                     
                     let _ = app.emit("spotify-download-progress", SpotifyDownloadProgress {
                         id: id.clone(),
@@ -820,7 +856,11 @@ impl SpotifyDownloader {
                         &yt_url,
                     ];
 
-                    println!("[SpotDL] Running yt-dlp with args: {:?}", args);
+                    // Redact args that may contain URLs
+                    let redacted_args: Vec<&str> = args.iter().map(|a| {
+                        if a.starts_with("http") { "[REDACTED_URL]" } else { *a }
+                    }).collect();
+                    println!("[SpotDL] Running yt-dlp with args: {:?}", redacted_args);
 
                     let result = Command::new(&yt_dlp_path)
                         .args(&args)
@@ -835,8 +875,8 @@ impl SpotifyDownloader {
                         Ok(output) => {
                             let stderr = String::from_utf8_lossy(&output.stderr);
                             let stdout = String::from_utf8_lossy(&output.stdout);
-                            println!("[SpotDL] yt-dlp stdout: {}", stdout);
-                            println!("[SpotDL] yt-dlp stderr: {}", stderr);
+                            println!("[SpotDL] yt-dlp stdout: {}", redact_external_output(&stdout));
+                            println!("[SpotDL] yt-dlp stderr: {}", redact_external_output(&stderr));
                             last_error = Some(format!("Failed to download {}", display_name));
                         }
                         Err(e) => {
