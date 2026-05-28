@@ -35,7 +35,6 @@ urlencoding = "2"
 warp = "0.3"
 tauri-plugin-single-instance = "2.3.6"
 futures-util = "0.3"
-tokio-stream = "0.1"
 bytes = "1"
 md5 = "0.8.0"
 which = "8.0.0"
@@ -51,8 +50,6 @@ base64 = "0.22"
 zip = { version = "0.6", features = ["deflate"] }
 walkdir = "2"
 sevenz-rust = "0.6"
-tar = "0.4"
-flate2 = "1.0"
 # RAR extraction
 unrar = "0.5"
 
