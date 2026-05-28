@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { LazyMotion, domAnimation } from 'framer-motion';
 import { Toaster, toast } from 'sonner';
 import { listen } from '@tauri-apps/api/event';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -114,6 +115,7 @@ function App() {
         let unlistenYtdlp: (() => void) | undefined;
         let unlistenSpotify: (() => void) | undefined;
         let unlistenNotificationClick: (() => void) | undefined;
+        const pendingTimers: ReturnType<typeof setTimeout>[] = [];
         let activeCount = 0;
         const downloadTitles = new Map<string, string>();
 
@@ -148,11 +150,11 @@ function App() {
 
                 // Show error in taskbar
                 api.updateTaskbarProgress(100, 'error').catch(console.error);
-                setTimeout(() => {
+                pendingTimers.push(setTimeout(() => {
                     if (activeCount === 0) {
                         api.clearTaskbarProgress().catch(console.error);
                     }
-                }, 3000);
+                }, 3000));
 
                 // Send failure notification
                 const title = downloadTitles.get(progress.id) || 'Download';
@@ -175,7 +177,7 @@ function App() {
                 api.notifyDownloadComplete(title, '').catch(console.error);
             } else if (progress.status === 'failed') {
                 api.updateTaskbarProgress(100, 'error').catch(console.error);
-                setTimeout(() => api.clearTaskbarProgress().catch(console.error), 3000);
+                pendingTimers.push(setTimeout(() => api.clearTaskbarProgress().catch(console.error), 3000));
                 api.notifyDownloadFailed(downloadTitles.get(progress.id) || 'Spotify Download', 'Download failed').catch(console.error);
             }
         }).then(fn => { unlistenSpotify = fn; }).catch(console.error);
@@ -188,6 +190,7 @@ function App() {
         }).then(fn => { unlistenNotificationClick = fn; }).catch(console.error);
 
         return () => {
+            for (const timer of pendingTimers) clearTimeout(timer);
             if (unlistenYtdlp) unlistenYtdlp();
             if (unlistenSpotify) unlistenSpotify();
             if (unlistenNotificationClick) unlistenNotificationClick();
@@ -205,8 +208,8 @@ function App() {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-black via-neutral-950 to-black">
                 <div className="text-center">
-                    <Loader2 className="w-12 h-12 text-white/60 animate-spin mx-auto mb-4" />
-                    <p className="text-slate-400">Loading...</p>
+                    <Loader2 className="size-12 text-white/60 animate-spin mx-auto mb-4" />
+                    <p className="text-slate-400">Loading…</p>
                 </div>
             </div>
         );
@@ -240,7 +243,7 @@ function App() {
     };
 
     return (
-        <>
+        <LazyMotion features={domAnimation}>
             <AppLayout currentPage={currentPage} onPageChange={setCurrentPage}>
                 {renderPage()}
             </AppLayout>
@@ -255,7 +258,7 @@ function App() {
                     },
                 }}
             />
-        </>
+        </LazyMotion>
     );
 }
 

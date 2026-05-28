@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useEffect, useRef } from 'react';
+import { m } from 'framer-motion';
 import {
     Link,
     Sparkles,
@@ -55,7 +55,7 @@ function detectPlatform(url: string) {
 interface QuickStatProps {
     title: string;
     value: string;
-    icon: React.ElementType;
+    icon: React.ComponentType<{ className?: string }>;
     gradient: string;
 }
 
@@ -63,19 +63,19 @@ function QuickStat({ title, value, icon: Icon, gradient }: QuickStatProps) {
     const { ref, tiltStyle, handlers } = use3DTilt({ maxTilt: 10 });
 
     return (
-        <motion.div
+        <m.div
             ref={ref}
             style={tiltStyle}
             {...handlers}
             variants={staggerItem}
             className="glass-hover rounded-2xl p-4 cursor-pointer border-glow"
         >
-            <div className={cn('w-10 h-10 rounded-xl bg-gradient-to-br flex items-center justify-center mb-3', gradient)}>
-                <Icon className="w-5 h-5 text-white" />
+            <div className={cn('size-10 rounded-xl bg-gradient-to-br flex items-center justify-center mb-3', gradient)}>
+                <Icon className="size-5 text-white" />
             </div>
             <p className="text-2xl font-bold font-display">{value}</p>
             <p className="text-sm text-muted-foreground">{title}</p>
-        </motion.div>
+        </m.div>
     );
 }
 
@@ -95,7 +95,8 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
     const [showModal, setShowModal] = useState(false);
     const [showSpotifyModal, setShowSpotifyModal] = useState(false);
     const [stats, setStats] = useState({ downloads: 0, storage: '0 MB', platforms: 0 });
-    const [downloadPath, setDownloadPath] = useState<string>('');
+    const downloadPathRef = useRef<string>('');
+    const hasConsumedExtensionRef = useRef(false);
 
     const detectedPlatform = detectPlatform(url);
     const isSpotify = isSpotifyUrl(url);
@@ -140,31 +141,35 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
             // Set the new URL
             setUrl(extensionUrl);
 
-            // Notify parent that we've consumed the URL
-            if (onExtensionUrlConsumed) {
+            // Notify parent that we've consumed the URL (once per URL)
+            if (onExtensionUrlConsumed && !hasConsumedExtensionRef.current) {
+                hasConsumedExtensionRef.current = true;
                 onExtensionUrlConsumed();
             }
 
             // Auto-trigger fetch after a short delay
-            // Use the extensionUrl directly, not the state which might be stale
             const urlToFetch = extensionUrl;
-            setTimeout(() => {
+            const timer = setTimeout(() => {
                 fetchMediaForUrl(urlToFetch);
             }, 300);
+
+            return () => clearTimeout(timer);
+        } else {
+            hasConsumedExtensionRef.current = false;
         }
-    }, [extensionUrl]);
+    }, [extensionUrl, onExtensionUrlConsumed]);
 
     const loadStats = async () => {
         try {
             const downloads = await api.getDownloads();
-            const platforms = new Set(downloads.map(d => d.platform).filter(Boolean));
+            const platforms = new Set(downloads.flatMap(d => d.platform ? [d.platform] : []));
 
             // Get actual folder size from disk
             let totalBytes = 0;
             try {
                 const savedPath = await api.getSetting('download_path');
-                const downloadPath = savedPath || await api.getDefaultDownloadPath();
-                totalBytes = await api.getDownloadFolderSize(downloadPath);
+                const dlPath = savedPath || await api.getDefaultDownloadPath();
+                totalBytes = await api.getDownloadFolderSize(dlPath);
             } catch (err) {
                 console.error('Failed to get folder size:', err);
                 // Fallback to database size_bytes if folder scan fails
@@ -183,14 +188,12 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
 
     const loadDownloadPath = async () => {
         try {
-            // Try to get saved download path
             const savedPath = await api.getSetting('download_path');
             if (savedPath) {
-                setDownloadPath(savedPath);
+                downloadPathRef.current = savedPath;
             } else {
-                // Use default path
                 const defaultPath = await api.getDefaultDownloadPath();
-                setDownloadPath(defaultPath);
+                downloadPathRef.current = defaultPath;
             }
         } catch (err) {
             console.error('Failed to load download path:', err);
@@ -367,7 +370,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                 title: mediaInfo.title,
                 url: url,
                 format: options.audioOnly ? 'mp3' : options.quality,
-                path: downloadPath,
+                path: downloadPathRef.current,
                 timestamp: Date.now(),
                 status: 'downloading',
                 platform: mediaInfo.platform,
@@ -380,7 +383,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
             const request: DownloadRequest = {
                 id: downloadId,
                 url: url,
-                output_path: downloadPath,
+                output_path: downloadPathRef.current,
                 format: options.format,
                 audio_only: options.audioOnly,
                 quality: options.quality,
@@ -434,7 +437,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                 title: spotifyMediaInfo.title,
                 url: spotifyMediaInfo.url,
                 format: options.audioFormat,
-                path: downloadPath,
+                path: downloadPathRef.current,
                 timestamp: Date.now(),
                 status: 'downloading',
                 platform: 'Spotify',
@@ -447,7 +450,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
             const request: SpotifyDownloadRequest = {
                 id: downloadId,
                 url: spotifyMediaInfo.url,
-                output_path: downloadPath,
+                output_path: downloadPathRef.current,
                 audio_format: options.audioFormat,
                 audio_quality: options.audioQuality,
                 embed_lyrics: options.embedLyrics,
@@ -485,16 +488,16 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
 
     return (
         <>
-            <motion.div
+            <m.div
                 variants={staggerContainer}
                 initial="initial"
                 animate="animate"
                 className="max-w-4xl mx-auto space-y-8"
             >
                 {/* Hero Section */}
-                <motion.div variants={fadeInUp} className="text-center space-y-4 pt-8">
+                <m.div variants={fadeInUp} className="text-center space-y-4 pt-8">
                     <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass text-sm flex-wrap justify-center">
-                        <Sparkles className="w-4 h-4 text-primary" />
+                        <Sparkles className="size-4 text-primary" />
                         <span className="text-muted-foreground">1000+ Platforms + Spotify</span>
                     </div>
                     <h1 className="text-5xl font-display font-bold gradient-text">
@@ -503,10 +506,10 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                     <p className="text-lg text-muted-foreground max-w-md mx-auto">
                         Paste a URL from any platform. We'll handle the rest.
                     </p>
-                </motion.div>
+                </m.div>
 
                 {/* URL Input Section */}
-                <motion.div variants={fadeInUp} className="space-y-4">
+                <m.div variants={fadeInUp} className="space-y-4">
                     <div className="relative">
                         {/* Glow effect behind input */}
                         <div className="absolute -inset-1 bg-gradient-to-r from-primary via-accent to-secondary rounded-2xl blur-lg opacity-30" />
@@ -514,15 +517,15 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                         <div className="relative glass rounded-2xl p-2 flex items-center gap-3">
                             {/* Platform indicator */}
                             <div className={cn(
-                                'w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-300',
+                                'size-12 rounded-xl flex items-center justify-center transition-all duration-300',
                                 detectedPlatform
                                     ? `bg-gradient-to-br ${detectedPlatform.color}`
                                     : 'bg-muted'
                             )}>
                                 {detectedPlatform ? (
-                                    <detectedPlatform.icon className="w-6 h-6 text-white" />
+                                    <detectedPlatform.icon className="size-6 text-white" />
                                 ) : (
-                                    <Link className="w-6 h-6 text-muted-foreground" />
+                                    <Link className="size-6 text-muted-foreground" />
                                 )}
                             </div>
 
@@ -535,7 +538,8 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                                     setError(null);
                                 }}
                                 onKeyDown={handleKeyDown}
-                                placeholder="Paste URL here..."
+                                placeholder="Paste URL here…"
+                                aria-label="Media URL"
                                 className={cn(
                                     'flex-1 bg-transparent border-none outline-none text-lg',
                                     'placeholder:text-muted-foreground/50'
@@ -545,6 +549,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                             {/* Clear Input Button */}
                             {url && (
                                 <button
+                                    type="button"
                                     onClick={() => {
                                         setUrl('');
                                         setError(null);
@@ -553,12 +558,13 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                                     aria-label="Clear URL input"
                                     title="Clear"
                                 >
-                                    <X className="w-5 h-5" />
+                                    <X className="size-5" />
                                 </button>
                             )}
 
                             {/* Download button */}
                             <button
+                                type="button"
                                 onClick={handleFetchInfo}
                                 disabled={
                                     !url.trim() ||
@@ -572,12 +578,12 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                             >
                                 {isLoading ? (
                                     <>
-                                        <Loader2 className="w-5 h-5 animate-spin" />
-                                        <span>Fetching...</span>
+                                        <Loader2 className="size-5 animate-spin" />
+                                        <span>Fetching…</span>
                                     </>
                                 ) : (
                                     <>
-                                        <Download className="w-5 h-5" />
+                                        <Download className="size-5" />
                                         <span>{isSpotify ? 'Fetch Spotify' : 'Fetch'}</span>
                                     </>
                                 )}
@@ -587,19 +593,19 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
 
                     {/* Error display */}
                     {error && (
-                        <motion.div
+                        <m.div
                             initial={{ opacity: 0, y: -10 }}
                             animate={{ opacity: 1, y: 0 }}
                             className="flex items-center gap-2 text-sm text-red-400 bg-red-500/10 px-4 py-2 rounded-xl"
                         >
-                            <AlertCircle className="w-4 h-4 shrink-0" />
+                            <AlertCircle className="size-4 shrink-0" />
                             <span>{error}</span>
-                        </motion.div>
+                        </m.div>
                     )}
 
                     {/* Platform badge */}
                     {detectedPlatform && (
-                        <motion.div
+                        <m.div
                             initial={{ opacity: 0, y: -10 }}
                             animate={{ opacity: 1, y: 0 }}
                             className="flex items-center gap-2 text-sm text-muted-foreground"
@@ -611,18 +617,18 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                             )}>
                                 {detectedPlatform.name}
                             </span>
-                        </motion.div>
+                        </m.div>
                     )}
 
                     {/* Spotify Info Banner */}
                     {isSpotify && (
-                        <motion.div
+                        <m.div
                             initial={{ opacity: 0, y: -10 }}
                             animate={{ opacity: 1, y: 0 }}
                             className="flex items-center gap-3 text-sm bg-white/5 border border-white/10 px-4 py-3 rounded-xl"
                         >
-                            <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
-                                <Music className="w-4 h-4 text-white" />
+                            <div className="size-8 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
+                                <Music className="size-4 text-white" />
                             </div>
                             <div>
                                 <p className="text-white font-medium">Spotify Link Detected</p>
@@ -630,12 +636,12 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                                     SpotDL will search YouTube for the best audio match. This may take a moment for playlists.
                                 </p>
                             </div>
-                        </motion.div>
+                        </m.div>
                     )}
-                </motion.div>
+                </m.div>
 
                 {/* Quick Stats */}
-                <motion.div
+                <m.div
                     variants={staggerContainer}
                     className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-8"
                 >
@@ -657,8 +663,8 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                         icon={Sparkles}
                         gradient="from-white/20 to-white/10"
                     />
-                </motion.div>
-            </motion.div>
+                </m.div>
+            </m.div>
 
             {/* Media Info Modal */}
             {mediaInfo && (
