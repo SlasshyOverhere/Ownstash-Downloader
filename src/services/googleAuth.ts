@@ -7,7 +7,6 @@ import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import {
     getAuthConfig,
     exchangeCodeForTokens,
-    refreshAccessToken as backendRefreshToken,
     checkBackendHealth,
     getBackendUrl,
     getUserInfo
@@ -74,7 +73,7 @@ export function getStoredUser(): GoogleUser | null {
 /**
  * Store user in localStorage
  */
-export function storeUser(user: GoogleUser): void {
+function storeUser(user: GoogleUser): void {
     try {
         localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
     } catch (e) {
@@ -485,43 +484,6 @@ export async function signInWithGoogleBrowser(): Promise<GoogleUser> {
 }
 
 /**
- * Refresh the access token using the stored refresh token
- */
-export async function refreshGDriveToken(): Promise<string | null> {
-    try {
-        // Try to get refresh token from secure storage
-        let refreshToken: string | null = null;
-
-        try {
-            const { invoke } = await import('@tauri-apps/api/core');
-            refreshToken = await invoke<string>('secure_get_setting', { key: 'gdrive_refresh_token' });
-        } catch {
-            // Fallback to localStorage
-            refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
-        }
-
-        if (!refreshToken) {
-            console.log('No refresh token available');
-            return null;
-        }
-
-        console.log('Refreshing access token via backend...');
-        const result = await backendRefreshToken(refreshToken);
-
-        // Store the new access token
-        const { setGDriveAccessToken } = await import('./gdriveService');
-        await setGDriveAccessToken(result.access_token);
-        localStorage.setItem(ACCESS_TOKEN_KEY, result.access_token);
-
-        console.log('Access token refreshed successfully');
-        return result.access_token;
-    } catch (error) {
-        console.error('Failed to refresh token:', error);
-        return null;
-    }
-}
-
-/**
  * Check if Google browser auth is available
  */
 export function isGoogleBrowserAuthAvailable(): boolean {
@@ -529,20 +491,3 @@ export function isGoogleBrowserAuthAvailable(): boolean {
     return useBackendFlow || !!import.meta.env.VITE_GOOGLE_CLIENT_ID;
 }
 
-/**
- * Get instructions for setting up Google Auth
- */
-export function getGoogleAuthSetupInstructions(): string {
-    return `
-To enable Google Sign-in:
-
-Option 1: Backend (Recommended - Secure)
-1. Deploy the backend folder to Render or similar
-2. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in backend environment
-3. Set VITE_BACKEND_URL in your app's .env file
-
-Option 2: Fallback (Less Secure)
-1. Set VITE_GOOGLE_CLIENT_ID in your .env file
-2. Add redirect URIs to Google Cloud Console
-`;
-}
