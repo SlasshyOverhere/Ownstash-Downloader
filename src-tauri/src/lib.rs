@@ -102,7 +102,7 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--minimized"])))
         // Single instance plugin - prevents multiple app instances
         .plugin(tauri_plugin_single_instance::init(move |app, argv, _cwd| {
-            println!("[SingleInstance] Received argv: {:?}", argv);
+            println!("[SingleInstance] Received argv ({} items)", argv.len());
 
             background_mode_for_single_instance.store(false, Ordering::SeqCst);
             show_main_window(app);
@@ -110,7 +110,7 @@ pub fn run() {
             // Check if any argument is an OAuth callback URL
             for arg in argv.iter() {
                 if arg.contains("ownstash://auth") || arg.contains("oauth") || arg.contains("callback") {
-                    println!("[SingleInstance] Found OAuth callback: {}", arg);
+                    println!("[SingleInstance] Found OAuth callback (redacted)");
                     // Emit the OAuth callback to the frontend
                     let _ = app.emit("oauth-deep-link", arg.clone());
                 }
@@ -183,7 +183,11 @@ pub fn run() {
             app.listen("deep-link://new-url", move |event: tauri::Event| {
                 // Get the payload as a string
                 let payload = event.payload();
-                println!("[DeepLink] Received event with payload: {}", payload);
+                // Log presence of auth parameters without exposing token values
+                let has_access = payload.contains("access_token");
+                let has_refresh = payload.contains("refresh_token");
+                let has_id_token = payload.contains("id_token");
+                println!("[DeepLink] Received event (has_access_token: {}, has_refresh_token: {}, has_id_token: {})", has_access, has_refresh, has_id_token);
                 
                 // Check for OAuth callback first
                 if payload.contains("auth") || payload.contains("callback") || payload.contains("access_token") {
@@ -198,7 +202,12 @@ pub fn run() {
                 
                 // Parse the URL and extract the download URL
                 if let Some(download_url) = parse_deep_link(payload) {
-                    println!("[DeepLink] Parsed download URL: {}", download_url);
+                    // Log only the host to avoid leaking signed tokens or query params
+                    let url_hint = match url::Url::parse(&download_url) {
+                        Ok(u) => u.host_str().unwrap_or("[unknown host]").to_string(),
+                        Err(_) => "[unparseable URL]".to_string(),
+                    };
+                    println!("[DeepLink] Parsed download URL host: {}", url_hint);
 
                     background_mode_for_deep_link.store(false, Ordering::SeqCst);
                     show_main_window(&handle);
