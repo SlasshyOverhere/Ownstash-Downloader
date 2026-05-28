@@ -2,7 +2,7 @@
 // Handles communication with the Ownstash backend for OAuth and other secure operations
 
 // Backend URL - configured via environment variable or defaults to localhost for dev
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://localhost:3000';
 
 /**
  * Make a request to the backend API
