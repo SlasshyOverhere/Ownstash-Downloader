@@ -20,11 +20,12 @@ const LOG_INJECTION_CHARS: &[char] = &[
 /// and other control characters that could be used for log injection.
 ///
 /// # Examples
-/// ```
-/// let safe = log_sanitizer::sanitize_for_log("normal text");
+/// ```no_run
+/// use ownstash_downloader_lib::log_sanitizer::sanitize_for_log;
+/// let safe = sanitize_for_log("normal text");
 /// assert_eq!(safe, "normal text");
 ///
-/// let safe = log_sanitizer::sanitize_for_log("line1\nline2\rline3");
+/// let safe = sanitize_for_log("line1\nline2\rline3");
 /// assert_eq!(safe, "line1 line2 line3");
 /// ```
 pub fn sanitize_for_log(input: &str) -> String {
@@ -33,8 +34,14 @@ pub fn sanitize_for_log(input: &str) -> String {
 
     while let Some(c) = chars.next() {
         match c {
-            // Replace line breaks with space
-            '\n' | '\r' => {
+            // Replace line breaks with space (handle \r\n as single break)
+            '\r' => {
+                result.push(' ');
+                if chars.peek() == Some(&'\n') {
+                    chars.next(); // consume \n after \r
+                }
+            }
+            '\n' => {
                 result.push(' ');
             }
             // Skip ANSI escape sequences (ESC[...)
@@ -76,11 +83,12 @@ pub fn sanitize_for_log(input: &str) -> String {
 /// sensitive tokens or credentials that may appear in URLs.
 ///
 /// # Examples
-/// ```
-/// let redacted = log_sanitizer::redact_url("https://example.com/path?token=secret");
+/// ```no_run
+/// use ownstash_downloader_lib::log_sanitizer::redact_url;
+/// let redacted = redact_url("https://example.com/path?token=secret");
 /// assert_eq!(redacted, "https://example.com");
 ///
-/// let redacted = log_sanitizer::redact_url("http://127.0.0.1:8080/stream");
+/// let redacted = redact_url("http://127.0.0.1:8080/stream");
 /// assert_eq!(redacted, "http://127.0.0.1:8080");
 /// ```
 pub fn redact_url(url: &str) -> String {
@@ -139,8 +147,9 @@ const SENSITIVE_PATTERNS: &[&str] = &[
 /// Handles JSON-like `key: value` and query parameter `key=value` formats.
 ///
 /// # Examples
-/// ```
-/// let safe = log_sanitizer::redact_sensitive("token=abc123&user=test");
+/// ```no_run
+/// use ownstash_downloader_lib::log_sanitizer::redact_sensitive;
+/// let safe = redact_sensitive("token=abc123&user=test");
 /// assert!(safe.contains("[REDACTED]"));
 /// assert!(safe.contains("user=test"));
 /// ```
@@ -192,8 +201,9 @@ pub fn redact_sensitive(input: &str) -> String {
 /// potentially sensitive data.
 ///
 /// # Examples
-/// ```
-/// let safe = log_sanitizer::safe_log("token=abc\nInjected line");
+/// ```no_run
+/// use ownstash_downloader_lib::log_sanitizer::safe_log;
+/// let safe = safe_log("token=abc\nInjected line");
 /// assert!(!safe.contains("\n"));
 /// assert!(safe.contains("[REDACTED]"));
 /// ```
