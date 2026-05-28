@@ -23,7 +23,6 @@ interface MediaPlayerProps {
     filePath: string;
     title: string;
     isAudio?: boolean;
-    onOpenExternal?: () => void; // Kept as optional prop for future flexibility
 }
 
 export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false }: MediaPlayerProps) {

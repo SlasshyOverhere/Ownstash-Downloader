@@ -200,25 +200,6 @@ fn save_vault_config(app_handle: &AppHandle, config: &VaultConfig) -> Result<(),
 // The vault index is now stored ONLY in Google Drive (encrypted with user's PIN)
 // These legacy functions are kept for migration but marked as deprecated
 
-/// DEPRECATED: Load vault index from local file
-/// The index is now managed by the frontend via encrypted Google Drive
-#[allow(dead_code)]
-fn load_vault_index_legacy(app_handle: &AppHandle) -> Vec<VaultFile> {
-    let index_path = get_vault_index_path(app_handle);
-    println!("[Vault] LEGACY load_vault_index from: {:?}", index_path);
-    
-    if !index_path.exists() {
-        return Vec::new();
-    }
-
-    let content = match fs::read_to_string(&index_path) {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
-    };
-
-    serde_json::from_str::<Vec<VaultFile>>(&content).unwrap_or_default()
-}
-
 /// Count encrypted files in vault directory (for status without index)
 /// Supports both .slasshy (new) and .vault (legacy) extensions
 fn count_vault_files(app_handle: &AppHandle) -> (usize, u64) {

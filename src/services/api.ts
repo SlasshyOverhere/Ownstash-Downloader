@@ -43,7 +43,7 @@ export interface MediaInfo {
     chapters?: Chapter[];
 }
 
-export interface Chapter {
+interface Chapter {
     start_time: number;
     end_time: number;
     title: string;
@@ -109,19 +109,19 @@ export interface UpdateInfo {
     available: boolean;
 }
 
-export interface DirectFileInfo {
+interface DirectFileInfo {
     file_size: number;
     filename: string | null;
     content_type: string | null;
     is_media: boolean;
 }
 
-export interface MediaFileInfo {
+interface MediaFileInfo {
     file_path: string;
     is_audio: boolean;
 }
 
-export interface TranscodeResult {
+interface TranscodeResult {
     output_path: string;
     was_transcoded: boolean;
 }
@@ -168,7 +168,7 @@ export interface SpotDlInfo {
 }
 
 // Vault types
-export interface VaultStatus {
+interface VaultStatus {
     is_setup: boolean;
     is_unlocked: boolean;
     file_count: number;
@@ -184,7 +184,7 @@ export interface VaultFolderEntry {
     is_directory: boolean;  // True if this is a directory
 }
 
-export interface VaultFile {
+interface VaultFile {
     id: string;
     original_name: string;
     encrypted_name: string;
@@ -198,7 +198,7 @@ export interface VaultFile {
 }
 
 // Vault Direct Download types
-export interface VaultDownloadRequest {
+interface VaultDownloadRequest {
     id: string;
     url: string;
     original_name: string;
@@ -212,7 +212,7 @@ export interface VaultDownloadRequest {
     use_sponsorblock: boolean;
 }
 
-export interface VaultDownloadProgress {
+interface VaultDownloadProgress {
     id: string;
     progress: number;
     speed: string;
@@ -224,7 +224,7 @@ export interface VaultDownloadProgress {
 }
 
 // Native integration types
-export interface NotificationClickEvent {
+interface NotificationClickEvent {
     type: string;
     title: string;
     file_path?: string;
@@ -655,10 +655,6 @@ export const api = {
         return invoke('clear_taskbar_progress');
     },
 
-    async sendNotification(title: string, body: string, notificationType: string = 'info'): Promise<void> {
-        return invoke('send_notification', { title, body, notificationType });
-    },
-
     async notifyDownloadComplete(title: string, filePath: string): Promise<void> {
         return invoke('notify_download_complete', { title, filePath });
     },
@@ -667,62 +663,11 @@ export const api = {
         return invoke('notify_download_failed', { title, error });
     },
 
-    async checkNotificationPermission(): Promise<boolean> {
-        return invoke('check_notification_permission');
-    },
-
-    async requestNotificationPermission(): Promise<boolean> {
-        return invoke('request_notification_permission');
-    },
-
     // Listen for notification clicks
     onNotificationClick(callback: (event: NotificationClickEvent) => void): Promise<UnlistenFn> {
         return listen<NotificationClickEvent>('notification-click', (event) => {
             callback(event.payload);
         });
-    },
-
-    // ============ Plugin/Addon Management API ============
-    // These are stubs for the Secure Browser addon - will be implemented when sidecar is complete
-    async pluginCheckStatus(): Promise<'not_installed' | 'installing' | 'installed' | 'error'> {
-        // TODO: Check if secure browser sidecar is installed
-        // For now, return not_installed as default
-        try {
-            return await invoke<'not_installed' | 'installing' | 'installed' | 'error'>('plugin_check_status');
-        } catch {
-            // Command not implemented yet - return default
-            return 'not_installed';
-        }
-    },
-
-    async pluginInstall(): Promise<void> {
-        // TODO: Download and install secure browser sidecar
-        try {
-            return await invoke('plugin_install');
-        } catch (error) {
-            console.warn('[Plugin] Install command not implemented yet:', error);
-            throw new Error('Secure Browser addon installation is not yet available');
-        }
-    },
-
-    async pluginUninstall(): Promise<void> {
-        // TODO: Remove secure browser sidecar
-        try {
-            return await invoke('plugin_uninstall');
-        } catch (error) {
-            console.warn('[Plugin] Uninstall command not implemented yet:', error);
-            throw new Error('Secure Browser addon uninstallation is not yet available');
-        }
-    },
-
-    async pluginReinstall(): Promise<void> {
-        // TODO: Reinstall secure browser sidecar
-        try {
-            return await invoke('plugin_reinstall');
-        } catch (error) {
-            console.warn('[Plugin] Reinstall command not implemented yet:', error);
-            throw new Error('Secure Browser addon reinstallation is not yet available');
-        }
     },
 
     // ============ Autostart API ============

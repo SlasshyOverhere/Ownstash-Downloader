@@ -224,48 +224,6 @@ impl HostReputationManager {
         self.upsert_reputation(&reputation)
     }
 
-    /// Get all host reputations (for debugging/diagnostics)
-    pub fn get_all_reputations(&self) -> Result<Vec<HostReputation>, String> {
-        let conn = self.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
-        
-        let mut stmt = conn.prepare(
-            "SELECT domain, max_stable_conns, favored_protocol, health_score,
-                    supports_range, avg_speed_kbps, success_count, failure_count, last_updated
-             FROM host_reputation ORDER BY last_updated DESC"
-        ).map_err(|e| format!("Prepare error: {}", e))?;
-
-        let reputations = stmt.query_map([], |row| {
-            Ok(HostReputation {
-                domain: row.get(0)?,
-                max_stable_conns: row.get(1)?,
-                favored_protocol: row.get(2)?,
-                health_score: row.get(3)?,
-                supports_range: row.get::<_, i32>(4)? != 0,
-                avg_speed_kbps: row.get(5)?,
-                success_count: row.get(6)?,
-                failure_count: row.get(7)?,
-                last_updated: row.get(8)?,
-            })
-        }).map_err(|e| format!("Query error: {}", e))?
-        .filter_map(|r| r.ok())
-        .collect();
-
-        Ok(reputations)
-    }
-
-    /// Clean up old/stale reputation records (older than 30 days)
-    pub fn cleanup_stale_records(&self) -> Result<u64, String> {
-        let conn = self.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
-        
-        let thirty_days_ago = Utc::now().timestamp() - (30 * 24 * 60 * 60);
-        
-        let deleted = conn.execute(
-            "DELETE FROM host_reputation WHERE last_updated < ?1 AND success_count < 5",
-            params![thirty_days_ago],
-        ).map_err(|e| format!("Delete error: {}", e))?;
-
-        Ok(deleted as u64)
-    }
 }
 
 /// Extract domain from a URL

@@ -13,22 +13,17 @@
     "build-installer": "npm run download-binaries && npm run tauri build"
   },
   "dependencies": {
-    "@react-three/drei": "^10.0.0",
-    "@react-three/fiber": "^9.0.0",
     "@tauri-apps/api": "^2.1.1",
     "@tauri-apps/plugin-deep-link": "^2.4.5",
     "@tauri-apps/plugin-dialog": "^2.0.1",
     "@tauri-apps/plugin-shell": "^2.0.1",
-    "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
-    "firebase": "^12.7.0",
     "framer-motion": "^11.11.17",
     "lucide-react": "^0.460.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "sonner": "^1.7.0",
-    "tailwind-merge": "^2.5.4",
-    "three": "^0.170.0"
+    "tailwind-merge": "^2.5.4"
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",
@@ -36,7 +31,6 @@
     "@types/node": "^22.9.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@types/three": "^0.170.0",
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.13.0",

@@ -17,7 +17,6 @@ function App() {
     const { loading } = useAuth();
     const [currentPage, setCurrentPage] = useState<PageType>('home');
     const [extensionUrl, setExtensionUrl] = useState<string | null>(null);
-    const [_activeDownloadCount, setActiveDownloadCount] = useState(0);
     const [isInstallingAppUpdate, setIsInstallingAppUpdate] = useState(false);
     const hasCheckedStartupUpdateRef = useRef(false);
     const isInstallingAppUpdateRef = useRef(false);
@@ -129,11 +128,9 @@ function App() {
             // Update taskbar progress
             if (progress.status === 'downloading') {
                 activeCount = Math.max(1, activeCount);
-                setActiveDownloadCount(activeCount);
                 api.updateTaskbarProgress(progress.progress, 'downloading').catch(console.error);
             } else if (progress.status === 'completed') {
                 activeCount = Math.max(0, activeCount - 1);
-                setActiveDownloadCount(activeCount);
 
                 // Clear taskbar if no active downloads
                 if (activeCount === 0) {
@@ -146,7 +143,6 @@ function App() {
                 downloadTitles.delete(progress.id);
             } else if (progress.status === 'failed') {
                 activeCount = Math.max(0, activeCount - 1);
-                setActiveDownloadCount(activeCount);
 
                 // Show error in taskbar
                 api.updateTaskbarProgress(100, 'error').catch(console.error);
