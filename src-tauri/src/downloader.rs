@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
@@ -7,11 +8,103 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
+use url::Url;
 
 // Import the v2.0 download control system
 use crate::download_router::{DownloadRouter, RoutingDecision, DOWNLOAD_ROUTER};
 use crate::health_metrics::{DownloadEngine, DownloadPhase, HEALTH_REGISTRY};
 use crate::snde::{SNDEEngine, SNDERequest, SNDE_ENGINE};
+
+/// Validate a URL is safe for external requests (anti-SSRF + anti-injection).
+/// Returns Ok(parsed_url) on success, Err(message) on failure.
+fn validate_url(raw: &str) -> Result<Url, String> {
+    // Reject yt-dlp flag injection: URLs must not contain "--" or start with "-"
+    if raw.starts_with('-') || raw.contains("--") {
+        return Err("URL contains invalid flag-like patterns".into());
+    }
+
+    let parsed = Url::parse(raw).map_err(|e| format!("Invalid URL: {}", e))?;
+
+    // Only allow http/https schemes
+    match parsed.scheme() {
+        "http" | "https" => {}
+        other => return Err(format!("URL scheme '{}' is not allowed", other)),
+    }
+
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| "URL has no host".to_string())?;
+
+    // Reject localhost variants
+    let host_lower = host.to_lowercase();
+    if host_lower == "localhost"
+        || host_lower.ends_with(".localhost")
+        || host_lower == "0.0.0.0"
+        || host_lower == "[::1]"
+        || host_lower == "::1"
+    {
+        return Err("URL targets localhost/internal host".into());
+    }
+
+    // Reject private/internal IP ranges
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        match ip {
+            IpAddr::V4(v4) => {
+                if v4.is_loopback()
+                    || v4.is_private()
+                    || v4.is_link_local()
+                    || v4.is_broadcast()
+                    || v4.is_unspecified()
+                    // 172.16.0.0/12
+                    || (v4.octets()[0] == 172 && (v4.octets()[1] >= 16 && v4.octets()[1] <= 31))
+                {
+                    return Err("URL targets a private/internal IP address".into());
+                }
+            }
+            IpAddr::V6(v6) => {
+                if v6.is_loopback() || v6.is_unspecified() {
+                    return Err("URL targets a private/internal IPv6 address".into());
+                }
+            }
+        }
+    }
+
+    Ok(parsed)
+}
+
+/// Extract only the scheme + host from a URL for safe logging.
+fn redact_url(raw: &str) -> String {
+    match Url::parse(raw) {
+        Ok(u) => format!("{}://{}", u.scheme(), u.host_str().unwrap_or("[redacted]")),
+        Err(_) => "[invalid-url]".to_string(),
+    }
+}
+
+/// Replace URLs in a line of text with their redacted host-only form.
+fn redact_line(line: &str) -> String {
+    // Simple regex-free approach: find http:// or https:// sequences
+    let mut result = String::with_capacity(line.len());
+    let mut remaining = line;
+    while let Some(pos) = remaining.find("http") {
+        // Check it's http:// or https://
+        let after = &remaining[pos..];
+        if after.starts_with("https://") || after.starts_with("http://") {
+            // Find end of URL (whitespace, quote, or bracket)
+            let end = after
+                .find(|c: char| c.is_whitespace() || c == '"' || c == '\'' || c == '>' || c == ')' || c == ']')
+                .unwrap_or(after.len());
+            let url = &after[..end];
+            result.push_str(&remaining[..pos]);
+            result.push_str(&redact_url(url));
+            remaining = &after[end..];
+        } else {
+            result.push_str(&remaining[..pos + 4]);
+            remaining = &remaining[pos + 4..];
+        }
+    }
+    result.push_str(remaining);
+    result
+}
 
 // Track active download processes for cancellation
 lazy_static::lazy_static! {
@@ -326,7 +419,7 @@ impl Downloader {
             asset_name
         );
 
-        println!("[Downloader] Updating yt-dlp from: {}", download_url);
+        println!("[Downloader] Updating yt-dlp from: {}", redact_url(&download_url));
         println!("[Downloader] Target path: {:?}", target_path);
 
         Self::download_binary(&download_url, &target_path).await?;
@@ -480,6 +573,9 @@ impl Downloader {
     }
 
     pub async fn get_media_info(&self, url: &str, check_sponsorblock: bool) -> Result<MediaInfo, String> {
+        // Validate URL before any yt-dlp invocation (anti-SSRF + anti-injection)
+        let _parsed_url = validate_url(url)?;
+
         let cache_key = format!("{}::{}", url.trim(), check_sponsorblock);
         {
             let cache = MEDIA_INFO_CACHE.lock().unwrap();
@@ -516,6 +612,7 @@ impl Downloader {
             args.push("all".to_string());
         }
 
+        args.push("--".to_string());
         args.push(url.to_string());
 
         let output = Self::create_hidden_command(&self.yt_dlp_path)
@@ -611,8 +708,11 @@ impl Downloader {
         request: DownloadRequest,
         app_handle: AppHandle,
     ) -> Result<(), String> {
+        // Validate URL before any processing (anti-SSRF + anti-injection)
+        let _parsed_url = validate_url(&request.url)?;
+
         let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel::<()>();
-        
+
         // Store the cancellation sender
         {
             let mut downloads = ACTIVE_DOWNLOADS.lock().unwrap();
@@ -623,7 +723,7 @@ impl Downloader {
         // Perform preflight routing to determine optimal engine and settings
         let routing_decision = DOWNLOAD_ROUTER.route(&request.url, None).await;
         
-        println!("[Downloader] Routing decision for {}: {:?}", request.url, routing_decision);
+        println!("[Downloader] Routing decision for {}: {:?}", redact_url(&request.url), routing_decision);
         println!("[Downloader] Selected engine: {} | Recommended connections: {} | Reason: {}",
             routing_decision.badge,
             routing_decision.recommended_connections,
@@ -768,12 +868,18 @@ impl Downloader {
         } else if let Some(quality) = &request.quality {
             // Use simpler format strings that are more reliable
             let format_selector = match quality.as_str() {
-                "best" | "4k" | "2160p" => "bestvideo+bestaudio/best",
-                "1080p" => "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
-                "720p" => "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
-                "480p" => "bestvideo[height<=480]+bestaudio/best[height<=480]/best",
-                "360p" => "bestvideo[height<=360]+bestaudio/best[height<=360]/best",
-                _ => "bestvideo+bestaudio/best",
+                "best" | "4k" | "2160p" =>
+                    "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+                "1080p" =>
+                    "bestvideo[vcodec^=avc1][height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+                "720p" =>
+                    "bestvideo[vcodec^=avc1][height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+                "480p" =>
+                    "bestvideo[vcodec^=avc1][height<=480][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=480]+bestaudio/best[height<=480]/best",
+                "360p" =>
+                    "bestvideo[vcodec^=avc1][height<=360][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=360]+bestaudio/best[height<=360]/best",
+                _ =>
+                    "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
             };
             args.extend(["-f".to_string(), format_selector.to_string()]);
             // Use user-selected output format when merging
@@ -804,7 +910,8 @@ impl Downloader {
             args.push("all".to_string());
         }
 
-        // Add URL
+        // Add URL (after `--` separator to prevent yt-dlp flag injection)
+        args.push("--".to_string());
         args.push(request.url.clone());
 
         let mut child = Self::create_hidden_command(&self.yt_dlp_path)
@@ -859,7 +966,7 @@ impl Downloader {
                     result = stdout_reader.next_line() => {
                         match result {
                             Ok(Some(line)) => {
-                                println!("[yt-dlp stdout] {}", line);
+                                println!("[yt-dlp stdout] {}", redact_line(&line));
                                 let _ = handle_download_output_line(
                                     &line,
                                     &app,
@@ -880,7 +987,7 @@ impl Downloader {
                     result = stderr_reader.next_line() => {
                         match result {
                             Ok(Some(line)) => {
-                                println!("[yt-dlp stderr] {}", line);
+                                println!("[yt-dlp stderr] {}", redact_line(&line));
                                 let handled = handle_download_output_line(
                                     &line,
                                     &app,
@@ -941,21 +1048,69 @@ impl Downloader {
                 }
             }
 
+            // On completion, read actual file size from disk
+            let (final_file_size, final_filename) = if final_status == "completed" {
+                match get_downloaded_file_info(&output_path) {
+                    Some((size, name)) => {
+                        println!("[Downloader] Completed file: {} ({} bytes)", name, size);
+                        (Some(size), Some(name))
+                    }
+                    None => {
+                        println!("[Downloader] Warning: Could not determine completed file size");
+                        (None, None)
+                    }
+                }
+            } else {
+                (None, None)
+            };
+
             let _ = app.emit("download-progress", DownloadProgress {
                 id: id.clone(),
                 progress: if final_status == "completed" { 100.0 } else { last_progress },
                 speed: String::new(),
                 eta: String::new(),
                 status: final_status.to_string(),
-                downloaded_bytes: None,
-                total_bytes: None,
-                filename: None,
+                downloaded_bytes: final_file_size,
+                total_bytes: final_file_size,
+                filename: final_filename,
                 engine_badge: Some(engine_badge.clone()),
             });
         });
 
         Ok(())
     }
+}
+
+/// Scan the output directory for the most recently modified media file,
+/// excluding subtitle files, temp files, and partial downloads.
+/// Returns (file_size_bytes, filename) on success.
+fn get_downloaded_file_info(output_dir: &str) -> Option<(i64, String)> {
+    let dir = std::fs::read_dir(output_dir).ok()?;
+    let skip_exts = ["vtt", "srt", "ass", "sub", "part", "temp", "ytdl", "tmp"];
+
+    dir.flatten()
+        .filter(|entry| {
+            let path = entry.path();
+            if !path.is_file() {
+                return false;
+            }
+            if let Some(ext) = path.extension() {
+                let ext_lower = ext.to_string_lossy().to_lowercase();
+                if skip_exts.contains(&ext_lower.as_str()) {
+                    return false;
+                }
+            }
+            true
+        })
+        .filter_map(|entry| {
+            let meta = entry.metadata().ok()?;
+            let modified = meta.modified().ok()?;
+            let size = meta.len() as i64;
+            let name = entry.file_name().to_string_lossy().to_string();
+            Some((modified, size, name))
+        })
+        .max_by_key(|(modified, _, _)| *modified)
+        .map(|(_, size, name)| (size, name))
 }
 
 fn handle_download_output_line(
@@ -984,12 +1139,19 @@ fn handle_download_output_line(
             stabilized_progress = (*last_progress + 0.6).min(98.0);
         }
 
+        // Cap forward jumps at 5% per sample
+        if stabilized_progress > *last_progress + 5.0 && *last_progress > 0.0 {
+            stabilized_progress = *last_progress + 5.0;
+        }
+
         // Keep progress monotonic, but allow a genuine phase reset when yt-dlp
         // moves from one stream to another (high -> very low).
         if stabilized_progress < *last_progress {
             let is_stream_phase_reset = *last_progress >= 85.0 && stabilized_progress <= 5.0;
             if !is_stream_phase_reset {
                 stabilized_progress = *last_progress;
+            } else {
+                *smoothed_speed_bps = None;
             }
         }
 
@@ -997,7 +1159,7 @@ fn handle_download_output_line(
 
         if let Some(raw_speed_bps) = progress.speed_bps {
             *smoothed_speed_bps = Some(match *smoothed_speed_bps {
-                Some(previous) => previous + (raw_speed_bps - previous) * 0.30,
+                Some(previous) => previous + (raw_speed_bps - previous) * 0.05,
                 None => raw_speed_bps,
             });
         }
@@ -1015,10 +1177,8 @@ fn handle_download_output_line(
             .unwrap_or_default();
         let eta_label = progress.eta;
 
-        let should_emit = last_emit_at.elapsed() >= Duration::from_millis(180)
-            || (stabilized_progress - *last_emitted_progress).abs() >= 0.5
-            || speed_label != *last_speed_label
-            || eta_label != *last_eta_label;
+        let should_emit = last_emit_at.elapsed() >= Duration::from_millis(500)
+            || (stabilized_progress - *last_emitted_progress).abs() >= 0.5;
 
         if should_emit {
             let event = DownloadProgress {
@@ -1050,6 +1210,7 @@ fn handle_download_output_line(
             *last_progress
         };
         *last_progress = merge_progress;
+        *smoothed_speed_bps = None;
         let event = DownloadProgress {
             id: id.to_string(),
             progress: merge_progress,
@@ -1122,7 +1283,7 @@ fn parse_progress_template(line: &str) -> Option<ParsedProgress> {
         None
     };
 
-    let progress = progress_from_bytes.or(progress_from_percent)?;
+    let progress = progress_from_percent.or(progress_from_bytes)?;
 
     let speed_raw = sanitize_metric(parts[1]);
     let speed_bps = parse_speed_to_bps(&speed_raw);
@@ -1285,7 +1446,10 @@ pub async fn get_media_info(app_handle: AppHandle, url: String, enable_sponsorbl
 #[tauri::command]
 pub async fn probe_direct_file(url: String) -> Result<DirectFileInfo, String> {
     use reqwest::header::{CONTENT_LENGTH, USER_AGENT};
-    
+
+    // Validate URL before making any request (anti-SSRF)
+    let _parsed_url = validate_url(&url)?;
+
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::limited(10))
         .timeout(std::time::Duration::from_secs(30))
@@ -1359,7 +1523,7 @@ pub async fn probe_direct_file(url: String) -> Result<DirectFileInfo, String> {
         ct.contains("octet-stream")
     }).unwrap_or(true);
     
-    println!("[ProbeDirectFile] URL: {}", url);
+    println!("[ProbeDirectFile] URL: {}", redact_url(&url));
     println!("[ProbeDirectFile] Size: {} bytes, Filename: {:?}, Type: {:?}", file_size, filename, content_type);
     
     Ok(DirectFileInfo {

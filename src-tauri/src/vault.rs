@@ -21,10 +21,24 @@ use zip::{ZipArchive, ZipWriter, write::FileOptions, CompressionMethod};
 
 const VAULT_DIR_NAME: &str = "vault";
 const VAULT_CONFIG_FILE: &str = "vault_config.json";
+const PIN_ATTEMPTS_FILE: &str = "pin_attempts.json";
 pub const ENCRYPTED_EXTENSION: &str = ".slasshy";
 const LEGACY_EXTENSION: &str = ".vault"; // For backward compatibility
 const NONCE_SIZE: usize = 12;
 const KEY_SIZE: usize = 32;
+const PIN_MIN_LENGTH: usize = 8;
+const AUTO_LOCK_TIMEOUT_SECS: i64 = 900; // 15 minutes
+const MAX_PIN_ATTEMPTS: u32 = 10;
+const BACKOFF_AFTER_FAILURES: u32 = 5;
+const WIPE_WARNING_ATTEMPTS: u32 = 20;
+const BACKOFF_BASE_SECS: u64 = 5;
+
+// Brute force protection state
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct PinAttemptState {
+    failed_count: u32,
+    last_failure_at: Option<i64>,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VaultConfig {
@@ -80,10 +94,18 @@ struct VaultSession {
 
 /// Helper to get the vault key without holding the MutexGuard across await points
 /// Made public for vault_download module
+/// Auto-locks if session has been idle for more than AUTO_LOCK_TIMEOUT_SECS
 pub fn get_vault_key() -> Result<[u8; KEY_SIZE], String> {
-    let session = VAULT_SESSION.lock().unwrap();
+    let mut session = VAULT_SESSION.lock().unwrap();
     match &*session {
-        Some(s) => Ok(s.key),
+        Some(s) => {
+            let now = chrono::Utc::now().timestamp();
+            if now - s.unlocked_at > AUTO_LOCK_TIMEOUT_SECS {
+                *session = None;
+                return Err("Vault session expired due to inactivity. Please unlock again.".to_string());
+            }
+            Ok(s.key)
+        }
         None => Err("Vault is locked. Unlock it first.".to_string()),
     }
 }
@@ -165,9 +187,13 @@ fn get_vault_index_path(app_handle: &AppHandle) -> PathBuf {
 }
 
 fn derive_key_from_pin(pin: &str, salt: &[u8]) -> [u8; KEY_SIZE] {
-    use argon2::Argon2;
+    use argon2::{Algorithm, Argon2, Params, Version};
     let mut key = [0u8; KEY_SIZE];
-    Argon2::default()
+    // Stronger params: 64MB memory, 3 iterations, parallelism 4
+    let params = Params::new(65536, 3, 4, Some(KEY_SIZE))
+        .expect("Failed to create Argon2 params");
+    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+    argon2
         .hash_password_into(pin.as_bytes(), salt, &mut key)
         .expect("Failed to derive key from PIN");
     key
@@ -196,28 +222,102 @@ fn save_vault_config(app_handle: &AppHandle, config: &VaultConfig) -> Result<(),
     Ok(())
 }
 
+fn get_pin_attempts_path(app_handle: &AppHandle) -> PathBuf {
+    get_vault_dir(app_handle).join(PIN_ATTEMPTS_FILE)
+}
+
+fn load_pin_attempts(app_handle: &AppHandle) -> PinAttemptState {
+    let path = get_pin_attempts_path(app_handle);
+    if let Ok(content) = fs::read_to_string(&path) {
+        serde_json::from_str(&content).unwrap_or(PinAttemptState { failed_count: 0, last_failure_at: None })
+    } else {
+        PinAttemptState { failed_count: 0, last_failure_at: None }
+    }
+}
+
+fn save_pin_attempts(app_handle: &AppHandle, state: &PinAttemptState) {
+    let path = get_pin_attempts_path(app_handle);
+    if let Ok(content) = serde_json::to_string(state) {
+        let _ = fs::create_dir_all(path.parent().unwrap());
+        let _ = fs::write(&path, content);
+    }
+}
+
+fn check_pin_lockout(app_handle: &AppHandle) -> Result<(), String> {
+    let state = load_pin_attempts(app_handle);
+    if state.failed_count >= MAX_PIN_ATTEMPTS {
+        return Err(format!(
+            "Vault locked due to too many failed attempts ({}). Reset the app or wait for lockout to expire.",
+            state.failed_count
+        ));
+    }
+    if state.failed_count >= BACKOFF_AFTER_FAILURES {
+        if let Some(last_failure) = state.last_failure_at {
+            let now = chrono::Utc::now().timestamp();
+            let elapsed = (now - last_failure).max(0) as u64;
+            let required_wait = BACKOFF_BASE_SECS.pow(state.failed_count - BACKOFF_AFTER_FAILURES + 1);
+            if elapsed < required_wait {
+                let remaining = required_wait - elapsed;
+                return Err(format!(
+                    "Too many failed attempts. Try again in {} seconds.",
+                    remaining
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn record_pin_failure(app_handle: &AppHandle) {
+    let mut state = load_pin_attempts(app_handle);
+    state.failed_count += 1;
+    state.last_failure_at = Some(chrono::Utc::now().timestamp());
+    save_pin_attempts(app_handle, &state);
+}
+
+fn reset_pin_attempts(app_handle: &AppHandle) {
+    let state = PinAttemptState { failed_count: 0, last_failure_at: None };
+    save_pin_attempts(app_handle, &state);
+}
+
+/// Validate PIN complexity: minimum 8 characters, reject common patterns
+fn validate_pin_complexity(pin: &str) -> Result<(), String> {
+    if pin.len() < PIN_MIN_LENGTH {
+        return Err(format!("PIN must be at least {} characters", PIN_MIN_LENGTH));
+    }
+
+    // Reject all-same-digit PINs (e.g., "00000000", "11111111")
+    if pin.chars().all(|c| c == pin.chars().next().unwrap()) {
+        return Err("PIN cannot be all the same character".to_string());
+    }
+
+    // Reject common weak PINs
+    const COMMON_PINS: &[&str] = &[
+        "12345678", "87654321", "123456789", "987654321",
+        "password", "qwerty123", "abc12345", "11111111",
+        "00000000", "12341234", "11223344", "abcd1234",
+    ];
+    let lower_pin = pin.to_lowercase();
+    if COMMON_PINS.contains(&lower_pin.as_str()) {
+        return Err("PIN is too common. Choose a more unique PIN.".to_string());
+    }
+
+    // Reject sequential ascending/descending digits
+    let digits_only: Vec<u8> = pin.bytes().filter(|b| b.is_ascii_digit()).collect();
+    if digits_only.len() == pin.len() && digits_only.len() >= 8 {
+        let ascending = digits_only.windows(2).all(|w| w[1] == w[0] + 1);
+        let descending = digits_only.windows(2).all(|w| w[1] + 1 == w[0]);
+        if ascending || descending {
+            return Err("PIN cannot be sequential digits".to_string());
+        }
+    }
+
+    Ok(())
+}
+
 // ============ CLOUD-ONLY INDEX ============
 // The vault index is now stored ONLY in Google Drive (encrypted with user's PIN)
 // These legacy functions are kept for migration but marked as deprecated
-
-/// DEPRECATED: Load vault index from local file
-/// The index is now managed by the frontend via encrypted Google Drive
-#[allow(dead_code)]
-fn load_vault_index_legacy(app_handle: &AppHandle) -> Vec<VaultFile> {
-    let index_path = get_vault_index_path(app_handle);
-    println!("[Vault] LEGACY load_vault_index from: {:?}", index_path);
-    
-    if !index_path.exists() {
-        return Vec::new();
-    }
-
-    let content = match fs::read_to_string(&index_path) {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
-    };
-
-    serde_json::from_str::<Vec<VaultFile>>(&content).unwrap_or_default()
-}
 
 /// Count encrypted files in vault directory (for status without index)
 /// Supports both .slasshy (new) and .vault (legacy) extensions
@@ -441,8 +541,16 @@ pub fn vault_get_status(app_handle: AppHandle) -> VaultStatus {
     let config = load_vault_config(&app_handle);
     let is_setup = config.is_some();
     
-    let session = VAULT_SESSION.lock().unwrap();
-    let is_unlocked = session.is_some();
+    let mut session = VAULT_SESSION.lock().unwrap();
+    let mut is_unlocked = session.is_some();
+    // Auto-lock check
+    if let Some(ref s) = *session {
+        let now = chrono::Utc::now().timestamp();
+        if now - s.unlocked_at > AUTO_LOCK_TIMEOUT_SECS {
+            *session = None;
+            is_unlocked = false;
+        }
+    }
     drop(session);
 
     // Count files from disk (encrypted size, not original)
@@ -468,18 +576,19 @@ pub fn vault_get_status(app_handle: AppHandle) -> VaultStatus {
 /// Set up the vault with a new PIN
 #[tauri::command]
 pub fn vault_setup(app_handle: AppHandle, pin: String) -> Result<(), String> {
-    if pin.len() < 4 {
-        return Err("PIN must be at least 4 digits".to_string());
-    }
+    validate_pin_complexity(&pin)?;
 
     // Check if already set up
     if load_vault_config(&app_handle).is_some() {
         return Err("Vault is already set up. Reset it first to change PIN.".to_string());
     }
 
-    // Generate salt and hash PIN
+    // Generate salt and hash PIN with stronger params
     let salt = SaltString::generate(&mut OsRng);
-    let argon2 = Argon2::default();
+    use argon2::{Algorithm, Argon2, Params, Version};
+    let params = Params::new(65536, 3, 4, None)
+        .map_err(|e| format!("Failed to create Argon2 params: {}", e))?;
+    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
     let pin_hash = argon2
         .hash_password(pin.as_bytes(), &salt)
         .map_err(|e| format!("Failed to hash PIN: {}", e))?
@@ -522,13 +631,34 @@ pub fn vault_unlock(app_handle: AppHandle, pin: String) -> Result<(), String> {
     let config = load_vault_config(&app_handle)
         .ok_or("Vault is not set up")?;
 
+    // Check brute force lockout
+    check_pin_lockout(&app_handle)?;
+
     // Verify PIN
     let parsed_hash = PasswordHash::new(&config.pin_hash)
         .map_err(|e| format!("Invalid stored hash: {}", e))?;
-    
-    Argon2::default()
-        .verify_password(pin.as_bytes(), &parsed_hash)
-        .map_err(|_| "Invalid PIN".to_string())?;
+
+    let verify_result = Argon2::default()
+        .verify_password(pin.as_bytes(), &parsed_hash);
+
+    match verify_result {
+        Ok(_) => {
+            // Success - reset attempt counter
+            reset_pin_attempts(&app_handle);
+        }
+        Err(_) => {
+            // Failure - record attempt
+            record_pin_failure(&app_handle);
+            let state = load_pin_attempts(&app_handle);
+            if state.failed_count >= WIPE_WARNING_ATTEMPTS {
+                return Err(format!(
+                    "CRITICAL: {} failed attempts. Further attempts may result in data loss.",
+                    state.failed_count
+                ));
+            }
+            return Err("Invalid PIN".to_string());
+        }
+    }
 
     // Derive encryption key from PIN
     let key = derive_key_from_pin(&pin, config.salt.as_bytes());
@@ -626,12 +756,8 @@ pub async fn vault_add_file(
 pub fn vault_list_files(app_handle: AppHandle) -> Result<Vec<VaultFile>, String> {
     println!("[Vault] vault_list_files called (cloud-only mode)");
     
-    let session = VAULT_SESSION.lock().unwrap();
-    if session.is_none() {
-        println!("[Vault] ERROR: Vault is locked");
-        return Err("Vault is locked. Unlock it first.".to_string());
-    }
-    drop(session);
+    // Check vault key (includes auto-lock check)
+    let _key = get_vault_key()?;
 
     // Return empty - the frontend manages the index via encrypted Google Drive
     // This prevents any file metadata from being stored locally
@@ -729,11 +855,8 @@ pub fn vault_cleanup_temp(app_handle: AppHandle) -> Result<(), String> {
 /// Supports both .slasshy (new) and .vault (legacy) extensions
 #[tauri::command]
 pub fn vault_delete_file(app_handle: AppHandle, file_id: String) -> Result<(), String> {
-    let session = VAULT_SESSION.lock().unwrap();
-    if session.is_none() {
-        return Err("Vault is locked. Unlock it first.".to_string());
-    }
-    drop(session);
+    // Check vault key (includes auto-lock check)
+    let _key = get_vault_key()?;
 
     let files_dir = get_vault_files_dir(&app_handle);
     
@@ -768,20 +891,30 @@ pub fn vault_change_pin(
     current_pin: String,
     new_pin: String,
 ) -> Result<(), String> {
-    if new_pin.len() < 4 {
-        return Err("New PIN must be at least 4 digits".to_string());
-    }
+    validate_pin_complexity(&new_pin)?;
 
     let config = load_vault_config(&app_handle)
         .ok_or("Vault is not set up")?;
 
+    // Check brute force lockout for current PIN verification
+    check_pin_lockout(&app_handle)?;
+
     // Verify current PIN
     let parsed_hash = PasswordHash::new(&config.pin_hash)
         .map_err(|e| format!("Invalid stored hash: {}", e))?;
-    
-    Argon2::default()
-        .verify_password(current_pin.as_bytes(), &parsed_hash)
-        .map_err(|_| "Current PIN is incorrect".to_string())?;
+
+    let verify_result = Argon2::default()
+        .verify_password(current_pin.as_bytes(), &parsed_hash);
+
+    match verify_result {
+        Ok(_) => {
+            reset_pin_attempts(&app_handle);
+        }
+        Err(_) => {
+            record_pin_failure(&app_handle);
+            return Err("Current PIN is incorrect".to_string());
+        }
+    }
 
     // Scan vault directory for .slasshy and .vault files (no local index)
     let files_dir = get_vault_files_dir(&app_handle);
@@ -803,10 +936,13 @@ pub fn vault_change_pin(
 
     let current_key = derive_key_from_pin(&current_pin, config.salt.as_bytes());
 
-    // Generate new salt and hash
+    // Generate new salt and hash with stronger params
     let new_salt = SaltString::generate(&mut OsRng);
-    let argon2 = Argon2::default();
-    let new_pin_hash = argon2
+    use argon2::{Algorithm, Argon2, Params, Version};
+    let params = Params::new(65536, 3, 4, None)
+        .map_err(|e| format!("Failed to create Argon2 params: {}", e))?;
+    let argon2_new = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+    let new_pin_hash = argon2_new
         .hash_password(new_pin.as_bytes(), &new_salt)
         .map_err(|e| format!("Failed to hash new PIN: {}", e))?
         .to_string();
@@ -896,17 +1032,38 @@ pub fn vault_get_config(app_handle: AppHandle) -> Result<VaultConfig, String> {
 }
 
 /// Import a vault configuration from the cloud
+/// Requires vault to be unlocked to prevent unauthorized config overwrites
 #[tauri::command]
 pub fn vault_import_config(app_handle: AppHandle, config: VaultConfig) -> Result<(), String> {
+    // Require vault to be unlocked (valid session) before allowing config import
+    let session = VAULT_SESSION.lock().unwrap();
+    if session.is_none() {
+        return Err("Vault must be unlocked to import configuration".to_string());
+    }
+    drop(session);
+
     save_vault_config(&app_handle, &config)
 }
 
 /// Wipe the local vault configuration without deleting files
+/// Requires vault to be unlocked to prevent unauthorized DoS
 #[tauri::command]
 pub fn vault_wipe_local_config(app_handle: AppHandle) -> Result<(), String> {
+    // Require vault to be unlocked (valid session) before allowing wipe
+    let session = VAULT_SESSION.lock().unwrap();
+    if session.is_none() {
+        return Err("Vault must be unlocked to wipe configuration".to_string());
+    }
+    drop(session);
+
     let config_path = get_vault_config_path(&app_handle);
     if config_path.exists() {
         std::fs::remove_file(config_path).map_err(|e| e.to_string())?;
+    }
+    // Clean up brute force state too
+    let attempts_path = get_pin_attempts_path(&app_handle);
+    if attempts_path.exists() {
+        let _ = std::fs::remove_file(&attempts_path);
     }
     let mut session = VAULT_SESSION.lock().unwrap();
     *session = None;

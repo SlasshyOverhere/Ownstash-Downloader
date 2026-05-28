@@ -1,6 +1,6 @@
 // Authentication Context - Provides auth state throughout the app
 // Uses backend OAuth - no Firebase dependency
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { createContext, use, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { authService, AuthUser, initializeAuthState } from '@/services/auth';
 
 interface AuthContextType {
@@ -9,17 +9,10 @@ interface AuthContextType {
     isGDriveReady: boolean;
     /** Indicates if GDrive token was successfully loaded from persistent storage */
     hasGDriveToken: boolean;
-    /** Indicates if user is in offline mode (no Google login) */
-    isOfflineMode: boolean;
-    /** Set offline mode (continue without login) */
-    setOfflineMode: (offline: boolean) => void;
     /** Force re-check GDrive availability (useful after manual sign-in) */
     recheckGDriveToken: () => Promise<boolean>;
-    signIn: (email: string, password: string) => Promise<void>;
-    signUp: (email: string, password: string, displayName?: string) => Promise<void>;
     signInWithGoogle: () => Promise<void>;
     signOut: () => Promise<void>;
-    resetPassword: (email: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -34,12 +27,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const [loading, setLoading] = useState(true);
     const [isGDriveReady, setIsGDriveReady] = useState(false);
     const [hasGDriveToken, setHasGDriveToken] = useState(false);
-    // Track if user is in offline mode (continue without login)
-    const [isOfflineMode, setIsOfflineMode] = useState(false);
-    // Track if auth state has been resolved
-    const [authResolved, setAuthResolved] = useState(false);
-    // Track if GDrive token loading has been attempted
-    const [tokenLoadAttempted, setTokenLoadAttempted] = useState(false);
+    // Internal coordination flags — never read in JSX, so use refs to avoid unnecessary re-renders
+    const authResolvedRef = useRef(false);
+    const tokenLoadAttemptedRef = useRef(false);
+
+    // When both coordination flags are true, promote to render-driving state
+    const checkGDriveReady = useCallback(() => {
+        if (authResolvedRef.current && tokenLoadAttemptedRef.current) {
+            console.log('[Auth] Both auth and token load complete, setting isGDriveReady=true');
+            setIsGDriveReady(true);
+        }
+    }, []);
 
     // Function to check and load persisted token
     const recheckGDriveToken = useCallback(async (): Promise<boolean> => {
@@ -80,7 +78,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             const storedUser = initializeAuthState();
             if (storedUser && isMounted) {
                 setUser(storedUser);
-                console.log('[Auth] Found stored user:', storedUser.email);
+                console.log('[Auth] Found stored user:', storedUser.email ? storedUser.email.replace(/^(.)(.*?)(@.*)$/, '$1***$3') : 'unknown');
             }
 
             // Step 2: Load persisted Google Drive token
@@ -88,13 +86,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
             try {
                 const tokenLoaded = await recheckGDriveToken();
                 if (isMounted) {
-                    setTokenLoadAttempted(true);
+                    tokenLoadAttemptedRef.current = true;
+                    checkGDriveReady();
                     console.log('[Auth] GDrive token load complete, hasToken:', tokenLoaded);
                 }
             } catch (err) {
                 console.error('[Auth] Error in token load:', err);
                 if (isMounted) {
-                    setTokenLoadAttempted(true);
+                    tokenLoadAttemptedRef.current = true;
+                    checkGDriveReady();
                 }
             }
 
@@ -110,7 +110,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
             // Mark as resolved
             if (isMounted) {
                 setLoading(false);
-                setAuthResolved(true);
+                authResolvedRef.current = true;
+                checkGDriveReady();
             }
         };
 
@@ -122,7 +123,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
             if (isMounted) {
                 setUser(authUser);
                 setLoading(false);
-                setAuthResolved(true);
+                authResolvedRef.current = true;
+                checkGDriveReady();
             }
         });
 
@@ -130,26 +132,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             isMounted = false;
             unsubscribe();
         };
-    }, [recheckGDriveToken]);
-
-    // Set isGDriveReady only when BOTH auth is resolved AND token load was attempted
-    // This prevents DataContext from making decisions before we know the full state
-    useEffect(() => {
-        if (authResolved && tokenLoadAttempted) {
-            console.log('[Auth] Both auth and token load complete, setting isGDriveReady=true');
-            setIsGDriveReady(true);
-        }
-    }, [authResolved, tokenLoadAttempted]);
-
-    const signIn = async (email: string, password: string) => {
-        const authUser = await authService.signIn(email, password);
-        setUser(authUser);
-    };
-
-    const signUp = async (email: string, password: string, displayName?: string) => {
-        const authUser = await authService.signUp(email, password, displayName);
-        setUser(authUser);
-    };
+    }, [recheckGDriveToken, checkGDriveReady]);
 
     const signInWithGoogle = async () => {
         const authUser = await authService.signInWithGoogle();
@@ -172,29 +155,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setUser(null);
     };
 
-    const resetPassword = async (email: string) => {
-        await authService.resetPassword(email);
-    };
-
-    // Function to enable/disable offline mode
-    const setOfflineMode = useCallback((offline: boolean) => {
-        console.log('[Auth] Setting offline mode:', offline);
-        setIsOfflineMode(offline);
-    }, []);
-
     const value: AuthContextType = {
         user,
         loading,
         isGDriveReady,
         hasGDriveToken,
-        isOfflineMode,
-        setOfflineMode,
         recheckGDriveToken,
-        signIn,
-        signUp,
         signInWithGoogle,
         signOut,
-        resetPassword,
     };
 
     return (
@@ -205,7 +173,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 }
 
 export function useAuth() {
-    const context = useContext(AuthContext);
+    const context = use(AuthContext);
     if (context === undefined) {
         throw new Error('useAuth must be used within an AuthProvider');
     }

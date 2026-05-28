@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useEffectEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { LazyMotion, m, domAnimation, AnimatePresence } from 'framer-motion';
 import {
     X,
     Download,
@@ -17,7 +17,7 @@ import {
     Scissors
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import api, { FormatInfo, MediaInfo, formatBytes, formatDuration } from '@/services/api';
+import { FormatInfo, MediaInfo, formatBytes, formatDuration } from '@/services/api';
 
 interface MediaInfoModalProps {
     isOpen: boolean;
@@ -268,12 +268,7 @@ export function MediaInfoModal({
         }
     }, [maxVideoHeight, mediaInfo.formats]);
 
-    // Load SponsorBlock setting
-    useEffect(() => {
-        api.getSetting('use_sponsorblock').then(val => {
-            if (val !== null) setUseSponsorblock(val === 'true');
-        });
-    }, []);
+    // SponsorBlock: always starts disabled, user can toggle on per-session
 
     // Helper to find sponsor segments
     const sponsorSegments = mediaInfo.chapters?.filter(c =>
@@ -320,18 +315,21 @@ export function MediaInfoModal({
         });
     };
 
+    const onEscapeClose = useEffectEvent(onClose);
+
     // Handle escape key
     useEffect(() => {
         const handleEscape = (e: KeyboardEvent) => {
             if (e.key === 'Escape' && isOpen) {
-                onClose();
+                onEscapeClose();
             }
         };
         window.addEventListener('keydown', handleEscape);
         return () => window.removeEventListener('keydown', handleEscape);
-    }, [isOpen, onClose]);
+    }, [isOpen]);
 
     const modalContent = (
+        <LazyMotion features={domAnimation}>
         <AnimatePresence>
             {isOpen && (
                 <div
@@ -345,7 +343,7 @@ export function MediaInfoModal({
                     }}
                 >
                     {/* Backdrop */}
-                    <motion.div
+                    <m.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
@@ -360,7 +358,7 @@ export function MediaInfoModal({
                         style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
                     >
                         {/* Modal */}
-                        <motion.div
+                        <m.div
                             initial={{ opacity: 0, scale: 0.95 }}
                             animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, scale: 0.95 }}
@@ -381,7 +379,7 @@ export function MediaInfoModal({
                                 {/* Header */}
                                 <div className="flex items-start gap-3 mb-4">
                                     {/* Thumbnail */}
-                                    <div className="w-16 h-16 rounded-lg overflow-hidden shrink-0 bg-muted">
+                                    <div className="size-16 rounded-lg overflow-hidden shrink-0 bg-muted">
                                         {mediaInfo.thumbnail ? (
                                             <img
                                                 src={mediaInfo.thumbnail}
@@ -390,7 +388,7 @@ export function MediaInfoModal({
                                             />
                                         ) : (
                                             <div className="w-full h-full flex items-center justify-center">
-                                                <ImageIcon className="w-6 h-6 text-muted-foreground" />
+                                                <ImageIcon className="size-6 text-muted-foreground" />
                                             </div>
                                         )}
                                     </div>
@@ -403,13 +401,13 @@ export function MediaInfoModal({
                                             </span>
                                             {mediaInfo.duration && (
                                                 <span className="flex items-center gap-1">
-                                                    <Clock className="w-3 h-3" />
+                                                    <Clock className="size-3" />
                                                     {formatDuration(mediaInfo.duration)}
                                                 </span>
                                             )}
                                             {mediaInfo.uploader && (
                                                 <span className="flex items-center gap-1">
-                                                    <User className="w-3 h-3" />
+                                                    <User className="size-3" />
                                                     {mediaInfo.uploader}
                                                 </span>
                                             )}
@@ -419,13 +417,13 @@ export function MediaInfoModal({
                                         <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
                                             {mediaInfo.view_count && (
                                                 <span className="flex items-center gap-1">
-                                                    <Eye className="w-3 h-3" />
+                                                    <Eye className="size-3" />
                                                     {mediaInfo.view_count.toLocaleString()} views
                                                 </span>
                                             )}
                                             {mediaInfo.like_count && (
                                                 <span className="flex items-center gap-1">
-                                                    <ThumbsUp className="w-3 h-3" />
+                                                    <ThumbsUp className="size-3" />
                                                     {mediaInfo.like_count.toLocaleString()}
                                                 </span>
                                             )}
@@ -434,18 +432,19 @@ export function MediaInfoModal({
 
                                     {/* Close button */}
                                     <button
+                                        type="button"
                                         onClick={onClose}
                                         aria-label="Close"
                                         className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-white/10 transition-colors"
                                     >
-                                        <X className="w-5 h-5" />
+                                        <X className="size-5" />
                                     </button>
                                 </div>
 
                                 {/* Direct File Download Banner */}
                                 {isDirectFile && (
                                     <div className="flex items-center gap-3 p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 mb-4">
-                                        <Download className="w-5 h-5 text-cyan-400 shrink-0" />
+                                        <Download className="size-5 text-cyan-400 shrink-0" />
                                         <div>
                                             <p className="text-sm font-medium text-cyan-400">Direct File Download</p>
                                             <p className="text-xs text-muted-foreground">
@@ -464,6 +463,7 @@ export function MediaInfoModal({
                                 {!isDirectFile && (
                                     <div className="flex gap-2 p-1 rounded-xl bg-muted/50 mb-4">
                                         <button
+                                            type="button"
                                             onClick={() => setDownloadMode('video')}
                                             className={cn(
                                                 'flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg transition-all text-sm',
@@ -472,10 +472,11 @@ export function MediaInfoModal({
                                                     : 'text-muted-foreground hover:bg-white/5'
                                             )}
                                         >
-                                            <Video className="w-4 h-4" />
+                                            <Video className="size-4" />
                                             <span className="font-medium">Video</span>
                                         </button>
                                         <button
+                                            type="button"
                                             onClick={() => setDownloadMode('audio')}
                                             className={cn(
                                                 'flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg transition-all text-sm',
@@ -484,7 +485,7 @@ export function MediaInfoModal({
                                                     : 'text-muted-foreground hover:bg-white/5'
                                             )}
                                         >
-                                            <Music className="w-4 h-4" />
+                                            <Music className="size-4" />
                                             <span className="font-medium">Audio Only</span>
                                         </button>
                                     </div>
@@ -507,6 +508,7 @@ export function MediaInfoModal({
 
                                                 return (
                                                     <button
+                                                        type="button"
                                                         key={option.value}
                                                         onClick={() => !isDisabled && setSelectedQuality(option.value)}
                                                         disabled={isDisabled}
@@ -524,7 +526,7 @@ export function MediaInfoModal({
                                                             {isDisabled ? (
                                                                 <span className="text-[9px] text-muted-foreground">N/A</span>
                                                             ) : selectedQuality === option.value && (
-                                                                <Check className="w-3 h-3 text-white" />
+                                                                <Check className="size-3 text-white" />
                                                             )}
                                                         </div>
                                                         <span className="text-[10px] text-muted-foreground">{option.desc}</span>
@@ -542,6 +544,7 @@ export function MediaInfoModal({
                                         <div className="grid grid-cols-3 gap-2">
                                             {videoFormatOptions.map((option) => (
                                                 <button
+                                                    type="button"
                                                     key={option.value}
                                                     onClick={() => setVideoFormat(option.value)}
                                                     className={cn(
@@ -554,7 +557,7 @@ export function MediaInfoModal({
                                                     <div className="flex items-center justify-between">
                                                         <span className="font-medium text-xs">{option.label}</span>
                                                         {videoFormat === option.value && (
-                                                            <Check className="w-3 h-3 text-white" />
+                                                            <Check className="size-3 text-white" />
                                                         )}
                                                     </div>
                                                     <span className="text-[10px] text-muted-foreground">{option.desc}</span>
@@ -571,6 +574,7 @@ export function MediaInfoModal({
                                         <div className="grid grid-cols-4 gap-2">
                                             {audioQualityOptions.map((option) => (
                                                 <button
+                                                    type="button"
                                                     key={option.value}
                                                     onClick={() => setAudioQuality(option.value)}
                                                     className={cn(
@@ -583,7 +587,7 @@ export function MediaInfoModal({
                                                     <div className="flex items-center justify-between">
                                                         <span className="font-medium text-xs">{option.label}</span>
                                                         {audioQuality === option.value && (
-                                                            <Check className="w-3 h-3 text-white" />
+                                                            <Check className="size-3 text-white" />
                                                         )}
                                                     </div>
                                                     <span className="text-[10px] text-muted-foreground">{option.desc}</span>
@@ -600,6 +604,7 @@ export function MediaInfoModal({
                                         <div className="grid grid-cols-5 gap-2">
                                             {audioFormatOptions.map((option) => (
                                                 <button
+                                                    type="button"
                                                     key={option.value}
                                                     onClick={() => setAudioFormat(option.value)}
                                                     className={cn(
@@ -611,7 +616,7 @@ export function MediaInfoModal({
                                                 >
                                                     <span className="font-medium text-xs">{option.label}</span>
                                                     {audioFormat === option.value && (
-                                                        <Check className="w-3 h-3 text-white mx-auto mt-1" />
+                                                        <Check className="size-3 text-white mx-auto mt-1" />
                                                     )}
                                                 </button>
                                             ))}
@@ -630,7 +635,7 @@ export function MediaInfoModal({
                                                     type="checkbox"
                                                     checked={embedThumbnail}
                                                     onChange={(e) => setEmbedThumbnail(e.target.checked)}
-                                                    className="w-4 h-4 accent-white"
+                                                    className="size-4 accent-white"
                                                 />
                                             </label>
                                             <label className="flex items-center justify-between p-2.5 rounded-lg border border-white/10 cursor-pointer hover:bg-white/5 transition-colors">
@@ -639,7 +644,7 @@ export function MediaInfoModal({
                                                     type="checkbox"
                                                     checked={embedMetadata}
                                                     onChange={(e) => setEmbedMetadata(e.target.checked)}
-                                                    className="w-4 h-4 accent-white"
+                                                    className="size-4 accent-white"
                                                 />
                                             </label>
                                             {downloadMode === 'video' && (
@@ -652,7 +657,7 @@ export function MediaInfoModal({
                                                         type="checkbox"
                                                         checked={downloadSubtitles}
                                                         onChange={(e) => setDownloadSubtitles(e.target.checked)}
-                                                        className="w-4 h-4 accent-white"
+                                                        className="size-4 accent-white"
                                                     />
                                                 </label>
                                             )}
@@ -660,7 +665,7 @@ export function MediaInfoModal({
                                                 <label className="flex items-center justify-between p-2.5 rounded-lg border border-white/10 cursor-pointer hover:bg-white/5 transition-colors">
                                                     <div className="flex flex-col">
                                                         <span className="flex items-center gap-2 text-sm">
-                                                            <Scissors className="w-3.5 h-3.5 text-rose-400" />
+                                                            <Scissors className="size-3.5 text-rose-400" />
                                                             Remove Sponsors
                                                         </span>
                                                         <span className="text-[10px] text-muted-foreground">Skip intros, outros & ads (SponsorBlock)</span>
@@ -669,7 +674,7 @@ export function MediaInfoModal({
                                                         type="checkbox"
                                                         checked={useSponsorblock}
                                                         onChange={(e) => setUseSponsorblock(e.target.checked)}
-                                                        className="w-4 h-4 accent-rose-500"
+                                                        className="size-4 accent-rose-500"
                                                     />
                                                 </label>
                                             )}
@@ -681,7 +686,7 @@ export function MediaInfoModal({
                                 {useSponsorblock && sponsorSegments.length > 0 && (
                                     <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20">
                                         <div className="flex items-center gap-2 mb-2 text-rose-400">
-                                            <Scissors className="w-3.5 h-3.5" />
+                                            <Scissors className="size-3.5" />
                                             <span className="text-xs font-semibold">Segments to Remove ({sponsorSegments.length})</span>
                                         </div>
                                         <div className="space-y-1 max-h-24 overflow-y-auto pr-1 custom-scrollbar">
@@ -701,24 +706,26 @@ export function MediaInfoModal({
                                 {!isDirectFile && (
                                     <div className="mb-4">
                                         <button
+                                            type="button"
                                             onClick={() => setShowAdvanced(!showAdvanced)}
                                             className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
                                         >
                                             <ChevronDown className={cn(
-                                                'w-3 h-3 transition-transform',
+                                                'size-3 transition-transform',
                                                 showAdvanced && 'rotate-180'
                                             )} />
                                             Advanced: Select specific format
                                         </button>
 
                                         {showAdvanced && (
-                                            <motion.div
+                                            <m.div
                                                 initial={{ opacity: 0, height: 0 }}
                                                 animate={{ opacity: 1, height: 'auto' }}
                                                 className="mt-2 space-y-1 max-h-32 overflow-y-auto"
                                             >
                                                 {mediaInfo.formats.slice(0, 15).map((format) => (
                                                     <button
+                                                        type="button"
                                                         key={format.format_id}
                                                         onClick={() => setSelectedFormat(format.format_id)}
                                                         className={cn(
@@ -731,10 +738,10 @@ export function MediaInfoModal({
                                                         <div className="flex items-center justify-between gap-2">
                                                             <div className="flex items-center gap-1">
                                                                 {format.vcodec && format.vcodec !== 'none' && (
-                                                                    <Video className="w-3 h-3 text-white/70" />
+                                                                    <Video className="size-3 text-white/70" />
                                                                 )}
                                                                 {format.acodec && format.acodec !== 'none' && (
-                                                                    <Music className="w-3 h-3 text-white/70" />
+                                                                    <Music className="size-3 text-white/70" />
                                                                 )}
                                                                 <span className="font-mono">{format.format_id}</span>
                                                                 <span className="text-muted-foreground">({format.ext})</span>
@@ -750,13 +757,14 @@ export function MediaInfoModal({
                                                         </div>
                                                     </button>
                                                 ))}
-                                            </motion.div>
+                                            </m.div>
                                         )}
                                     </div>
                                 )}
 
                                 {/* Download Button */}
                                 <button
+                                    type="button"
                                     onClick={handleDownload}
                                     disabled={isDownloading || qualityUnavailable}
                                     className={cn(
@@ -766,12 +774,12 @@ export function MediaInfoModal({
                                 >
                                     {isDownloading ? (
                                         <>
-                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                            <span>Starting Download...</span>
+                                            <Loader2 className="size-4 animate-spin" />
+                                            <span>Starting Download…</span>
                                         </>
                                     ) : (
                                         <>
-                                            <Download className="w-4 h-4" />
+                                            <Download className="size-4" />
                                             <span>Download {isDirectFile ? 'File' : (downloadMode === 'audio' ? 'Audio' : 'Video')}</span>
                                         </>
                                     )}
@@ -789,12 +797,13 @@ export function MediaInfoModal({
                                     </details>
                                 )}
                             </div>
-                        </motion.div>
+                        </m.div>
                     </div>
                 </div >
             )
             }
         </AnimatePresence >
+        </LazyMotion>
     );
 
     // Use portal to render at document body level

@@ -56,10 +56,13 @@ pub struct SNDEProgress {
     pub speed: String,
     pub eta: String,
     pub status: String,
-    pub downloaded_bytes: i64,
-    pub total_bytes: i64,
+    pub downloaded_bytes: Option<i64>,
+    pub total_bytes: Option<i64>,
+    #[serde(default)]
     pub active_connections: u8,
-    pub engine_badge: String,
+    pub filename: Option<String>,
+    #[serde(default)]
+    pub engine_badge: Option<String>,
 }
 
 /// A byte range work unit
@@ -164,7 +167,7 @@ impl SNDEEngine {
         let start_time = Instant::now();
         let id = request.id.clone();
         
-        println!("[SNDE] Starting download: {} -> {:?}", request.url, request.output_path);
+        println!("[SNDE] Starting download: {} -> {:?}", redact_url(&request.url), request.output_path);
         
         // Update health registry
         HEALTH_REGISTRY.set_phase(&id, DownloadPhase::Preflight);
@@ -257,11 +260,22 @@ impl SNDEEngine {
             let total_downloaded = Arc::clone(&total_downloaded);
             let is_cancelled = Arc::clone(&is_cancelled);
             let badge = request.routing_decision.badge.clone();
-            
+            let filename = probed_filename.clone();
+
             tokio::spawn(async move {
                 let mut last_bytes = 0u64;
                 let mut last_time = Instant::now();
-                
+                let mut smoothed_speed: f64 = 0.0;
+                let mut smoothed_eta: f64 = 0.0;
+                let mut tick_count: u32 = 0;
+                let mut stall_ticks: u32 = 0;
+                const ALPHA_UP: f64 = 0.1;
+                const ALPHA_DOWN: f64 = 0.4;
+                const ALPHA_WARMUP: f64 = 0.5;
+                const ALPHA_ETA: f64 = 0.1;
+                const WARMUP_TICKS: u32 = 4;
+                const STALL_TICKS_THRESHOLD: u32 = 2;
+
                 while !is_cancelled.load(Ordering::Relaxed) {
                     tokio::time::sleep(Duration::from_millis(250)).await;
                     
@@ -269,14 +283,50 @@ impl SNDEEngine {
                     let elapsed = last_time.elapsed().as_secs_f64();
                     
                     if elapsed > 0.0 {
-                        let speed_bps = ((current_bytes - last_bytes) as f64 / elapsed) as u64;
-                        let progress = (current_bytes as f64 / total_size as f64) * 100.0;
-                        let remaining_bytes = total_size.saturating_sub(current_bytes);
-                        let eta_secs = if speed_bps > 0 {
-                            remaining_bytes / speed_bps
+                        // Raw instantaneous speed
+                        let raw_speed = (current_bytes - last_bytes) as f64 / elapsed;
+
+                        // Skip emission if zero progress on first ticks
+                        if tick_count == 0 && current_bytes == last_bytes {
+                            last_bytes = current_bytes;
+                            last_time = Instant::now();
+                            tick_count += 1;
+                            continue;
+                        }
+
+                        // Stall detection
+                        if raw_speed < 1.0 {
+                            stall_ticks += 1;
                         } else {
-                            0
-                        };
+                            stall_ticks = 0;
+                        }
+
+                        // Adaptive alpha
+                        if stall_ticks >= STALL_TICKS_THRESHOLD {
+                            smoothed_speed = 0.0;
+                            smoothed_eta = 0.0;
+                        } else {
+                            let alpha = if tick_count < WARMUP_TICKS {
+                                ALPHA_WARMUP
+                            } else if raw_speed > smoothed_speed {
+                                ALPHA_UP
+                            } else {
+                                ALPHA_DOWN
+                            };
+                            smoothed_speed = alpha * raw_speed + (1.0 - alpha) * smoothed_speed;
+
+                            // ETA: independent EMA
+                            let raw_eta = if smoothed_speed > 0.0 {
+                                total_size.saturating_sub(current_bytes) as f64 / smoothed_speed
+                            } else {
+                                0.0
+                            };
+                            smoothed_eta = ALPHA_ETA * raw_eta + (1.0 - ALPHA_ETA) * smoothed_eta;
+                        }
+
+                        let progress = (current_bytes as f64 / total_size as f64) * 100.0;
+                        let speed_bps = smoothed_speed as u64;
+                        let eta_secs = smoothed_eta as u64;
 
                         let speed_str = format_speed(speed_bps);
                         let eta_str = format_eta(eta_secs);
@@ -287,17 +337,19 @@ impl SNDEEngine {
                             speed: speed_str,
                             eta: eta_str,
                             status: "downloading".to_string(),
-                            downloaded_bytes: current_bytes as i64,
-                            total_bytes: total_size as i64,
+                            downloaded_bytes: Some(current_bytes as i64),
+                            total_bytes: Some(total_size as i64),
                             active_connections: num_connections,
-                            engine_badge: badge.clone(),
+                            filename: filename.clone(),
+                            engine_badge: Some(badge.clone()),
                         });
 
-                        // Update health metrics
-                        HEALTH_REGISTRY.update_progress(&id, current_bytes, speed_bps);
+                        // Update health metrics (raw speed for watchdog accuracy)
+                        HEALTH_REGISTRY.update_progress(&id, current_bytes, raw_speed as u64);
 
                         last_bytes = current_bytes;
                         last_time = Instant::now();
+                        tick_count += 1;
                     }
                 }
             })
@@ -407,10 +459,11 @@ impl SNDEEngine {
             speed: String::new(),
             eta: String::new(),
             status: if all_success { "completed".to_string() } else { "failed".to_string() },
-            downloaded_bytes: final_bytes as i64,
-            total_bytes: total_size as i64,
+            downloaded_bytes: Some(final_bytes as i64),
+            total_bytes: Some(total_size as i64),
             active_connections: 0,
-            engine_badge: request.routing_decision.badge.clone(),
+            filename: probed_filename.clone(),
+            engine_badge: Some(request.routing_decision.badge.clone()),
         });
 
         println!("[SNDE] Download finished: success={}, bytes={}/{}, duration={:.1}s, speed={} KB/s", 
@@ -703,6 +756,14 @@ lazy_static::lazy_static! {
     pub static ref SNDE_ENGINE: SNDEEngine = SNDEEngine::new();
 }
 
+/// Redact a URL to show only scheme + host, stripping path/query/fragment (security: H9)
+fn redact_url(url: &str) -> String {
+    url::Url::parse(url)
+        .ok()
+        .map(|u| format!("{}://{}", u.scheme(), u.host_str().unwrap_or("[unknown]")))
+        .unwrap_or_else(|| "[invalid url]".to_string())
+}
+
 /// Format bytes per second to human readable speed
 fn format_speed(bps: u64) -> String {
     const KB: u64 = 1024;
@@ -752,5 +813,12 @@ mod tests {
         assert_eq!(format_eta(30), "30s");
         assert_eq!(format_eta(90), "1m 30s");
         assert_eq!(format_eta(3700), "1h 1m");
+    }
+
+    #[test]
+    fn test_redact_url() {
+        assert_eq!(redact_url("https://example.com/path?token=secret#frag"), "https://example.com");
+        assert_eq!(redact_url("http://cdn.example.org/file.zip?v=1"), "http://cdn.example.org");
+        assert_eq!(redact_url("not a url"), "[invalid url]");
     }
 }

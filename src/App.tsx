@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { LazyMotion, domAnimation } from 'framer-motion';
 import { Toaster, toast } from 'sonner';
 import { listen } from '@tauri-apps/api/event';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -12,12 +13,44 @@ import api, { DownloadProgress, SpotifyDownloadProgress } from '@/services/api';
 
 export type PageType = 'home' | 'downloads' | 'history' | 'settings';
 
+interface PageRouterProps {
+    currentPage: PageType;
+    extensionUrl: string | null;
+    onNavigateToDownloads: () => void;
+    onExtensionUrlConsumed: () => void;
+}
+
+function PageRouter({ currentPage, extensionUrl, onNavigateToDownloads, onExtensionUrlConsumed }: PageRouterProps) {
+    switch (currentPage) {
+        case 'home':
+            return (
+                <HomePage
+                    onNavigateToDownloads={onNavigateToDownloads}
+                    extensionUrl={extensionUrl}
+                    onExtensionUrlConsumed={onExtensionUrlConsumed}
+                />
+            );
+        case 'downloads':
+            return <DownloadsPage />;
+        case 'history':
+            return <HistoryPage />;
+        case 'settings':
+            return <SettingsPage />;
+        default:
+            return (
+                <HomePage
+                    onNavigateToDownloads={onNavigateToDownloads}
+                    extensionUrl={extensionUrl}
+                    onExtensionUrlConsumed={onExtensionUrlConsumed}
+                />
+            );
+    }
+}
+
 function App() {
     const { loading } = useAuth();
     const [currentPage, setCurrentPage] = useState<PageType>('home');
     const [extensionUrl, setExtensionUrl] = useState<string | null>(null);
-    const [_activeDownloadCount, setActiveDownloadCount] = useState(0);
-    const [isInstallingAppUpdate, setIsInstallingAppUpdate] = useState(false);
     const hasCheckedStartupUpdateRef = useRef(false);
     const isInstallingAppUpdateRef = useRef(false);
 
@@ -25,7 +58,6 @@ function App() {
         if (isInstallingAppUpdateRef.current) return;
 
         isInstallingAppUpdateRef.current = true;
-        setIsInstallingAppUpdate(true);
 
         try {
             toast.info('Downloading app update...');
@@ -36,7 +68,6 @@ function App() {
             toast.error('Failed to install update');
         } finally {
             isInstallingAppUpdateRef.current = false;
-            setIsInstallingAppUpdate(false);
         }
     };
 
@@ -92,7 +123,7 @@ function App() {
                     description: `v${info.version} is available (current v${info.current_version}).`,
                     duration: 20000,
                     action: {
-                        label: isInstallingAppUpdate ? 'Installing...' : 'Install',
+                        label: isInstallingAppUpdateRef.current ? 'Installing...' : 'Install',
                         onClick: () => {
                             void installAppUpdate();
                         },
@@ -107,14 +138,15 @@ function App() {
             cancelled = true;
             clearTimeout(timer);
         };
-    }, [loading, isInstallingAppUpdate]);
+    }, [loading]);
 
     // Setup download progress listeners for taskbar and notifications
     useEffect(() => {
         let unlistenYtdlp: (() => void) | undefined;
         let unlistenSpotify: (() => void) | undefined;
         let unlistenNotificationClick: (() => void) | undefined;
-        let activeCount = 0;
+        const pendingTimers: ReturnType<typeof setTimeout>[] = [];
+        const activeDownloadIds = new Set<string>();
         const downloadTitles = new Map<string, string>();
 
         // yt-dlp progress listener
@@ -125,36 +157,29 @@ function App() {
             }
 
             // Update taskbar progress
-            if (progress.status === 'downloading') {
-                activeCount = Math.max(1, activeCount);
-                setActiveDownloadCount(activeCount);
+            if (progress.status === 'downloading' || progress.status === 'starting') {
+                activeDownloadIds.add(progress.id);
                 api.updateTaskbarProgress(progress.progress, 'downloading').catch(console.error);
             } else if (progress.status === 'completed') {
-                activeCount = Math.max(0, activeCount - 1);
-                setActiveDownloadCount(activeCount);
+                activeDownloadIds.delete(progress.id);
 
-                // Clear taskbar if no active downloads
-                if (activeCount === 0) {
+                if (activeDownloadIds.size === 0) {
                     api.clearTaskbarProgress().catch(console.error);
                 }
 
-                // Send native notification
                 const title = downloadTitles.get(progress.id) || 'Download';
                 api.notifyDownloadComplete(title, '').catch(console.error);
                 downloadTitles.delete(progress.id);
             } else if (progress.status === 'failed') {
-                activeCount = Math.max(0, activeCount - 1);
-                setActiveDownloadCount(activeCount);
+                activeDownloadIds.delete(progress.id);
 
-                // Show error in taskbar
                 api.updateTaskbarProgress(100, 'error').catch(console.error);
-                setTimeout(() => {
-                    if (activeCount === 0) {
+                pendingTimers.push(setTimeout(() => {
+                    if (activeDownloadIds.size === 0) {
                         api.clearTaskbarProgress().catch(console.error);
                     }
-                }, 3000);
+                }, 3000));
 
-                // Send failure notification
                 const title = downloadTitles.get(progress.id) || 'Download';
                 api.notifyDownloadFailed(title, 'Download failed').catch(console.error);
                 downloadTitles.delete(progress.id);
@@ -167,16 +192,32 @@ function App() {
                 downloadTitles.set(progress.id, progress.current_track);
             }
 
-            if (progress.status === 'downloading') {
+            if (progress.status === 'downloading' || progress.status === 'starting') {
+                activeDownloadIds.add(progress.id);
                 api.updateTaskbarProgress(progress.progress, 'downloading').catch(console.error);
             } else if (progress.status === 'completed') {
-                api.clearTaskbarProgress().catch(console.error);
+                activeDownloadIds.delete(progress.id);
+
+                if (activeDownloadIds.size === 0) {
+                    api.clearTaskbarProgress().catch(console.error);
+                }
+
                 const title = downloadTitles.get(progress.id) || 'Spotify Download';
                 api.notifyDownloadComplete(title, '').catch(console.error);
+                downloadTitles.delete(progress.id);
             } else if (progress.status === 'failed') {
+                activeDownloadIds.delete(progress.id);
+
                 api.updateTaskbarProgress(100, 'error').catch(console.error);
-                setTimeout(() => api.clearTaskbarProgress().catch(console.error), 3000);
-                api.notifyDownloadFailed(downloadTitles.get(progress.id) || 'Spotify Download', 'Download failed').catch(console.error);
+                pendingTimers.push(setTimeout(() => {
+                    if (activeDownloadIds.size === 0) {
+                        api.clearTaskbarProgress().catch(console.error);
+                    }
+                }, 3000));
+
+                const title = downloadTitles.get(progress.id) || 'Spotify Download';
+                api.notifyDownloadFailed(title, 'Download failed').catch(console.error);
+                downloadTitles.delete(progress.id);
             }
         }).then(fn => { unlistenSpotify = fn; }).catch(console.error);
 
@@ -188,6 +229,7 @@ function App() {
         }).then(fn => { unlistenNotificationClick = fn; }).catch(console.error);
 
         return () => {
+            for (const timer of pendingTimers) clearTimeout(timer);
             if (unlistenYtdlp) unlistenYtdlp();
             if (unlistenSpotify) unlistenSpotify();
             if (unlistenNotificationClick) unlistenNotificationClick();
@@ -205,44 +247,22 @@ function App() {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-black via-neutral-950 to-black">
                 <div className="text-center">
-                    <Loader2 className="w-12 h-12 text-white/60 animate-spin mx-auto mb-4" />
-                    <p className="text-slate-400">Loading...</p>
+                    <Loader2 className="size-12 text-white/60 animate-spin mx-auto mb-4" />
+                    <p className="text-slate-400">Loading…</p>
                 </div>
             </div>
         );
     }
 
-    const renderPage = () => {
-        switch (currentPage) {
-            case 'home':
-                return (
-                    <HomePage
-                        onNavigateToDownloads={() => setCurrentPage('downloads')}
-                        extensionUrl={extensionUrl}
-                        onExtensionUrlConsumed={handleExtensionUrlConsumed}
-                    />
-                );
-            case 'downloads':
-                return <DownloadsPage />;
-            case 'history':
-                return <HistoryPage />;
-            case 'settings':
-                return <SettingsPage />;
-            default:
-                return (
-                    <HomePage
-                        onNavigateToDownloads={() => setCurrentPage('downloads')}
-                        extensionUrl={extensionUrl}
-                        onExtensionUrlConsumed={handleExtensionUrlConsumed}
-                    />
-                );
-        }
-    };
-
     return (
-        <>
+        <LazyMotion features={domAnimation}>
             <AppLayout currentPage={currentPage} onPageChange={setCurrentPage}>
-                {renderPage()}
+                <PageRouter
+                    currentPage={currentPage}
+                    extensionUrl={extensionUrl}
+                    onNavigateToDownloads={() => setCurrentPage('downloads')}
+                    onExtensionUrlConsumed={handleExtensionUrlConsumed}
+                />
             </AppLayout>
             <Toaster
                 theme="dark"
@@ -255,7 +275,7 @@ function App() {
                     },
                 }}
             />
-        </>
+        </LazyMotion>
     );
 }
 

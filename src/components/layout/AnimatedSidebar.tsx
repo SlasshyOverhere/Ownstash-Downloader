@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { LazyMotion, m, domAnimation } from 'framer-motion';
 import {
     Home,
     Download,
@@ -46,8 +46,9 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
     };
 
     return (
-        <motion.aside
-            className="relative h-screen flex flex-col glass border-r border-white/5"
+        <LazyMotion features={domAnimation}>
+        <m.aside
+            className="relative h-screen flex flex-col glass border-r border-white/5 overflow-hidden"
             variants={sidebarVariants}
             initial="expanded"
             animate={isExpanded ? 'expanded' : 'collapsed'}
@@ -61,9 +62,9 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
                 <img
                     src="/logo.png"
                     alt="Ownstash logo"
-                    className="w-10 h-10 rounded-xl object-contain shadow-elegant"
+                    className="size-10 rounded-xl object-contain shadow-elegant"
                 />
-                <motion.div
+                <m.div
                     variants={sidebarItemText}
                     className="overflow-hidden"
                 >
@@ -73,7 +74,7 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
                     <p className="text-[10px] text-muted-foreground whitespace-nowrap">
                         Downloader
                     </p>
-                </motion.div>
+                </m.div>
             </div>
 
             {/* Navigation */}
@@ -84,10 +85,11 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
 
                     return (
                         <button
+                            type="button"
                             key={item.id}
                             onClick={() => onPageChange(item.id)}
                             className={cn(
-                                'w-full flex items-center py-2.5 rounded-xl transition-all duration-200',
+                                'w-full flex items-center py-2.5 rounded-xl transition-colors',
                                 'hover:bg-white/5 group relative overflow-hidden',
                                 isExpanded ? 'gap-3 px-3 justify-start' : 'gap-0 px-0 justify-center',
                                 isActive && 'bg-primary/10 border border-primary/20'
@@ -95,7 +97,7 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
                         >
                             {/* Active indicator glow */}
                             {isActive && (
-                                <motion.div
+                                <m.div
                                     layoutId="activeTab"
                                     className="absolute inset-0 bg-gradient-to-r from-primary/20 to-transparent rounded-xl"
                                     transition={{ type: 'tween', duration: 0.14, ease: 'easeOut' }}
@@ -104,14 +106,14 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
 
                             {/* Icon with glow effect */}
                             <div className={cn(
-                                'relative z-10 p-1.5 rounded-lg transition-all duration-200',
+                                'relative z-10 p-1.5 rounded-lg transition-colors',
                                 isActive ? 'text-primary text-glow-sm' : 'text-muted-foreground group-hover:text-foreground'
                             )}>
-                                <Icon className="w-5 h-5" />
+                                <Icon className="size-5" />
                             </div>
 
                             {/* Label */}
-                            <motion.span
+                            <m.span
                                 variants={sidebarItemText}
                                 className={cn(
                                     'relative z-10 font-medium whitespace-nowrap',
@@ -119,7 +121,7 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
                                 )}
                             >
                                 {item.label}
-                            </motion.span>
+                            </m.span>
 
                             {/* Hover highlight */}
                             <div className="absolute inset-0 bg-white/0 group-hover:bg-white/5 rounded-xl transition-colors" />
@@ -143,7 +145,7 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
                                 email={user.email}
                                 size="sm"
                             />
-                            <motion.div
+                            <m.div
                                 variants={sidebarItemText}
                                 className="overflow-hidden flex-1 min-w-0"
                             >
@@ -153,50 +155,51 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
                                 <div className="flex items-center gap-1 text-[10px]">
                                     {isSyncing ? (
                                         <>
-                                            <Loader2 className="w-3 h-3 text-white/60 animate-spin" />
-                                            <span className="text-white/60">Syncing...</span>
+                                            <Loader2 className="size-3 text-white/60 animate-spin" />
+                                            <span className="text-white/60">Syncing…</span>
                                         </>
                                     ) : storageType === 'gdrive' ? (
                                         <>
-                                            <Cloud className="w-3 h-3 text-green-400" />
+                                            <Cloud className="size-3 text-green-400" />
                                             <span className="text-green-400">Drive Synced</span>
                                         </>
                                     ) : (
                                         <>
-                                            <HardDrive className="w-3 h-3 text-yellow-400" />
+                                            <HardDrive className="size-3 text-yellow-400" />
                                             <span className="text-yellow-400">Local Only</span>
                                         </>
                                     )}
                                 </div>
-                            </motion.div>
+                            </m.div>
                         </div>
 
                         {/* Sign Out Button */}
                         <button
+                            type="button"
                             onClick={handleSignOut}
                             disabled={isSigningOut}
                             aria-label="Sign Out"
                             className={cn(
                                 'w-full flex items-center py-2.5 rounded-xl',
                                 'text-muted-foreground hover:text-red-400 hover:bg-red-500/10',
-                                'transition-all duration-200 group',
+                                'transition-colors group',
                                 isExpanded ? 'gap-3 px-3 justify-start' : 'gap-0 px-0 justify-center',
                                 isSigningOut && 'opacity-50 cursor-not-allowed'
                             )}
                         >
                             <div className="p-1.5 rounded-lg">
                                 {isSigningOut ? (
-                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    <Loader2 className="size-5 animate-spin" />
                                 ) : (
-                                    <LogOut className="w-5 h-5" />
+                                    <LogOut className="size-5" />
                                 )}
                             </div>
-                            <motion.span
+                            <m.span
                                 variants={sidebarItemText}
                                 className="font-medium whitespace-nowrap"
                             >
                                 Sign Out
-                            </motion.span>
+                            </m.span>
                         </button>
                     </div>
                 </div>
@@ -205,24 +208,25 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
             {/* Bottom Settings Button */}
             <div className="p-3 border-t border-white/5">
                 <button
+                    type="button"
                     onClick={() => onPageChange('settings')}
                     aria-label="Settings"
                     className={cn(
-                        'w-full flex items-center py-2.5 rounded-xl transition-all duration-200',
+                        'w-full flex items-center py-2.5 rounded-xl transition-colors',
                         'hover:bg-white/5 group relative overflow-hidden',
                         isExpanded ? 'gap-3 px-3 justify-start' : 'gap-0 px-0 justify-center',
                         currentPage === 'settings' && 'bg-primary/10 border border-primary/20'
                     )}
                 >
                     <div className={cn(
-                        'relative z-10 p-1.5 rounded-lg transition-all duration-200',
+                        'relative z-10 p-1.5 rounded-lg transition-colors',
                         currentPage === 'settings'
                             ? 'text-primary text-glow-sm'
                             : 'text-muted-foreground group-hover:text-foreground'
                     )}>
-                        <Settings className="w-5 h-5" />
+                        <Settings className="size-5" />
                     </div>
-                    <motion.span
+                    <m.span
                         variants={sidebarItemText}
                         className={cn(
                             'relative z-10 font-medium whitespace-nowrap',
@@ -232,7 +236,7 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
                         )}
                     >
                         Settings
-                    </motion.span>
+                    </m.span>
                     <div className="absolute inset-0 bg-white/0 group-hover:bg-white/5 rounded-xl transition-colors" />
                 </button>
             </div>
@@ -240,30 +244,32 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
             {/* Collapse Toggle */}
             <div className="p-3 border-t border-white/5">
                 <button
+                    type="button"
                     onClick={() => setIsExpanded(!isExpanded)}
                     aria-label={isExpanded ? "Collapse Sidebar" : "Expand Sidebar"}
                     className={cn(
                         'w-full flex items-center py-2.5 rounded-xl',
                         'text-muted-foreground hover:text-foreground hover:bg-white/5',
-                        'transition-all duration-200',
+                        'transition-colors',
                         isExpanded ? 'gap-3 px-3 justify-start' : 'gap-0 px-0 justify-center'
                     )}
                 >
                     <div className="p-1.5 rounded-lg">
                         {isExpanded ? (
-                            <ChevronLeft className="w-5 h-5" />
+                            <ChevronLeft className="size-5" />
                         ) : (
-                            <ChevronRight className="w-5 h-5" />
+                            <ChevronRight className="size-5" />
                         )}
                     </div>
-                    <motion.span
+                    <m.span
                         variants={sidebarItemText}
                         className="font-medium whitespace-nowrap"
                     >
                         Collapse
-                    </motion.span>
+                    </m.span>
                 </button>
             </div>
-        </motion.aside>
+        </m.aside>
+        </LazyMotion>
     );
 }

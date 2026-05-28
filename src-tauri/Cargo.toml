@@ -1,6 +1,6 @@
 [package]
 name = "ownstash-downloader"
-version = "1.0.7"
+version = "1.0.8"
 description = "Cross-platform media downloader, organizer, and converter"
 authors = ["Suman Patgiri"]
 edition = "2021"
@@ -11,6 +11,7 @@ crate-type = ["lib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+sha2 = "0.10"
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
@@ -35,9 +36,9 @@ urlencoding = "2"
 warp = "0.3"
 tauri-plugin-single-instance = "2.3.6"
 futures-util = "0.3"
-tokio-stream = "0.1"
 bytes = "1"
 md5 = "0.8.0"
+sha2 = "0.10"
 which = "8.0.0"
 mime_guess = "2.0"
 tokio-util = { version = "0.7", features = ["io"] }
@@ -47,17 +48,18 @@ argon2 = "0.5"
 rand = "0.8"
 regex = "1"
 base64 = "0.22"
+# Structured logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 # Folder compression for vault
 zip = { version = "0.6", features = ["deflate"] }
 walkdir = "2"
 sevenz-rust = "0.6"
-tar = "0.4"
-flate2 = "1.0"
 # RAR extraction
 unrar = "0.5"
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.58", features = ["Win32_UI_Shell", "Win32_System_Com", "Win32_Foundation"] }
+windows = { version = "0.58", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_System_Com", "Win32_Foundation"] }
 
 [profile.release]
 panic = "abort"

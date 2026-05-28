@@ -171,9 +171,9 @@ function createFloatingButton() {
     document.addEventListener('mouseup', handleDragEnd);
 
     // Touch support
-    floatingButton.addEventListener('touchstart', handleTouchStart, { passive: false });
+    floatingButton.addEventListener('touchstart', handleTouchStart, { passive: true });
     document.addEventListener('touchmove', handleTouchMove, { passive: false });
-    document.addEventListener('touchend', handleTouchEnd);
+    document.addEventListener('touchend', handleTouchEnd, { passive: true });
 
     // Click handler for main button (prevent if dragged)
     const btnInner = floatingButton.querySelector('.slasshy-btn-inner');

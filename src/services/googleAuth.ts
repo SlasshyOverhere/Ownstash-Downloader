@@ -7,7 +7,6 @@ import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import {
     getAuthConfig,
     exchangeCodeForTokens,
-    refreshAccessToken as backendRefreshToken,
     checkBackendHealth,
     getBackendUrl,
     getUserInfo
@@ -53,8 +52,7 @@ export interface GoogleUser {
 
 // Storage keys
 const USER_STORAGE_KEY = 'ownstash_user';
-const ACCESS_TOKEN_KEY = 'gdrive_access_token';
-const REFRESH_TOKEN_KEY = 'gdrive_refresh_token';
+const OAUTH_STATE_KEY = 'ownstash_oauth_state';
 
 /**
  * Get stored user from localStorage
@@ -74,7 +72,7 @@ export function getStoredUser(): GoogleUser | null {
 /**
  * Store user in localStorage
  */
-export function storeUser(user: GoogleUser): void {
+function storeUser(user: GoogleUser): void {
     try {
         localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
     } catch (e) {
@@ -88,8 +86,7 @@ export function storeUser(user: GoogleUser): void {
 export function clearStoredUser(): void {
     try {
         localStorage.removeItem(USER_STORAGE_KEY);
-        localStorage.removeItem(ACCESS_TOKEN_KEY);
-        localStorage.removeItem(REFRESH_TOKEN_KEY);
+        localStorage.removeItem(OAUTH_STATE_KEY);
     } catch (e) {
         console.error('Error clearing stored user:', e);
     }
@@ -109,6 +106,7 @@ function generateState(): string {
  */
 async function buildGoogleAuthUrlWithBackend(): Promise<string> {
     authState = generateState();
+    localStorage.setItem(OAUTH_STATE_KEY, authState);
 
     try {
         const config = await getAuthConfig();
@@ -137,6 +135,7 @@ async function buildGoogleAuthUrlWithBackend(): Promise<string> {
  */
 function buildGoogleAuthUrlImplicit(): string {
     authState = generateState();
+    localStorage.setItem(OAUTH_STATE_KEY, authState);
     const nonce = generateState();
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
@@ -212,8 +211,17 @@ async function handleOAuthCallback(data: {
         return;
     }
 
-    // Verify state (don't block if authState is null - common in some Tauri cold start scenarios)
-    if (data.state && authState && data.state !== authState) {
+    // Verify state - always required for CSRF protection
+    // On cold start, retrieve persisted expected state from localStorage
+    const expectedState = authState || localStorage.getItem(OAUTH_STATE_KEY);
+    localStorage.removeItem(OAUTH_STATE_KEY);
+
+    if (!expectedState) {
+        console.error('No expected OAuth state found - rejecting callback');
+        authCallbackHandler?.({ success: false, error: 'Security verification failed: no expected state' });
+        return;
+    }
+    if (!data.state || data.state !== expectedState) {
         console.error('State mismatch - possible CSRF attack');
         authCallbackHandler?.({ success: false, error: 'Security verification failed' });
         return;
@@ -244,15 +252,12 @@ async function handleOAuthCallback(data: {
     }
 
     try {
-        // 1. Store access token for Google Drive API
+        // 1. Store access token for Google Drive API (secure storage only)
         const { setGDriveAccessToken } = await import('./gdriveService');
         await setGDriveAccessToken(data.accessToken);
-        console.log('Google Drive access token prepared and stored');
+        console.log('Google Drive access token prepared and stored securely');
 
-        // Store in localStorage as backup
-        localStorage.setItem(ACCESS_TOKEN_KEY, data.accessToken);
-
-        // Also store refresh token if available (for token refresh later)
+        // Store refresh token in secure storage only (never localStorage)
         if (data.refreshToken) {
             try {
                 const { invoke } = await import('@tauri-apps/api/core');
@@ -262,9 +267,9 @@ async function handleOAuthCallback(data: {
                 });
                 console.log('Refresh token stored securely');
             } catch (e) {
-                // Fallback to localStorage if secure storage fails
-                localStorage.setItem(REFRESH_TOKEN_KEY, data.refreshToken);
-                console.log('Refresh token stored in localStorage');
+                console.error('Failed to store refresh token securely:', e);
+                authCallbackHandler?.({ success: false, error: 'Failed to store credentials securely. Please check your system keychain.' });
+                return;
             }
         }
 
@@ -485,43 +490,6 @@ export async function signInWithGoogleBrowser(): Promise<GoogleUser> {
 }
 
 /**
- * Refresh the access token using the stored refresh token
- */
-export async function refreshGDriveToken(): Promise<string | null> {
-    try {
-        // Try to get refresh token from secure storage
-        let refreshToken: string | null = null;
-
-        try {
-            const { invoke } = await import('@tauri-apps/api/core');
-            refreshToken = await invoke<string>('secure_get_setting', { key: 'gdrive_refresh_token' });
-        } catch {
-            // Fallback to localStorage
-            refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
-        }
-
-        if (!refreshToken) {
-            console.log('No refresh token available');
-            return null;
-        }
-
-        console.log('Refreshing access token via backend...');
-        const result = await backendRefreshToken(refreshToken);
-
-        // Store the new access token
-        const { setGDriveAccessToken } = await import('./gdriveService');
-        await setGDriveAccessToken(result.access_token);
-        localStorage.setItem(ACCESS_TOKEN_KEY, result.access_token);
-
-        console.log('Access token refreshed successfully');
-        return result.access_token;
-    } catch (error) {
-        console.error('Failed to refresh token:', error);
-        return null;
-    }
-}
-
-/**
  * Check if Google browser auth is available
  */
 export function isGoogleBrowserAuthAvailable(): boolean {
@@ -529,20 +497,3 @@ export function isGoogleBrowserAuthAvailable(): boolean {
     return useBackendFlow || !!import.meta.env.VITE_GOOGLE_CLIENT_ID;
 }
 
-/**
- * Get instructions for setting up Google Auth
- */
-export function getGoogleAuthSetupInstructions(): string {
-    return `
-To enable Google Sign-in:
-
-Option 1: Backend (Recommended - Secure)
-1. Deploy the backend folder to Render or similar
-2. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in backend environment
-3. Set VITE_BACKEND_URL in your app's .env file
-
-Option 2: Fallback (Less Secure)
-1. Set VITE_GOOGLE_CLIENT_ID in your .env file
-2. Add redirect URIs to Google Cloud Console
-`;
-}

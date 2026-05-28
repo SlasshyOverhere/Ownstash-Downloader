@@ -23,6 +23,59 @@ const VAULT_MAGIC: &[u8; 4] = b"SLV2";
 const NONCE_SIZE: usize = 12;
 const KEY_SIZE: usize = 32;
 
+// ============ Security Helpers ============
+
+/// Validate a URL for download safety — reject non-HTTP(S) schemes, private IPs, localhost
+fn validate_download_url(url: &str) -> Result<(), String> {
+    let parsed = reqwest::Url::parse(url)
+        .map_err(|_| "Invalid URL format".to_string())?;
+
+    // Only allow http and https schemes
+    let scheme = parsed.scheme().to_lowercase();
+    if scheme != "http" && scheme != "https" {
+        return Err(format!("URL scheme '{}' is not allowed; only http and https are permitted", scheme));
+    }
+
+    // Reject empty host
+    let host = parsed.host_str().ok_or("URL has no host")?.to_lowercase();
+
+    // Reject localhost variants
+    if host == "localhost"
+        || host == "127.0.0.1"
+        || host == "::1"
+        || host == "0.0.0.0"
+        || host.ends_with(".localhost")
+    {
+        return Err("Requests to localhost are not allowed".to_string());
+    }
+
+    // Reject private/internal IPv4 ranges
+    if let Ok(ip) = host.parse::<std::net::Ipv4Addr>() {
+        if ip.is_loopback() || ip.is_private() || ip.is_link_local() {
+            return Err("Requests to private/internal IP addresses are not allowed".to_string());
+        }
+    }
+
+    // Reject private IPv6
+    if let Ok(ip) = host.parse::<std::net::Ipv6Addr>() {
+        if ip.is_loopback() {
+            return Err("Requests to localhost IPv6 are not allowed".to_string());
+        }
+    }
+
+    Ok(())
+}
+
+/// Redact a URL for safe logging — show only scheme + host, strip path and query
+fn redact_url(url: &str) -> String {
+    match reqwest::Url::parse(url) {
+        Ok(parsed) => {
+            format!("{}://{}", parsed.scheme(), parsed.host_str().unwrap_or("[redacted]"))
+        }
+        Err(_) => "[invalid-url]".to_string(),
+    }
+}
+
 // ============ Data Structures ============
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -134,7 +187,10 @@ pub async fn vault_direct_download(
     request: VaultDownloadRequest,
 ) -> Result<VaultFile, String> {
     println!("[VaultDownload] Starting vault download for: {}", request.original_name);
-    println!("[VaultDownload] URL: {}", request.url);
+    println!("[VaultDownload] URL: {}", redact_url(&request.url));
+
+    // Validate URL to prevent SSRF attacks (reject private IPs, non-http schemes)
+    validate_download_url(&request.url)?;
 
     // Get vault encryption key (vault must be unlocked)
     let key = get_vault_key()?;
@@ -382,12 +438,21 @@ async fn download_direct_url(
     use tokio::io::AsyncWriteExt;
     use std::time::Instant;
     
-    println!("[VaultDownload] Starting direct HTTP download for: {}", request.url);
+    println!("[VaultDownload] Starting direct HTTP download for: {}", redact_url(&request.url));
     
-    // Create HTTP client
+    // Create HTTP client with redirect policy that blocks SSRF via redirects
     let client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        .redirect(reqwest::redirect::Policy::limited(10))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            // Validate each redirect target to prevent SSRF via redirect
+            if let Err(_) = validate_download_url(attempt.url().as_str()) {
+                return attempt.stop();
+            }
+            if attempt.previous().len() >= 10 {
+                return attempt.stop();
+            }
+            attempt.follow()
+        }))
         .timeout(std::time::Duration::from_secs(3600)) // 1 hour timeout
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
@@ -398,7 +463,10 @@ async fn download_direct_url(
     } else {
         request.url.clone()
     };
-    
+
+    // Validate the resolved download URL to prevent SSRF
+    validate_download_url(&download_url)?;
+
     // Start request
     let response = client.get(&download_url)
         .send()
@@ -535,8 +603,8 @@ fn handle_google_drive_url(url: &str) -> String {
             id
         );
         
-        println!("[VaultDownload] Google Drive: Using confirmed download URL for file ID: {}", id);
-        
+        println!("[VaultDownload] Google Drive: Using confirmed download for file");
+
         return confirm_url;
     }
     
@@ -662,7 +730,12 @@ async fn download_to_temp(
     // URL
     args.push(request.url.clone());
 
-    println!("[VaultDownload] Running yt-dlp with args: {:?}", args);
+    // Log args without the URL to avoid leaking credentials in signed URLs
+    let mut safe_args = args.clone();
+    if let Some(last) = safe_args.last_mut() {
+        *last = redact_url(last);
+    }
+    println!("[VaultDownload] Running yt-dlp with args: {:?}", safe_args);
 
     // Emit downloading status
     let _ = app_handle.emit("vault-download-progress", VaultDownloadProgress {

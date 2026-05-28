@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
+import { LazyMotion, m, domAnimation } from 'framer-motion';
 import {
     Download,
     X,
@@ -71,18 +71,18 @@ interface DownloadCardProps {
     progress?: DownloadProgress;
     onCancel: (id: string) => void;
     onDelete: (id: string) => void;
-    onRetry?: (item: DownloadItem) => void;
     onOpenFolder?: (path: string, title: string, format: string) => void;
     onPlay?: (path: string, title: string) => void;
 }
 
-const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDelete, onRetry, onOpenFolder, onPlay }: DownloadCardProps) {
+const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDelete, onOpenFolder, onPlay }: DownloadCardProps) {
     const { ref, tiltStyle, handlers } = use3DTilt({ maxTilt: 5, scale: 1.01 });
 
     // Determine type based on format
     const getType = (): 'video' | 'audio' | 'file' => {
         const format = item.format?.toLowerCase() || '';
         if (format === 'mp3' || format.includes('audio')) return 'audio';
+        if (['zip', 'pdf', 'rar', '7z', 'tar', 'gz', 'exe', 'dmg', 'apk', 'iso', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv'].includes(format)) return 'file';
         return 'video';
     };
 
@@ -92,10 +92,21 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
     const speed = progress?.speed ?? item.speed;
     const eta = progress?.eta ?? item.eta;
     const engineBadge = progress?.engine_badge ?? item.engine_badge;
-    const isActive = status === 'downloading' || status === 'paused' || status === 'pending';
+    const downloadedBytes = progress?.downloaded_bytes;
+    const totalBytes = progress?.total_bytes ?? item.size_bytes;
+    const isActive = status === 'downloading' || status === 'starting' || status === 'paused' || status === 'pending';
+
+    // Suppress jittery ETA values during the first 5 seconds of a download
+    const [warmingUp, setWarmingUp] = useState(true);
+    useEffect(() => {
+        if (progress?.status === 'downloading') {
+            const timer = setTimeout(() => setWarmingUp(false), 5000);
+            return () => clearTimeout(timer);
+        }
+    }, [progress?.status]);
 
     return (
-        <motion.div
+        <m.div
             ref={ref}
             style={tiltStyle}
             {...handlers}
@@ -107,21 +118,23 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
         >
             <div className="flex items-start gap-4">
                 {/* Thumbnail / Icon */}
-                <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center shrink-0 relative overflow-hidden">
+                <div className="size-16 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center shrink-0 relative overflow-hidden">
                     {item.thumbnail ? (
                         <img
                             src={item.thumbnail}
                             alt={item.title}
                             className="w-full h-full object-cover z-10"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                         />
                     ) : (
-                        <TypeIcon className="w-8 h-8 text-primary z-10" />
+                        <TypeIcon className="size-8 text-primary z-10" />
                     )}
                     {isActive && (
-                        <motion.div
+                        <m.div
                             className="absolute inset-0 bg-gradient-to-t from-primary/30 to-transparent"
                             initial={{ height: 0 }}
                             animate={{ height: `${progressValue}%` }}
+                            transition={{ type: 'tween', duration: 0.3, ease: 'easeOut' }}
                             style={{ bottom: 0, top: 'auto' }}
                         />
                     )}
@@ -131,7 +144,7 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
                 <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                            <h3 className="font-semibold truncate">{item.title}</h3>
+                            <h3 className="font-semibold truncate">{item.title || 'Untitled Download'}</h3>
                             <p className="text-sm text-muted-foreground">
                                 {item.platform || 'Unknown'} • {item.format || 'Best'}
                                 {item.size_bytes && ` • ${formatBytes(item.size_bytes)}`}
@@ -142,31 +155,23 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
                         <div className="flex items-center gap-1 shrink-0">
                             {status === 'downloading' && (
                                 <button
+                                    type="button"
                                     onClick={() => onCancel(item.id)}
                                     aria-label="Cancel download"
                                     className="p-2 rounded-lg hover:bg-white/10 transition-colors"
                                     title="Cancel download"
                                 >
-                                    <X className="w-4 h-4" />
-                                </button>
-                            )}
-                            {status === 'failed' && onRetry && (
-                                <button
-                                    onClick={() => onRetry(item)}
-                                    aria-label="Retry download"
-                                    className="p-2 rounded-lg hover:bg-white/10 transition-colors"
-                                    title="Retry download"
-                                >
-                                    <RefreshCw className="w-4 h-4" />
+                                    <X className="size-4" />
                                 </button>
                             )}
                             <button
+                                type="button"
                                 onClick={() => onDelete(item.id)}
                                 aria-label="Remove from list"
                                 className="p-2 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors"
                                 title="Remove from list"
                             >
-                                <Trash2 className="w-4 h-4" />
+                                <Trash2 className="size-4" />
                             </button>
                         </div>
                     </div>
@@ -178,7 +183,7 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
                                 <div className="flex items-center gap-2">
                                     <span className={cn('capitalize flex items-center gap-1', statusColors[status])}>
                                         {status === 'downloading' && (
-                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                            <Loader2 className="size-3 animate-spin" />
                                         )}
                                         {status}
                                     </span>
@@ -196,12 +201,15 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
                                 </div>
                                 <div className="flex items-center gap-3 text-muted-foreground">
                                     {speed && <span>{speed}</span>}
-                                    {eta && <span>ETA: {eta}</span>}
+                                    {downloadedBytes != null && totalBytes != null && totalBytes > 0 && (
+                                        <span>{formatBytes(downloadedBytes)} / {formatBytes(totalBytes)}</span>
+                                    )}
+                                    {eta && <span>{warmingUp ? 'ETA: Calculating...' : `ETA: ${eta}`}</span>}
                                     <span>{progressValue.toFixed(1)}%</span>
                                 </div>
                             </div>
                             <div className="h-2 bg-muted/50 rounded-full overflow-hidden">
-                                <motion.div
+                                <m.div
                                     className="h-full bg-gradient-to-r from-primary to-accent rounded-full progress-shimmer"
                                     initial={{ width: 0 }}
                                     animate={{ width: `${progressValue}%` }}
@@ -215,27 +223,29 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
                     {status === 'completed' && (
                         <div className="mt-2 flex items-center justify-between">
                             <div className="flex items-center gap-2 text-white text-sm">
-                                <CheckCircle className="w-4 h-4" />
+                                <CheckCircle className="size-4" />
                                 <span>Download complete</span>
                             </div>
                             <div className="flex items-center gap-2">
                                 {onPlay && item.path && (
                                     <button
+                                        type="button"
                                         onClick={() => onPlay(item.path, item.title)}
                                         className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium transition-colors"
                                         title="Play file"
                                     >
-                                        <Play className="w-4 h-4" />
+                                        <Play className="size-4" />
                                         <span>Play</span>
                                     </button>
                                 )}
                                 {onOpenFolder && item.path && (
                                     <button
+                                        type="button"
                                         onClick={() => onOpenFolder(item.path, item.title, item.format || 'mp4')}
                                         className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/20 hover:bg-primary/30 text-primary text-sm font-medium transition-colors"
                                         title="Open download folder"
                                     >
-                                        <FolderOpen className="w-4 h-4" />
+                                        <FolderOpen className="size-4" />
                                         <span>Open Folder</span>
                                     </button>
                                 )}
@@ -246,7 +256,7 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
                     {/* Failed indicator */}
                     {status === 'failed' && (
                         <div className="mt-2 flex items-center gap-2 text-white/50 text-sm">
-                            <AlertCircle className="w-4 h-4" />
+                            <AlertCircle className="size-4" />
                             <span>Download failed</span>
                         </div>
                     )}
@@ -254,7 +264,7 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
                     {/* Cancelled indicator */}
                     {status === 'cancelled' && (
                         <div className="mt-2 flex items-center gap-2 text-gray-400 text-sm">
-                            <X className="w-4 h-4" />
+                            <X className="size-4" />
                             <span>Cancelled</span>
                         </div>
                     )}
@@ -265,7 +275,7 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
                     </p>
                 </div>
             </div>
-        </motion.div>
+        </m.div>
     );
 });
 
@@ -296,86 +306,108 @@ export function DownloadsPage() {
     useEffect(() => {
         loadDownloads();
 
-        // Set up yt-dlp progress listener
-        let unlistenYtdlp: (() => void) | undefined;
-        let unlistenSpotify: (() => void) | undefined;
+        let cancelled = false;
+        const pendingTimers: ReturnType<typeof setTimeout>[] = [];
+        const unlistenPromises: Promise<(() => void) | undefined>[] = [];
 
         // yt-dlp progress listener
-        api.onDownloadProgress((progress) => {
-            setProgressMap(prev => {
-                const newMap = new Map(prev);
-                const previousProgress = prev.get(progress.id);
-                const stabilized = stabilizeProgressEvent(progress, previousProgress);
-                newMap.set(progress.id, stabilized);
-                return newMap;
-            });
+        unlistenPromises.push(
+            api.onDownloadProgress((progress) => {
+                if (cancelled) return;
 
-            // Update download status in database if completed or failed
-            if (progress.status === 'completed' || progress.status === 'failed' || progress.status === 'cancelled') {
-                api.updateDownloadStatus(progress.id, progress.status);
-                // Refresh downloads list
-                setTimeout(loadDownloads, 500);
-            }
-        }).then(fn => {
-            unlistenYtdlp = fn;
-        }).catch(err => {
-            console.error('[DownloadsPage] Failed to set up yt-dlp progress listener:', err);
-        });
+                setProgressMap(prev => {
+                    const newMap = new Map(prev);
+                    const previousProgress = prev.get(progress.id);
+                    const stabilized = stabilizeProgressEvent(progress, previousProgress);
+                    newMap.set(progress.id, stabilized);
+                    return newMap;
+                });
+
+                // Update download status in database if terminal, then clean up progress map
+                if (progress.status === 'completed' || progress.status === 'failed' || progress.status === 'cancelled') {
+                    api.updateDownloadStatus(progress.id, progress.status, progress.downloaded_bytes);
+                    pendingTimers.push(setTimeout(() => {
+                        if (cancelled) return;
+                        loadDownloads();
+                        setProgressMap(prev => {
+                            const next = new Map(prev);
+                            next.delete(progress.id);
+                            return next;
+                        });
+                    }, 500));
+                }
+            }).catch(err => {
+                console.error('[DownloadsPage] Failed to set up yt-dlp progress listener:', err);
+                return undefined;
+            })
+        );
 
         // Spotify progress listener
-        api.onSpotifyDownloadProgress((progress: SpotifyDownloadProgress) => {
-            // Convert SpotifyDownloadProgress to DownloadProgress format
-            setProgressMap(prev => {
-                const newMap = new Map(prev);
-                const nextProgress: DownloadProgress = {
-                    id: progress.id,
-                    progress: progress.progress,
-                    speed: progress.speed || (progress.current_track ? `Downloading: ${progress.current_track}` : ''),
-                    eta: progress.total_tracks && progress.completed_tracks
-                        ? `${progress.completed_tracks}/${progress.total_tracks} tracks`
-                        : '',
-                    status: progress.status,
-                };
-                const previousProgress = prev.get(progress.id);
-                const stabilized = stabilizeProgressEvent(nextProgress, previousProgress);
-                newMap.set(progress.id, stabilized);
-                return newMap;
-            });
+        unlistenPromises.push(
+            api.onSpotifyDownloadProgress((progress: SpotifyDownloadProgress) => {
+                if (cancelled) return;
 
-            // Update download status in database if completed or failed
-            if (progress.status === 'completed' || progress.status === 'failed' || progress.status === 'cancelled') {
-                api.updateDownloadStatus(progress.id, progress.status);
-                // Refresh downloads list
-                setTimeout(loadDownloads, 500);
-            }
-        }).then(fn => {
-            unlistenSpotify = fn;
-        }).catch(err => {
-            console.error('[DownloadsPage] Failed to set up Spotify progress listener:', err);
-        });
+                // Convert SpotifyDownloadProgress to DownloadProgress format
+                setProgressMap(prev => {
+                    const newMap = new Map(prev);
+                    const nextProgress: DownloadProgress = {
+                        id: progress.id,
+                        progress: progress.progress,
+                        speed: progress.speed || (progress.current_track ? `Downloading: ${progress.current_track}` : ''),
+                        eta: progress.total_tracks && progress.completed_tracks
+                            ? `${progress.completed_tracks}/${progress.total_tracks} tracks`
+                            : '',
+                        status: progress.status,
+                    };
+                    const previousProgress = prev.get(progress.id);
+                    const stabilized = stabilizeProgressEvent(nextProgress, previousProgress);
+                    newMap.set(progress.id, stabilized);
+                    return newMap;
+                });
+
+                // Update download status in database if terminal, then clean up progress map
+                if (progress.status === 'completed' || progress.status === 'failed' || progress.status === 'cancelled') {
+                    api.updateDownloadStatus(progress.id, progress.status);
+                    pendingTimers.push(setTimeout(() => {
+                        if (cancelled) return;
+                        loadDownloads();
+                        setProgressMap(prev => {
+                            const next = new Map(prev);
+                            next.delete(progress.id);
+                            return next;
+                        });
+                    }, 500));
+                }
+            }).catch(err => {
+                console.error('[DownloadsPage] Failed to set up Spotify progress listener:', err);
+                return undefined;
+            })
+        );
 
         return () => {
-            if (unlistenYtdlp) unlistenYtdlp();
-            if (unlistenSpotify) unlistenSpotify();
+            cancelled = true;
+            for (const timer of pendingTimers) clearTimeout(timer);
+            for (const promise of unlistenPromises) {
+                promise.then(unlisten => unlisten?.());
+            }
         };
     }, [loadDownloads]);
 
     const handleCancel = useCallback(async (id: string) => {
         try {
-            // Try to cancel yt-dlp download first
+            // Try to cancel yt-dlp download first, fall back to Spotify cancel
             try {
                 await api.cancelDownload(id);
             } catch {
-                // If yt-dlp cancel fails, try Spotify cancel
                 await api.cancelSpotifyDownload(id);
             }
             toast.success('Download cancelled');
-            await api.updateDownloadStatus(id, 'cancelled');
-            loadDownloads();
+            // Don't call updateDownloadStatus here - the backend emits a "cancelled"
+            // event which the event listener handles to persist the status and refresh.
         } catch (err) {
             toast.error('Failed to cancel download');
         }
-    }, [loadDownloads]);
+    }, []);
 
     const handleDelete = useCallback(async (id: string) => {
         try {
@@ -447,51 +479,63 @@ export function DownloadsPage() {
         }
     }, []);
 
+    // Stable status-only map so filtered list memos don't re-run on every progress tick
+    const statusMap = useMemo(() => {
+        const map = new Map<string, string>();
+        progressMap.forEach((val, key) => {
+            map.set(key, val.status);
+        });
+        return map;
+    }, [progressMap]);
+
     const activeDownloads = useMemo(() => (
         downloads.filter((download) => {
-            const status = progressMap.get(download.id)?.status ?? download.status;
-            return status === 'downloading' || status === 'paused' || status === 'pending';
+            const status = statusMap.get(download.id) ?? download.status;
+            return status === 'downloading' || status === 'starting' || status === 'paused' || status === 'pending';
         })
-    ), [downloads, progressMap]);
+    ), [downloads, statusMap]);
 
     const completedDownloads = useMemo(() => (
         downloads.filter((download) => {
-            const status = progressMap.get(download.id)?.status ?? download.status;
+            const status = statusMap.get(download.id) ?? download.status;
             return status === 'completed';
         })
-    ), [downloads, progressMap]);
+    ), [downloads, statusMap]);
 
     const failedDownloads = useMemo(() => (
         downloads.filter((download) => {
-            const status = progressMap.get(download.id)?.status ?? download.status;
+            const status = statusMap.get(download.id) ?? download.status;
             return status === 'failed' || status === 'cancelled';
         })
-    ), [downloads, progressMap]);
+    ), [downloads, statusMap]);
 
     return (
+        <LazyMotion features={domAnimation}>
         <>
-            <motion.div
+            <m.div
                 variants={staggerContainer}
                 initial="initial"
                 animate="animate"
                 className="max-w-4xl mx-auto space-y-8"
             >
                 {/* Header */}
-                <motion.div variants={fadeInUp} className="flex items-center justify-between">
+                <m.div variants={fadeInUp} className="flex items-center justify-between">
                     <div>
                         <h1 className="text-3xl font-display font-bold">Downloads</h1>
                         <p className="text-muted-foreground">Manage your active and completed downloads</p>
                     </div>
                     <div className="flex items-center gap-2">
                         <button
+                            type="button"
                             onClick={loadDownloads}
                             className="px-4 py-2 rounded-xl glass-hover text-sm font-medium flex items-center gap-2"
                         >
-                            <RefreshCw className={cn('w-4 h-4', isLoading && 'animate-spin')} />
+                            <RefreshCw className={cn('size-4', isLoading && 'animate-spin')} />
                             Refresh
                         </button>
                         {downloads.length > 0 && (
                             <button
+                                type="button"
                                 onClick={handleClearAll}
                                 className="px-4 py-2 rounded-xl glass-hover text-sm font-medium text-red-400"
                             >
@@ -499,26 +543,26 @@ export function DownloadsPage() {
                             </button>
                         )}
                     </div>
-                </motion.div>
+                </m.div>
 
                 {/* Loading state */}
                 {isLoading && downloads.length === 0 && (
                     <div className="flex items-center justify-center py-20">
-                        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                        <Loader2 className="size-8 animate-spin text-primary" />
                     </div>
                 )}
 
                 {/* Active Downloads */}
                 {activeDownloads.length > 0 && (
-                    <motion.section variants={fadeInUp} className="space-y-4">
+                    <m.section variants={fadeInUp} className="space-y-4">
                         <h2 className="text-lg font-semibold flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                            <div className="size-2 rounded-full bg-primary animate-pulse" />
                             Active Downloads
                             <span className="text-sm font-normal text-muted-foreground">
                                 ({activeDownloads.length})
                             </span>
                         </h2>
-                        <motion.div variants={staggerContainer} className="space-y-3">
+                        <m.div variants={staggerContainer} className="space-y-3">
                             {activeDownloads.map(item => (
                                 <DownloadCard
                                     key={item.id}
@@ -528,21 +572,21 @@ export function DownloadsPage() {
                                     onDelete={handleDelete}
                                 />
                             ))}
-                        </motion.div>
-                    </motion.section>
+                        </m.div>
+                    </m.section>
                 )}
 
                 {/* Completed Downloads */}
                 {completedDownloads.length > 0 && (
-                    <motion.section variants={fadeInUp} className="space-y-4">
+                    <m.section variants={fadeInUp} className="space-y-4">
                         <h2 className="text-lg font-semibold flex items-center gap-2 text-muted-foreground">
-                            <CheckCircle className="w-4 h-4 text-white" />
+                            <CheckCircle className="size-4 text-white" />
                             Completed
                             <span className="text-sm font-normal">
                                 ({completedDownloads.length})
                             </span>
                         </h2>
-                        <motion.div variants={staggerContainer} className="space-y-3">
+                        <m.div variants={staggerContainer} className="space-y-3">
                             {completedDownloads.map(item => (
                                 <DownloadCard
                                     key={item.id}
@@ -554,21 +598,21 @@ export function DownloadsPage() {
                                     onPlay={handlePlay}
                                 />
                             ))}
-                        </motion.div>
-                    </motion.section>
+                        </m.div>
+                    </m.section>
                 )}
 
                 {/* Failed Downloads */}
                 {failedDownloads.length > 0 && (
-                    <motion.section variants={fadeInUp} className="space-y-4">
+                    <m.section variants={fadeInUp} className="space-y-4">
                         <h2 className="text-lg font-semibold flex items-center gap-2 text-muted-foreground">
-                            <AlertCircle className="w-4 h-4 text-white/50" />
+                            <AlertCircle className="size-4 text-white/50" />
                             Failed / Cancelled
                             <span className="text-sm font-normal">
                                 ({failedDownloads.length})
                             </span>
                         </h2>
-                        <motion.div variants={staggerContainer} className="space-y-3">
+                        <m.div variants={staggerContainer} className="space-y-3">
                             {failedDownloads.map(item => (
                                 <DownloadCard
                                     key={item.id}
@@ -578,26 +622,26 @@ export function DownloadsPage() {
                                     onDelete={handleDelete}
                                 />
                             ))}
-                        </motion.div>
-                    </motion.section>
+                        </m.div>
+                    </m.section>
                 )}
 
                 {/* Empty state */}
                 {!isLoading && downloads.length === 0 && (
-                    <motion.div
+                    <m.div
                         variants={fadeInUp}
                         className="flex flex-col items-center justify-center py-20 text-center"
                     >
-                        <div className="w-20 h-20 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
-                            <Download className="w-10 h-10 text-muted-foreground" />
+                        <div className="size-20 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
+                            <Download className="size-10 text-muted-foreground" />
                         </div>
                         <h3 className="text-xl font-semibold mb-2">No downloads yet</h3>
                         <p className="text-muted-foreground max-w-sm">
                             Paste a URL on the home page to start downloading your favorite content.
                         </p>
-                    </motion.div>
+                    </m.div>
                 )}
-            </motion.div>
+            </m.div>
 
             {/* In-App Media Player */}
             <MediaPlayer
@@ -608,5 +652,6 @@ export function DownloadsPage() {
                 isAudio={playerIsAudio}
             />
         </>
+        </LazyMotion>
     );
 }

@@ -188,10 +188,10 @@ impl Database {
         Ok(downloads)
     }
 
-    pub fn update_download_status(&self, id: &str, status: &str) -> DbResult<()> {
+    pub fn update_download_status(&self, id: &str, status: &str, size_bytes: Option<i64>) -> DbResult<()> {
         self.conn.execute(
-            "UPDATE downloads SET status = ?1 WHERE id = ?2",
-            params![status, id],
+            "UPDATE downloads SET status = ?1, size_bytes = COALESCE(?3, size_bytes) WHERE id = ?2",
+            params![status, id, size_bytes],
         )?;
         Ok(())
     }

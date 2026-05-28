@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { m } from 'framer-motion';
 import {
     FolderOpen,
     Video,
@@ -30,16 +30,16 @@ import { UserAvatar } from '@/components/ui/UserAvatar';
 interface SettingSectionProps {
     title: string;
     description: string;
-    icon: React.ElementType;
+    icon: React.ComponentType<{ className?: string }>;
     children: React.ReactNode;
 }
 
 function SettingSection({ title, description, icon: Icon, children }: SettingSectionProps) {
     return (
-        <motion.div variants={staggerItem} className="glass rounded-2xl p-6 space-y-4">
+        <m.div variants={staggerItem} className="glass rounded-2xl p-6 space-y-4">
             <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center shrink-0">
-                    <Icon className="w-5 h-5 text-primary" />
+                <div className="size-10 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center shrink-0">
+                    <Icon className="size-5 text-primary" />
                 </div>
                 <div className="flex-1">
                     <h3 className="font-semibold">{title}</h3>
@@ -49,7 +49,7 @@ function SettingSection({ title, description, icon: Icon, children }: SettingSec
             <div className="pl-14">
                 {children}
             </div>
-        </motion.div>
+        </m.div>
     );
 }
 
@@ -83,7 +83,7 @@ function SettingRow({ label, value, action, onClick }: SettingRowProps) {
             <div className="flex items-center gap-2">
                 {value && <span className="text-sm text-muted-foreground truncate max-w-[200px]">{value}</span>}
                 {action}
-                {onClick && <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+                {onClick && <ChevronRight className="size-4 text-muted-foreground" />}
             </div>
         </div>
     );
@@ -110,7 +110,7 @@ function Toggle({ checked, onChange, 'aria-label': ariaLabel }: ToggleProps) {
         >
             <div
                 className={cn(
-                    'absolute w-4 h-4 rounded-full bg-white top-1 transition-transform',
+                    'absolute size-4 rounded-full bg-white top-1 transition-transform',
                     checked ? 'translate-x-6' : 'translate-x-1'
                 )}
             />
@@ -121,7 +121,7 @@ function Toggle({ checked, onChange, 'aria-label': ariaLabel }: ToggleProps) {
 export function SettingsPage() {
     const { user } = useAuth();
     const { migrateLocalData, isSyncing, storageType, syncWithGDrive } = useData();
-    const [downloadPath, setDownloadPath] = useState<string>('Loading...');
+    const [downloadPath, setDownloadPath] = useState<string>('Loading…');
     const [embedThumbnails, setEmbedThumbnails] = useState(true);
     const [embedMetadata, setEmbedMetadata] = useState(true);
     const [preferredQuality, setPreferredQuality] = useState('best');
@@ -131,12 +131,14 @@ export function SettingsPage() {
     const [autostartEnabled, setAutostartEnabled] = useState(true);
     const [useSponsorblock, setUseSponsorblock] = useState(false); // Default OFF
     const [ytDlpInfo, setYtDlpInfo] = useState<YtDlpInfo | null>(null);
-    const [ytDlpLoading, setYtDlpLoading] = useState(true);
     const [ytDlpError, setYtDlpError] = useState<string | null>(null);
     const [ytDlpUpdating, setYtDlpUpdating] = useState(false);
     const [spotDlInfo, setSpotDlInfo] = useState<SpotDlInfo | null>(null);
-    const [spotDlLoading, setSpotDlLoading] = useState(true);
     const [spotDlError, setSpotDlError] = useState<string | null>(null);
+
+    // Derived loading states (computed during render)
+    const ytDlpLoading = ytDlpInfo === null && ytDlpError === null;
+    const spotDlLoading = spotDlInfo === null && spotDlError === null;
     const [spotDlUpdating, setSpotDlUpdating] = useState(false);
     const [supportedPlatforms, setSupportedPlatforms] = useState<string[]>([]);
     const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -220,7 +222,7 @@ export function SettingsPage() {
     };
 
     const checkYtDlp = async (notifyIfOutdated: boolean = false) => {
-        setYtDlpLoading(true);
+        setYtDlpInfo(null);
         setYtDlpError(null);
         try {
             const info = await api.checkYtDlp(true);
@@ -229,10 +231,7 @@ export function SettingsPage() {
                 toast.warning(`yt-dlp is outdated (current: ${info.version}, latest: ${info.latest_version}). Click Update Engine.`);
             }
         } catch (err) {
-            setYtDlpInfo(null);
             setYtDlpError(err instanceof Error ? err.message : 'yt-dlp not found');
-        } finally {
-            setYtDlpLoading(false);
         }
     };
 
@@ -240,7 +239,7 @@ export function SettingsPage() {
         setYtDlpUpdating(true);
         setYtDlpError(null);
         try {
-            toast.info('Downloading latest yt-dlp release...');
+            toast.info('Downloading latest yt-dlp release…');
             const info = await api.updateYtDlp();
             setYtDlpInfo(info);
             toast.success(`yt-dlp updated to ${info.version}`);
@@ -250,12 +249,11 @@ export function SettingsPage() {
             toast.error(message);
         } finally {
             setYtDlpUpdating(false);
-            setYtDlpLoading(false);
         }
     };
 
     const checkSpotDl = async (notifyIfOutdated: boolean = false) => {
-        setSpotDlLoading(true);
+        setSpotDlInfo(null);
         setSpotDlError(null);
         try {
             const info = await api.checkSpotDl(true);
@@ -264,10 +262,7 @@ export function SettingsPage() {
                 toast.warning(`SpotDL is outdated (current: ${info.version}, latest: ${info.latest_version}). Click Update Engine.`);
             }
         } catch (err) {
-            setSpotDlInfo(null);
             setSpotDlError(err instanceof Error ? err.message : 'SpotDL not found');
-        } finally {
-            setSpotDlLoading(false);
         }
     };
 
@@ -275,7 +270,7 @@ export function SettingsPage() {
         setSpotDlUpdating(true);
         setSpotDlError(null);
         try {
-            toast.info('Downloading latest SpotDL release...');
+            toast.info('Downloading latest SpotDL release…');
             const info = await api.updateSpotDl();
             setSpotDlInfo(info);
             toast.success(`SpotDL updated to ${info.version}`);
@@ -285,7 +280,6 @@ export function SettingsPage() {
             toast.error(message);
         } finally {
             setSpotDlUpdating(false);
-            setSpotDlLoading(false);
         }
     };
 
@@ -368,7 +362,7 @@ export function SettingsPage() {
     const handleInstallUpdate = async () => {
         setUpdateInstalling(true);
         try {
-            toast.info('Downloading update... This may take a moment.');
+            toast.info('Downloading update… This may take a moment.');
             await api.downloadAndInstallUpdate();
             toast.success('Update downloaded! The app will restart to apply the update.');
         } catch (err) {
@@ -380,17 +374,17 @@ export function SettingsPage() {
     };
 
     return (
-        <motion.div
+        <m.div
             variants={staggerContainer}
             initial="initial"
             animate="animate"
             className="max-w-3xl mx-auto space-y-6"
         >
             {/* Header */}
-            <motion.div variants={fadeInUp}>
+            <m.div variants={fadeInUp}>
                 <h1 className="text-3xl font-display font-bold">Settings</h1>
                 <p className="text-muted-foreground">Configure your download preferences</p>
-            </motion.div>
+            </m.div>
 
             {/* Download Location */}
             <SettingSection
@@ -534,12 +528,12 @@ export function SettingsPage() {
                     <div className="p-4 rounded-xl bg-muted/30 border border-white/10">
                         {ytDlpLoading ? (
                             <div className="flex items-center gap-3">
-                                <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                                <span className="text-sm">Checking yt-dlp...</span>
+                                <Loader2 className="size-5 animate-spin text-primary" />
+                                <span className="text-sm">Checking yt-dlp…</span>
                             </div>
                         ) : ytDlpError ? (
                             <div className="flex items-center gap-3">
-                                <AlertCircle className="w-5 h-5 text-red-400" />
+                                <AlertCircle className="size-5 text-red-400" />
                                 <div>
                                     <p className="text-sm font-medium text-red-400">yt-dlp Not Found</p>
                                     <p className="text-xs text-muted-foreground">Use the Update Engine button below to install it.</p>
@@ -547,7 +541,7 @@ export function SettingsPage() {
                             </div>
                         ) : ytDlpInfo ? (
                             <div className="flex items-center gap-3">
-                                <CheckCircle className="w-5 h-5 text-white" />
+                                <CheckCircle className="size-5 text-white" />
                                 <div>
                                     <p className="text-sm font-medium text-white">yt-dlp Ready</p>
                                     <p className="text-xs text-muted-foreground">
@@ -578,6 +572,7 @@ export function SettingsPage() {
 
                     <div className="flex gap-2">
                         <button
+                            type="button"
                             onClick={() => checkYtDlp(true)}
                             disabled={ytDlpLoading || ytDlpUpdating}
                             className={cn(
@@ -585,10 +580,11 @@ export function SettingsPage() {
                                 (ytDlpLoading || ytDlpUpdating) && "opacity-50 cursor-not-allowed"
                             )}
                         >
-                            <RefreshCw className={cn('w-4 h-4', ytDlpLoading && 'animate-spin')} />
+                            <RefreshCw className={cn('size-4', ytDlpLoading && 'animate-spin')} />
                             Check Status
                         </button>
                         <button
+                            type="button"
                             onClick={updateYtDlp}
                             disabled={ytDlpLoading || ytDlpUpdating}
                             className={cn(
@@ -599,12 +595,12 @@ export function SettingsPage() {
                         >
                             {ytDlpUpdating ? (
                                 <>
-                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                    Updating...
+                                    <Loader2 className="size-4 animate-spin" />
+                                    Updating…
                                 </>
                             ) : (
                                 <>
-                                    <Download className="w-4 h-4" />
+                                    <Download className="size-4" />
                                     {ytDlpInfo?.update_available ? 'Update to Latest' : 'Update Engine'}
                                 </>
                             )}
@@ -623,12 +619,12 @@ export function SettingsPage() {
                     <div className="p-4 rounded-xl bg-muted/30 border border-white/10">
                         {spotDlLoading ? (
                             <div className="flex items-center gap-3">
-                                <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                                <span className="text-sm">Checking SpotDL...</span>
+                                <Loader2 className="size-5 animate-spin text-primary" />
+                                <span className="text-sm">Checking SpotDL…</span>
                             </div>
                         ) : spotDlError ? (
                             <div className="flex items-center gap-3">
-                                <AlertCircle className="w-5 h-5 text-red-400" />
+                                <AlertCircle className="size-5 text-red-400" />
                                 <div>
                                     <p className="text-sm font-medium text-red-400">SpotDL Not Found</p>
                                     <p className="text-xs text-muted-foreground">Use the Update Engine button below to install it.</p>
@@ -636,7 +632,7 @@ export function SettingsPage() {
                             </div>
                         ) : spotDlInfo ? (
                             <div className="flex items-center gap-3">
-                                <CheckCircle className="w-5 h-5 text-white" />
+                                <CheckCircle className="size-5 text-white" />
                                 <div>
                                     <p className="text-sm font-medium text-white">SpotDL Ready</p>
                                     <p className="text-xs text-muted-foreground">
@@ -666,6 +662,7 @@ export function SettingsPage() {
 
                     <div className="flex gap-2">
                         <button
+                            type="button"
                             onClick={() => checkSpotDl(true)}
                             disabled={spotDlLoading || spotDlUpdating}
                             className={cn(
@@ -673,10 +670,11 @@ export function SettingsPage() {
                                 (spotDlLoading || spotDlUpdating) && "opacity-50 cursor-not-allowed"
                             )}
                         >
-                            <RefreshCw className={cn('w-4 h-4', spotDlLoading && 'animate-spin')} />
+                            <RefreshCw className={cn('size-4', spotDlLoading && 'animate-spin')} />
                             Check Status
                         </button>
                         <button
+                            type="button"
                             onClick={updateSpotDl}
                             disabled={spotDlLoading || spotDlUpdating}
                             className={cn(
@@ -687,12 +685,12 @@ export function SettingsPage() {
                         >
                             {spotDlUpdating ? (
                                 <>
-                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                    Updating...
+                                    <Loader2 className="size-4 animate-spin" />
+                                    Updating…
                                 </>
                             ) : (
                                 <>
-                                    <Download className="w-4 h-4" />
+                                    <Download className="size-4" />
                                     {spotDlInfo?.update_available ? 'Update to Latest' : 'Update Engine'}
                                 </>
                             )}
@@ -708,9 +706,9 @@ export function SettingsPage() {
                 icon={Globe}
             >
                 <div className="flex flex-wrap gap-2">
-                    {supportedPlatforms.map((platform, i) => (
+                    {supportedPlatforms.map((platform) => (
                         <span
-                            key={i}
+                            key={platform}
                             className="px-3 py-1 rounded-full text-xs bg-primary/10 text-primary border border-primary/20"
                         >
                             {platform}
@@ -821,12 +819,12 @@ export function SettingsPage() {
                                     <div className="flex items-center gap-1.5 mt-2">
                                         {isSyncing ? (
                                             <>
-                                                <Loader2 className="w-3 h-3 text-white/60 animate-spin" />
-                                                <span className="text-xs text-white/60">Syncing to Google Drive...</span>
+                                                <Loader2 className="size-3 text-white/60 animate-spin" />
+                                                <span className="text-xs text-white/60">Syncing to Google Drive…</span>
                                             </>
                                         ) : (
                                             <>
-                                                <Cloud className="w-3 h-3 text-white" />
+                                                <Cloud className="size-3 text-white" />
                                                 <span className="text-xs text-white/80">Stored in your Google Drive</span>
                                             </>
                                         )}
@@ -845,7 +843,7 @@ export function SettingsPage() {
                                     <p className="text-sm font-medium">{user.displayName || 'User'}</p>
                                     <p className="text-xs text-muted-foreground">{user.email}</p>
                                     <div className="flex items-center gap-1.5 mt-2">
-                                        <HardDrive className="w-3 h-3 text-yellow-400" />
+                                        <HardDrive className="size-3 text-yellow-400" />
                                         <span className="text-xs text-yellow-400/80">Local storage only</span>
                                     </div>
                                     <p className="text-xs text-muted-foreground mt-1">
@@ -855,7 +853,7 @@ export function SettingsPage() {
                             </div>
                         ) : (
                             <div className="flex items-center gap-3">
-                                <HardDrive className="w-5 h-5 text-muted-foreground" />
+                                <HardDrive className="size-5 text-muted-foreground" />
                                 <div>
                                     <p className="text-sm font-medium text-muted-foreground">Local Storage</p>
                                     <p className="text-xs text-muted-foreground/70">
@@ -870,7 +868,7 @@ export function SettingsPage() {
                     {storageType === 'gdrive' && (
                         <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20">
                             <div className="flex items-start gap-2">
-                                <CheckCircle className="w-4 h-4 text-green-400 mt-0.5 shrink-0" />
+                                <CheckCircle className="size-4 text-green-400 mt-0.5 shrink-0" />
                                 <div>
                                     <p className="text-xs font-medium text-green-400">Privacy-First Storage</p>
                                     <p className="text-xs text-green-400/70 mt-0.5">
@@ -887,18 +885,19 @@ export function SettingsPage() {
                         <div className="space-y-3">
                             <SettingRow
                                 label="Sync status"
-                                value={isSyncing ? "Syncing..." : "Up to date"}
+                                value={isSyncing ? "Syncing…" : "Up to date"}
                                 action={
                                     isSyncing ? (
-                                        <Loader2 className="w-4 h-4 animate-spin text-white/60" />
+                                        <Loader2 className="size-4 animate-spin text-white/60" />
                                     ) : (
-                                        <CheckCircle className="w-4 h-4 text-white" />
+                                        <CheckCircle className="size-4 text-white" />
                                     )
                                 }
                             />
                             <div className="flex gap-2 pt-2 flex-wrap">
                                 {/* Upload Local Data Button */}
                                 <button
+                                    type="button"
                                     onClick={async () => {
                                         setIsMigrating(true);
                                         try {
@@ -918,15 +917,16 @@ export function SettingsPage() {
                                     )}
                                 >
                                     {isMigrating ? (
-                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        <Loader2 className="size-4 animate-spin" />
                                     ) : (
-                                        <Upload className="w-4 h-4" />
+                                        <Upload className="size-4" />
                                     )}
-                                    {isMigrating ? 'Migrating...' : 'Upload Local Data'}
+                                    {isMigrating ? 'Migrating…' : 'Upload Local Data'}
                                 </button>
 
                                 {/* Full Sync with Google Drive Button */}
                                 <button
+                                    type="button"
                                     onClick={async () => {
                                         setIsSyncingGDrive(true);
                                         try {
@@ -953,11 +953,11 @@ export function SettingsPage() {
                                     )}
                                 >
                                     {isSyncingGDrive ? (
-                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        <Loader2 className="size-4 animate-spin" />
                                     ) : (
-                                        <CloudCog className="w-4 h-4" />
+                                        <CloudCog className="size-4" />
                                     )}
-                                    {isSyncingGDrive ? 'Syncing...' : 'Sync with Google Drive'}
+                                    {isSyncingGDrive ? 'Syncing…' : 'Sync with Google Drive'}
                                 </button>
                             </div>
                             <p className="text-xs text-muted-foreground">
@@ -995,13 +995,13 @@ export function SettingsPage() {
                     <div className="p-4 rounded-xl bg-muted/30 border border-white/10">
                         {updateChecking ? (
                             <div className="flex items-center gap-3">
-                                <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                                <span className="text-sm">Checking for updates...</span>
+                                <Loader2 className="size-5 animate-spin text-primary" />
+                                <span className="text-sm">Checking for updates…</span>
                             </div>
                         ) : updateInfo?.available ? (
                             <div className="flex items-start gap-3">
-                                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-white/20 to-white/10 flex items-center justify-center shrink-0">
-                                    <Download className="w-5 h-5 text-white" />
+                                <div className="size-10 rounded-lg bg-gradient-to-br from-white/20 to-white/10 flex items-center justify-center shrink-0">
+                                    <Download className="size-5 text-white" />
                                 </div>
                                 <div className="flex-1">
                                     <p className="text-sm font-medium text-white">Update Available!</p>
@@ -1017,7 +1017,7 @@ export function SettingsPage() {
                             </div>
                         ) : updateInfo ? (
                             <div className="flex items-center gap-3">
-                                <CheckCircle className="w-5 h-5 text-white" />
+                                <CheckCircle className="size-5 text-white" />
                                 <div>
                                     <p className="text-sm font-medium text-white">You're up to date!</p>
                                     <p className="text-xs text-muted-foreground">
@@ -1027,7 +1027,7 @@ export function SettingsPage() {
                             </div>
                         ) : (
                             <div className="flex items-center gap-3">
-                                <Info className="w-5 h-5 text-muted-foreground" />
+                                <Info className="size-5 text-muted-foreground" />
                                 <span className="text-sm text-muted-foreground">Click "Check for Updates" to see if there's a new version</span>
                             </div>
                         )}
@@ -1036,6 +1036,7 @@ export function SettingsPage() {
                     {/* Update actions */}
                     <div className="flex gap-2">
                         <button
+                            type="button"
                             onClick={() => checkForUpdates(false)}
                             disabled={updateChecking || updateInstalling}
                             className={cn(
@@ -1043,11 +1044,12 @@ export function SettingsPage() {
                                 (updateChecking || updateInstalling) && "opacity-50 cursor-not-allowed"
                             )}
                         >
-                            <RefreshCw className={cn('w-4 h-4', updateChecking && 'animate-spin')} />
+                            <RefreshCw className={cn('size-4', updateChecking && 'animate-spin')} />
                             Check for Updates
                         </button>
                         {updateInfo?.available && (
                             <button
+                                type="button"
                                 onClick={handleInstallUpdate}
                                 disabled={updateInstalling}
                                 className={cn(
@@ -1059,12 +1061,12 @@ export function SettingsPage() {
                             >
                                 {updateInstalling ? (
                                     <>
-                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                        Installing...
+                                        <Loader2 className="size-4 animate-spin" />
+                                        Installing…
                                     </>
                                 ) : (
                                     <>
-                                        <Download className="w-4 h-4" />
+                                        <Download className="size-4" />
                                         Install Update
                                     </>
                                 )}
@@ -1077,6 +1079,6 @@ export function SettingsPage() {
                     </p>
                 </div>
             </SettingSection>
-        </motion.div>
+        </m.div>
     );
 }
