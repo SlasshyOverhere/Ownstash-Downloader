@@ -109,7 +109,11 @@ function updateCurrentSiteCard() {
     if (!currentTab || !currentDomain) {
         elements.siteName.textContent = 'No site detected';
         elements.siteUrl.textContent = 'Invalid page';
-        elements.siteStatus.innerHTML = '<span class="status-badge status-disabled">N/A</span>';
+        elements.siteStatus.textContent = '';
+        const badge = document.createElement('span');
+        badge.className = 'status-badge status-disabled';
+        badge.textContent = 'N/A';
+        elements.siteStatus.appendChild(badge);
         elements.btnToggleSite.disabled = true;
         elements.btnDownload.style.display = 'none';
         return;
@@ -138,22 +142,31 @@ function updateCurrentSiteCard() {
     // Check if this is a blocked domain (like Spotify)
     const isBlocked = isBlockedDomain(currentDomain);
 
+    // Helper to set status badge via safe DOM methods
+    function setStatusBadge(className, text) {
+        elements.siteStatus.textContent = '';
+        const badge = document.createElement('span');
+        badge.className = 'status-badge ' + className;
+        badge.textContent = text;
+        elements.siteStatus.appendChild(badge);
+    }
+
     if (isBlocked) {
         // Spotify and other blocked domains - show special message
-        elements.siteStatus.innerHTML = '<span class="status-badge status-spotify">Use App</span>';
+        setStatusBadge('status-spotify', 'Use App');
         elements.btnToggleText.textContent = 'Open in App Instead';
         elements.btnToggleSite.classList.remove('btn-remove');
         elements.btnToggleSite.classList.add('btn-primary');
         elements.btnDownload.style.display = 'inline-flex';
         elements.btnDownload.title = 'Send to Ownstash App';
     } else if (isEnabled) {
-        elements.siteStatus.innerHTML = '<span class="status-badge status-enabled">Enabled</span>';
+        setStatusBadge('status-enabled', 'Enabled');
         elements.btnToggleText.textContent = 'Remove Site';
         elements.btnToggleSite.classList.add('btn-remove');
         elements.btnToggleSite.classList.remove('btn-primary');
         elements.btnDownload.style.display = 'inline-flex';
     } else {
-        elements.siteStatus.innerHTML = '<span class="status-badge status-disabled">Disabled</span>';
+        setStatusBadge('status-disabled', 'Disabled');
         elements.btnToggleText.textContent = 'Add This Site';
         elements.btnToggleSite.classList.remove('btn-remove');
         elements.btnToggleSite.classList.add('btn-primary');
@@ -187,18 +200,37 @@ function createSiteItem(site) {
     item.className = 'site-item';
     item.dataset.domain = site.domain;
 
-    item.innerHTML = `
-    <div class="site-item-favicon">${site.domain.charAt(0).toUpperCase()}</div>
-    <span class="site-item-name" title="${site.domain}">${getDomainDisplayName(site.domain)}</span>
-    <button class="site-item-remove" title="Remove site">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M18 6L6 18M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </button>
-  `;
+    // Build DOM safely without innerHTML to prevent XSS from storage data
+    const faviconDiv = document.createElement('div');
+    faviconDiv.className = 'site-item-favicon';
+    faviconDiv.textContent = site.domain.charAt(0).toUpperCase();
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'site-item-name';
+    nameSpan.title = site.domain;
+    nameSpan.textContent = getDomainDisplayName(site.domain);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'site-item-remove';
+    removeBtn.title = 'Remove site';
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const removeSvg = document.createElementNS(svgNS, 'svg');
+    removeSvg.setAttribute('viewBox', '0 0 24 24');
+    removeSvg.setAttribute('fill', 'none');
+    removeSvg.setAttribute('stroke', 'currentColor');
+    removeSvg.setAttribute('stroke-width', '2');
+    const removePath = document.createElementNS(svgNS, 'path');
+    removePath.setAttribute('d', 'M18 6L6 18M6 6l12 12');
+    removePath.setAttribute('stroke-linecap', 'round');
+    removePath.setAttribute('stroke-linejoin', 'round');
+    removeSvg.appendChild(removePath);
+    removeBtn.appendChild(removeSvg);
+
+    item.appendChild(faviconDiv);
+    item.appendChild(nameSpan);
+    item.appendChild(removeBtn);
 
     // Add remove handler
-    const removeBtn = item.querySelector('.site-item-remove');
     removeBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         removeSite(site.domain);

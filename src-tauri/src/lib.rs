@@ -16,6 +16,7 @@ mod vault;
 mod vault_download;
 mod native_integration;
 mod secure_storage;
+pub mod log_sanitizer;
 
 use commands::AppState;
 use database::Database;
@@ -28,6 +29,24 @@ use tauri::tray::TrayIconBuilder;
 use tauri_plugin_autostart::ManagerExt;
 
 const MAIN_WINDOW_LABEL: &str = "main";
+
+/// Sanitize user-controlled input for safe logging.
+/// Prevents log injection by stripping control characters and truncating.
+pub fn sanitize_log_input(input: &str) -> String {
+    let cleaned: String = input
+        .chars()
+        .map(|c| match c {
+            '\n' | '\r' => ' ',
+            c if c.is_control() => '_',
+            c => c,
+        })
+        .collect();
+    if cleaned.len() > 500 {
+        format!("{}…(truncated)", &cleaned[..500])
+    } else {
+        cleaned
+    }
+}
 
 fn is_minimize_to_tray_enabled(app: &AppHandle) -> bool {
     let app_state = app.state::<AppState>();
@@ -112,11 +131,11 @@ pub fn run() {
                 if arg.contains("ownstash://auth") || arg.contains("oauth") || arg.contains("callback") {
                     println!("[SingleInstance] Found OAuth callback (redacted)");
                     // Emit the OAuth callback to the frontend
-                    let _ = app.emit("oauth-deep-link", arg.clone());
+                    let _ = app.emit("oauth-deep-link", sanitize_log_input(arg));
                 }
                 // Also handle download deep links
                 if let Some(download_url) = parse_deep_link(arg) {
-                    let _ = app.emit("extension-download-request", &download_url);
+                    let _ = app.emit("extension-download-request", &sanitize_log_input(&download_url));
                 }
             }
         }))
@@ -196,7 +215,7 @@ pub fn run() {
                     background_mode_for_deep_link.store(false, Ordering::SeqCst);
                     show_main_window(&handle);
 
-                    let _ = handle.emit("oauth-deep-link", payload);
+                    let _ = handle.emit("oauth-deep-link", sanitize_log_input(payload));
                     return;
                 }
                 
@@ -214,7 +233,7 @@ pub fn run() {
                     println!("[DeepLink] Window brought to front");
                     
                     // Emit to frontend
-                    let _ = handle.emit("extension-download-request", &download_url);
+                    let _ = handle.emit("extension-download-request", &sanitize_log_input(&download_url));
                 }
             });
 
