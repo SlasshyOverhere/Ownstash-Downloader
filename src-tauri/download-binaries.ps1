@@ -8,6 +8,10 @@
 $binariesDir = Join-Path $PSScriptRoot "binaries"
 New-Item -ItemType Directory -Force -Path $binariesDir | Out-Null
 
+# Pin specific versions — update hashes when changing versions
+$YTDLP_VERSION = "2025.05.22"
+$SPOTDL_VERSION = "4.2.10"
+
 # --- Expected SHA-256 checksums ---
 # Update these after bumping binary versions. Use uppercase hex, no spaces.
 $EXPECTED_HASHES = @{
@@ -41,36 +45,21 @@ function Verify-Checksum {
 }
 
 # --- yt-dlp ---
-Write-Host "Downloading yt-dlp..." -ForegroundColor Cyan
-$ytdlpUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+Write-Host "Downloading yt-dlp v$YTDLP_VERSION..." -ForegroundColor Cyan
+$ytdlpUrl = "https://github.com/yt-dlp/yt-dlp/releases/download/$YTDLP_VERSION/yt-dlp.exe"
 $ytdlpPath = Join-Path $binariesDir "yt-dlp.exe"
 Invoke-WebRequest -Uri $ytdlpUrl -OutFile $ytdlpPath -ErrorAction Stop
 Write-Host "  Downloaded to: $ytdlpPath" -ForegroundColor Green
 Verify-Checksum -FilePath $ytdlpPath -ExpectedHash $EXPECTED_HASHES["yt-dlp.exe"] -BinaryName "yt-dlp.exe"
 
 # --- SpotDL ---
-Write-Host "Downloading SpotDL..." -ForegroundColor Cyan
-$spotdlReleasesUrl = "https://api.github.com/repos/spotDL/spotify-downloader/releases/latest"
+Write-Host "Downloading SpotDL v$SPOTDL_VERSION..." -ForegroundColor Cyan
+$spotdlUrl = "https://github.com/spotDL/spotify-downloader/releases/download/v$SPOTDL_VERSION/spotdl-$SPOTDL_VERSION-win32.exe"
+$spotdlPath = Join-Path $binariesDir "spotdl.exe"
 try {
-    $releaseInfo = Invoke-RestMethod -Uri $spotdlReleasesUrl -Headers @{ "User-Agent" = "PowerShell" }
-    $spotdlAsset = $releaseInfo.assets | Where-Object { $_.name -match "spotdl.*win.*\.exe$" } | Select-Object -First 1
-
-    if ($spotdlAsset) {
-        $spotdlUrl = $spotdlAsset.browser_download_url
-        $spotdlPath = Join-Path $binariesDir "spotdl.exe"
-        Write-Host "  Downloading from: $spotdlUrl" -ForegroundColor Yellow
-        Invoke-WebRequest -Uri $spotdlUrl -OutFile $spotdlPath -ErrorAction Stop
-        Write-Host "  Downloaded to: $spotdlPath" -ForegroundColor Green
-        Verify-Checksum -FilePath $spotdlPath -ExpectedHash $EXPECTED_HASHES["spotdl.exe"] -BinaryName "spotdl.exe"
-    } else {
-        Write-Host "  Warning: Could not find SpotDL Windows executable in latest release" -ForegroundColor Yellow
-        Write-Host "  Trying fallback URL..." -ForegroundColor Yellow
-        $spotdlUrl = "https://github.com/spotDL/spotify-downloader/releases/latest/download/spotdl-4.2.10-win32.exe"
-        $spotdlPath = Join-Path $binariesDir "spotdl.exe"
-        Invoke-WebRequest -Uri $spotdlUrl -OutFile $spotdlPath -ErrorAction Stop
-        Write-Host "  Downloaded to: $spotdlPath" -ForegroundColor Green
-        Verify-Checksum -FilePath $spotdlPath -ExpectedHash $EXPECTED_HASHES["spotdl.exe"] -BinaryName "spotdl.exe"
-    }
+    Invoke-WebRequest -Uri $spotdlUrl -OutFile $spotdlPath -ErrorAction Stop
+    Write-Host "  Downloaded to: $spotdlPath" -ForegroundColor Green
+    Verify-Checksum -FilePath $spotdlPath -ExpectedHash $EXPECTED_HASHES["spotdl.exe"] -BinaryName "spotdl.exe"
 } catch {
     Write-Host "  Error downloading SpotDL: $_" -ForegroundColor Red
     Write-Host "  You may need to download manually from: https://github.com/spotDL/spotify-downloader/releases" -ForegroundColor Yellow
@@ -78,6 +67,8 @@ try {
 }
 
 # --- FFmpeg ---
+# NOTE: BtbN/FFmpeg-Builds uses rolling "latest" tags. The hash below must be
+# updated each time FFmpeg is upgraded. Download manually, compute hash, update.
 Write-Host "Downloading FFmpeg..." -ForegroundColor Cyan
 $ffmpegZipUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
 $ffmpegZipPath = Join-Path $binariesDir "ffmpeg.zip"
@@ -89,20 +80,20 @@ Write-Host "  Downloaded zip to: $ffmpegZipPath" -ForegroundColor Green
 Write-Host "Extracting FFmpeg..." -ForegroundColor Cyan
 Expand-Archive -Path $ffmpegZipPath -DestinationPath $ffmpegExtractPath -Force
 
-# Find and copy the ffmpeg.exe file
+# Find, verify, then copy — fail fast before overwriting existing binaries
 $ffmpegExe = Get-ChildItem -Path $ffmpegExtractPath -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1
 $ffprobExe = Get-ChildItem -Path $ffmpegExtractPath -Recurse -Filter "ffprobe.exe" | Select-Object -First 1
 
 if ($ffmpegExe) {
+    Verify-Checksum -FilePath $ffmpegExe.FullName -ExpectedHash $EXPECTED_HASHES["ffmpeg.exe"] -BinaryName "ffmpeg.exe"
     Copy-Item $ffmpegExe.FullName -Destination (Join-Path $binariesDir "ffmpeg.exe")
     Write-Host "  Copied ffmpeg.exe to binaries folder" -ForegroundColor Green
-    Verify-Checksum -FilePath (Join-Path $binariesDir "ffmpeg.exe") -ExpectedHash $EXPECTED_HASHES["ffmpeg.exe"] -BinaryName "ffmpeg.exe"
 }
 
 if ($ffprobExe) {
+    Verify-Checksum -FilePath $ffprobExe.FullName -ExpectedHash $EXPECTED_HASHES["ffprobe.exe"] -BinaryName "ffprobe.exe"
     Copy-Item $ffprobExe.FullName -Destination (Join-Path $binariesDir "ffprobe.exe")
     Write-Host "  Copied ffprobe.exe to binaries folder" -ForegroundColor Green
-    Verify-Checksum -FilePath (Join-Path $binariesDir "ffprobe.exe") -ExpectedHash $EXPECTED_HASHES["ffprobe.exe"] -BinaryName "ffprobe.exe"
 }
 
 # Clean up

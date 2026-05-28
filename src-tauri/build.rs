@@ -9,6 +9,7 @@ use std::process::Command;
 const EXPECTED_HASHES: &[(&str, &str)] = &[
     // Windows
     ("yt-dlp.exe", "3DB811B366B2DA47337D2FCFDFE5BBD9A258DAD3F350C54974F005DF115A1545"),
+    ("spotdl.exe", "55286C6DCCF6ADC973E0888A34E69DB1A45CCE67D2FAB231FEB785605F499BFC"),
     ("ffmpeg.exe", "66133BEE2A30C585FCC205E06A6477E305DEE7C1672C28893086734D34C92319"),
     ("ffprobe.exe", "D23C959F7885EFE529FFE22E3EBB49E5D8D89839FD22BF798F03C85AD07C0778"),
     // macOS
@@ -100,9 +101,9 @@ fn main() {
         }
     }
 
-    // Verify checksums of all present binaries
+    // Verify checksums of all present binaries — halt build on mismatch
     if binaries_dir.exists() && !verify_binary_hashes(binaries_dir) {
-        println!("cargo:warning=WARNING: One or more binary checksums failed verification. See warnings above.");
+        panic!("SECURITY: Binary checksum verification failed. Build aborted. See warnings above.");
     }
 
     tauri_build::build()
