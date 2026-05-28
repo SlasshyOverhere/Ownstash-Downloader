@@ -21,16 +21,17 @@ pub struct MediaFileInfo {
 pub fn start_media_server(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         println!("[MediaServer] Starting on port {}", MEDIA_SERVER_PORT);
-        
+
         let stream_route = warp::path("stream")
             .and(warp::query::<std::collections::HashMap<String, String>>())
             .and(warp::header::optional::<String>("range"))
+            .and(warp::header::optional::<String>("x-media-token"))
             .and_then(handle_stream_request);
             
         let cors = warp::cors()
-            .allow_any_origin()
+            .allow_origin("http://127.0.0.1:18456")
             .allow_methods(vec!["GET", "HEAD", "OPTIONS"])
-            .allow_headers(vec!["Content-Type", "Range", "Accept-Ranges"]);
+            .allow_headers(vec!["Content-Type", "Range", "Accept-Ranges", "x-media-token"]);
 
         let routes = stream_route.with(cors);
         
@@ -41,24 +42,36 @@ pub fn start_media_server(app: AppHandle) {
 
 async fn handle_stream_request(
     params: std::collections::HashMap<String, String>,
-    range_header: Option<String>
+    range_header: Option<String>,
+    media_token_header: Option<String>,
 ) -> Result<impl warp::Reply, warp::Rejection> {
     use tokio::io::AsyncSeekExt;
     use tokio::io::AsyncReadExt;
     use warp::http::StatusCode;
     use warp::http::Response;
 
-    // Verify token
-    let token = params.get("token").ok_or_else(warp::reject::not_found)?;
-    if token != &*SERVER_SECRET {
-        println!("[MediaServer] Invalid token provided for stream request");
+    // Verify token: prefer x-media-token header, fall back to query param
+    // (query param fallback needed for <video>/<audio> elements which cannot set custom headers)
+    let token_valid = media_token_header
+        .as_deref()
+        .map(|t| t == &*SERVER_SECRET)
+        .unwrap_or(false)
+        || params.get("token").map(|t| t == &*SERVER_SECRET).unwrap_or(false);
+
+    if !token_valid {
         return Err(warp::reject::not_found());
     }
 
     let file_path = params.get("path").ok_or_else(warp::reject::not_found)?;
     let decoded_path = urlencoding::decode(file_path).map_err(|_| warp::reject::not_found())?.to_string();
+
+    // Security: reject path traversal attempts
+    if decoded_path.contains("..") || decoded_path.contains('\0') {
+        return Err(warp::reject::not_found());
+    }
+
     let path = PathBuf::from(&decoded_path);
-    
+
     if !path.exists() {
         return Err(warp::reject::not_found());
     }
@@ -267,6 +280,7 @@ mod tests {
         let stream_route = warp::path("stream")
             .and(warp::query::<std::collections::HashMap<String, String>>())
             .and(warp::header::optional::<String>("range"))
+            .and(warp::header::optional::<String>("x-media-token"))
             .and_then(handle_stream_request);
 
         // Test request WITHOUT token
@@ -290,6 +304,67 @@ mod tests {
         assert_eq!(response_with_token.status(), 200, "Expected 200 OK with correct token");
 
         // Clean up
+        let _ = std::fs::remove_file(file_path);
+    }
+
+    #[tokio::test]
+    async fn test_stream_path_traversal_rejected() {
+        let stream_route = warp::path("stream")
+            .and(warp::query::<std::collections::HashMap<String, String>>())
+            .and(warp::header::optional::<String>("range"))
+            .and(warp::header::optional::<String>("x-media-token"))
+            .and_then(handle_stream_request);
+
+        let token = &*SERVER_SECRET;
+
+        // Path traversal attempt
+        let response = request()
+            .path(&format!("/stream?path=../../etc/passwd&token={}", token))
+            .reply(&stream_route)
+            .await;
+        assert_eq!(response.status(), 404, "Expected 404 for path traversal");
+
+        // Null byte injection
+        let response = request()
+            .path(&format!("/stream?path=/tmp/test%00.txt&token={}", token))
+            .reply(&stream_route)
+            .await;
+        assert_eq!(response.status(), 404, "Expected 404 for null byte injection");
+    }
+
+    #[tokio::test]
+    async fn test_stream_header_token() {
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join("test_media_header.txt");
+        let mut file = std::fs::File::create(&file_path).unwrap();
+        writeln!(file, "Test content for header token.").unwrap();
+
+        let path_str = file_path.to_string_lossy().to_string();
+        let encoded_path = urlencoding::encode(&path_str);
+        let token = &*SERVER_SECRET;
+
+        let stream_route = warp::path("stream")
+            .and(warp::query::<std::collections::HashMap<String, String>>())
+            .and(warp::header::optional::<String>("range"))
+            .and(warp::header::optional::<String>("x-media-token"))
+            .and_then(handle_stream_request);
+
+        // Valid token in header
+        let response = request()
+            .path(&format!("/stream?path={}", encoded_path))
+            .header("x-media-token", token)
+            .reply(&stream_route)
+            .await;
+        assert_eq!(response.status(), 200, "Expected 200 with valid header token");
+
+        // Invalid token in header
+        let response = request()
+            .path(&format!("/stream?path={}", encoded_path))
+            .header("x-media-token", "wrong-token")
+            .reply(&stream_route)
+            .await;
+        assert_eq!(response.status(), 404, "Expected 404 with invalid header token");
+
         let _ = std::fs::remove_file(file_path);
     }
 }

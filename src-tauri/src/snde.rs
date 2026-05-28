@@ -164,7 +164,7 @@ impl SNDEEngine {
         let start_time = Instant::now();
         let id = request.id.clone();
         
-        println!("[SNDE] Starting download: {} -> {:?}", request.url, request.output_path);
+        println!("[SNDE] Starting download: {} -> {:?}", redact_url(&request.url), request.output_path);
         
         // Update health registry
         HEALTH_REGISTRY.set_phase(&id, DownloadPhase::Preflight);
@@ -703,6 +703,14 @@ lazy_static::lazy_static! {
     pub static ref SNDE_ENGINE: SNDEEngine = SNDEEngine::new();
 }
 
+/// Redact a URL to show only scheme + host, stripping path/query/fragment (security: H9)
+fn redact_url(url: &str) -> String {
+    url::Url::parse(url)
+        .ok()
+        .map(|u| format!("{}://{}", u.scheme(), u.host_str().unwrap_or("[unknown]")))
+        .unwrap_or_else(|| "[invalid url]".to_string())
+}
+
 /// Format bytes per second to human readable speed
 fn format_speed(bps: u64) -> String {
     const KB: u64 = 1024;
@@ -752,5 +760,12 @@ mod tests {
         assert_eq!(format_eta(30), "30s");
         assert_eq!(format_eta(90), "1m 30s");
         assert_eq!(format_eta(3700), "1h 1m");
+    }
+
+    #[test]
+    fn test_redact_url() {
+        assert_eq!(redact_url("https://example.com/path?token=secret#frag"), "https://example.com");
+        assert_eq!(redact_url("http://cdn.example.org/file.zip?v=1"), "http://cdn.example.org");
+        assert_eq!(redact_url("not a url"), "[invalid url]");
     }
 }
