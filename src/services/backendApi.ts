@@ -44,15 +44,6 @@ export async function getAuthConfig(): Promise<{
 }
 
 /**
- * Generate OAuth authorization URL
- */
-export async function getAuthUrl(redirectUri: string, state?: string): Promise<{ url: string }> {
-    const params = new URLSearchParams({ redirect_uri: redirectUri });
-    if (state) params.append('state', state);
-    return backendRequest(`/auth/url?${params.toString()}`);
-}
-
-/**
  * Exchange authorization code for tokens
  */
 export async function exchangeCodeForTokens(
@@ -88,16 +79,6 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
 }
 
 /**
- * Revoke a token (logout)
- */
-export async function revokeToken(token: string): Promise<{ success: boolean }> {
-    return backendRequest('/auth/revoke', {
-        method: 'POST',
-        body: JSON.stringify({ token }),
-    });
-}
-
-/**
  * Get user info using access token
  */
 export async function getUserInfo(accessToken: string): Promise<{
@@ -113,125 +94,6 @@ export async function getUserInfo(accessToken: string): Promise<{
         headers: {
             Authorization: `Bearer ${accessToken}`,
         },
-    });
-}
-
-// ==================== Drive Endpoints ====================
-
-/**
- * List files in appdata folder
- */
-export async function listDriveFiles(
-    accessToken: string,
-    options: { q?: string; pageSize?: number; pageToken?: string; fields?: string } = {}
-): Promise<{
-    files: Array<{ id: string; name: string; mimeType: string; modifiedTime: string }>;
-    nextPageToken?: string;
-}> {
-    return backendRequest('/drive/files/list', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify(options),
-    });
-}
-
-/**
- * Get file metadata
- */
-export async function getDriveFile(
-    accessToken: string,
-    fileId: string,
-    fields?: string
-): Promise<{ id: string; name: string; mimeType: string; size?: string }> {
-    const params = fields ? `?fields=${encodeURIComponent(fields)}` : '';
-    return backendRequest(`/drive/files/${fileId}${params}`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-    });
-}
-
-/**
- * Download file content
- */
-export async function downloadDriveFile(
-    accessToken: string,
-    fileId: string
-): Promise<ArrayBuffer> {
-    const url = `${BACKEND_URL}/drive/files/${fileId}/content`;
-    const response = await fetch(url, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.details || data.error || `Download failed: ${response.status}`);
-    }
-
-    return response.arrayBuffer();
-}
-
-/**
- * Create a new file in appdata folder
- */
-export async function createDriveFile(
-    accessToken: string,
-    name: string,
-    content: string | object,
-    mimeType: string = 'application/json'
-): Promise<{ id: string; name: string }> {
-    return backendRequest('/drive/files', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({ name, content, mimeType }),
-    });
-}
-
-/**
- * Update file content
- */
-export async function updateDriveFile(
-    accessToken: string,
-    fileId: string,
-    content: string | object,
-    mimeType: string = 'application/json'
-): Promise<{ id: string; name: string }> {
-    return backendRequest(`/drive/files/${fileId}`, {
-        method: 'PATCH',
-        headers: { Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({ content, mimeType }),
-    });
-}
-
-/**
- * Delete a file
- */
-export async function deleteDriveFile(
-    accessToken: string,
-    fileId: string
-): Promise<{ success: boolean }> {
-    return backendRequest(`/drive/files/${fileId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${accessToken}` },
-    });
-}
-
-/**
- * Get Drive storage quota info
- */
-export async function getDriveAbout(accessToken: string): Promise<{
-    storageQuota: {
-        limit: string;
-        usage: string;
-        usageInDrive: string;
-        usageInDriveTrash: string;
-    };
-    user: {
-        displayName: string;
-        emailAddress: string;
-        photoLink: string;
-    };
-}> {
-    return backendRequest('/drive/about', {
-        headers: { Authorization: `Bearer ${accessToken}` },
     });
 }
 
