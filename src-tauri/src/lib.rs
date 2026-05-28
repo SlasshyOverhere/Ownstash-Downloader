@@ -30,23 +30,6 @@ use tauri_plugin_autostart::ManagerExt;
 
 const MAIN_WINDOW_LABEL: &str = "main";
 
-/// Sanitize user-controlled input for safe logging.
-/// Prevents log injection by stripping control characters and truncating.
-pub fn sanitize_log_input(input: &str) -> String {
-    let cleaned: String = input
-        .chars()
-        .map(|c| match c {
-            '\n' | '\r' => ' ',
-            c if c.is_control() => '_',
-            c => c,
-        })
-        .collect();
-    if cleaned.len() > 500 {
-        format!("{}…(truncated)", &cleaned[..500])
-    } else {
-        cleaned
-    }
-}
 
 fn is_minimize_to_tray_enabled(app: &AppHandle) -> bool {
     let app_state = app.state::<AppState>();
@@ -102,6 +85,16 @@ fn close_main_window(app: &AppHandle) {
     }
 }
 
+/// Log a security-relevant event for audit trail.
+/// These are emitted at WARN level with a SECURITY_EVENT marker for easy filtering.
+pub fn audit_security_event(event_type: &str, details: &str) {
+    tracing::warn!(
+        event_type = event_type,
+        details = details,
+        "SECURITY_EVENT"
+    );
+}
+
 pub fn run() {
     let background_mode = Arc::new(AtomicBool::new(false));
     let allow_exit = Arc::new(AtomicBool::new(false));
@@ -131,11 +124,11 @@ pub fn run() {
                 if arg.contains("ownstash://auth") || arg.contains("oauth") || arg.contains("callback") {
                     println!("[SingleInstance] Found OAuth callback (redacted)");
                     // Emit the OAuth callback to the frontend
-                    let _ = app.emit("oauth-deep-link", sanitize_log_input(arg));
+                    let _ = app.emit("oauth-deep-link", arg.clone());
                 }
                 // Also handle download deep links
                 if let Some(download_url) = parse_deep_link(arg) {
-                    let _ = app.emit("extension-download-request", &sanitize_log_input(&download_url));
+                    let _ = app.emit("extension-download-request", &download_url);
                 }
             }
         }))
