@@ -268,12 +268,7 @@ export function MediaInfoModal({
         }
     }, [maxVideoHeight, mediaInfo.formats]);
 
-    // Load SponsorBlock setting
-    useEffect(() => {
-        api.getSetting('use_sponsorblock').then(val => {
-            if (val !== null) setUseSponsorblock(val === 'true');
-        });
-    }, []);
+    // SponsorBlock: always starts disabled, user can toggle on per-session
 
     // Helper to find sponsor segments
     const sponsorSegments = mediaInfo.chapters?.filter(c =>
