@@ -71,7 +71,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             const storedUser = initializeAuthState();
             if (storedUser && isMounted) {
                 setUser(storedUser);
-                console.log('[Auth] Found stored user:', storedUser.email);
+                console.log('[Auth] Found stored user:', storedUser.email ? storedUser.email.replace(/^(.)(.*?)(@.*)$/, '$1***$3') : 'unknown');
             }
 
             // Step 2: Load persisted Google Drive token

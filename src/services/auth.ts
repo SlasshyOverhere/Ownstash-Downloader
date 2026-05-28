@@ -90,7 +90,7 @@ export const authService = {
         try {
             const googleUser = await signInWithGoogleBrowser();
             const authUser = toAuthUser(googleUser);
-            console.log('[Auth] Browser sign-in completed, user:', authUser.email);
+            console.log('[Auth] Browser sign-in completed, user:', authUser.email ? authUser.email.replace(/^(.)(.*?)(@.*)$/, '$1***$3') : 'unknown');
 
             // Notify listeners
             notifyAuthStateChange(authUser);
