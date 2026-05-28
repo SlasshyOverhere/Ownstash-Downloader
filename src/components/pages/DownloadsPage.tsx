@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
+import { LazyMotion, m, domAnimation } from 'framer-motion';
 import {
     Download,
     X,
@@ -106,7 +106,7 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
     }, [progress?.status]);
 
     return (
-        <motion.div
+        <m.div
             ref={ref}
             style={tiltStyle}
             {...handlers}
@@ -118,7 +118,7 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
         >
             <div className="flex items-start gap-4">
                 {/* Thumbnail / Icon */}
-                <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center shrink-0 relative overflow-hidden">
+                <div className="size-16 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center shrink-0 relative overflow-hidden">
                     {item.thumbnail ? (
                         <img
                             src={item.thumbnail}
@@ -127,10 +127,10 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
                             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                         />
                     ) : (
-                        <TypeIcon className="w-8 h-8 text-primary z-10" />
+                        <TypeIcon className="size-8 text-primary z-10" />
                     )}
                     {isActive && (
-                        <motion.div
+                        <m.div
                             className="absolute inset-0 bg-gradient-to-t from-primary/30 to-transparent"
                             initial={{ height: 0 }}
                             animate={{ height: `${progressValue}%` }}
@@ -155,21 +155,23 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
                         <div className="flex items-center gap-1 shrink-0">
                             {status === 'downloading' && (
                                 <button
+                                    type="button"
                                     onClick={() => onCancel(item.id)}
                                     aria-label="Cancel download"
                                     className="p-2 rounded-lg hover:bg-white/10 transition-colors"
                                     title="Cancel download"
                                 >
-                                    <X className="w-4 h-4" />
+                                    <X className="size-4" />
                                 </button>
                             )}
                             <button
+                                type="button"
                                 onClick={() => onDelete(item.id)}
                                 aria-label="Remove from list"
                                 className="p-2 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors"
                                 title="Remove from list"
                             >
-                                <Trash2 className="w-4 h-4" />
+                                <Trash2 className="size-4" />
                             </button>
                         </div>
                     </div>
@@ -181,7 +183,7 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
                                 <div className="flex items-center gap-2">
                                     <span className={cn('capitalize flex items-center gap-1', statusColors[status])}>
                                         {status === 'downloading' && (
-                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                            <Loader2 className="size-3 animate-spin" />
                                         )}
                                         {status}
                                     </span>
@@ -207,7 +209,7 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
                                 </div>
                             </div>
                             <div className="h-2 bg-muted/50 rounded-full overflow-hidden">
-                                <motion.div
+                                <m.div
                                     className="h-full bg-gradient-to-r from-primary to-accent rounded-full progress-shimmer"
                                     initial={{ width: 0 }}
                                     animate={{ width: `${progressValue}%` }}
@@ -221,27 +223,29 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
                     {status === 'completed' && (
                         <div className="mt-2 flex items-center justify-between">
                             <div className="flex items-center gap-2 text-white text-sm">
-                                <CheckCircle className="w-4 h-4" />
+                                <CheckCircle className="size-4" />
                                 <span>Download complete</span>
                             </div>
                             <div className="flex items-center gap-2">
                                 {onPlay && item.path && (
                                     <button
+                                        type="button"
                                         onClick={() => onPlay(item.path, item.title)}
                                         className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium transition-colors"
                                         title="Play file"
                                     >
-                                        <Play className="w-4 h-4" />
+                                        <Play className="size-4" />
                                         <span>Play</span>
                                     </button>
                                 )}
                                 {onOpenFolder && item.path && (
                                     <button
+                                        type="button"
                                         onClick={() => onOpenFolder(item.path, item.title, item.format || 'mp4')}
                                         className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/20 hover:bg-primary/30 text-primary text-sm font-medium transition-colors"
                                         title="Open download folder"
                                     >
-                                        <FolderOpen className="w-4 h-4" />
+                                        <FolderOpen className="size-4" />
                                         <span>Open Folder</span>
                                     </button>
                                 )}
@@ -252,7 +256,7 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
                     {/* Failed indicator */}
                     {status === 'failed' && (
                         <div className="mt-2 flex items-center gap-2 text-white/50 text-sm">
-                            <AlertCircle className="w-4 h-4" />
+                            <AlertCircle className="size-4" />
                             <span>Download failed</span>
                         </div>
                     )}
@@ -260,7 +264,7 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
                     {/* Cancelled indicator */}
                     {status === 'cancelled' && (
                         <div className="mt-2 flex items-center gap-2 text-gray-400 text-sm">
-                            <X className="w-4 h-4" />
+                            <X className="size-4" />
                             <span>Cancelled</span>
                         </div>
                     )}
@@ -271,7 +275,7 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
                     </p>
                 </div>
             </div>
-        </motion.div>
+        </m.div>
     );
 });
 
@@ -506,29 +510,32 @@ export function DownloadsPage() {
     ), [downloads, statusMap]);
 
     return (
+        <LazyMotion features={domAnimation}>
         <>
-            <motion.div
+            <m.div
                 variants={staggerContainer}
                 initial="initial"
                 animate="animate"
                 className="max-w-4xl mx-auto space-y-8"
             >
                 {/* Header */}
-                <motion.div variants={fadeInUp} className="flex items-center justify-between">
+                <m.div variants={fadeInUp} className="flex items-center justify-between">
                     <div>
                         <h1 className="text-3xl font-display font-bold">Downloads</h1>
                         <p className="text-muted-foreground">Manage your active and completed downloads</p>
                     </div>
                     <div className="flex items-center gap-2">
                         <button
+                            type="button"
                             onClick={loadDownloads}
                             className="px-4 py-2 rounded-xl glass-hover text-sm font-medium flex items-center gap-2"
                         >
-                            <RefreshCw className={cn('w-4 h-4', isLoading && 'animate-spin')} />
+                            <RefreshCw className={cn('size-4', isLoading && 'animate-spin')} />
                             Refresh
                         </button>
                         {downloads.length > 0 && (
                             <button
+                                type="button"
                                 onClick={handleClearAll}
                                 className="px-4 py-2 rounded-xl glass-hover text-sm font-medium text-red-400"
                             >
@@ -536,26 +543,26 @@ export function DownloadsPage() {
                             </button>
                         )}
                     </div>
-                </motion.div>
+                </m.div>
 
                 {/* Loading state */}
                 {isLoading && downloads.length === 0 && (
                     <div className="flex items-center justify-center py-20">
-                        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                        <Loader2 className="size-8 animate-spin text-primary" />
                     </div>
                 )}
 
                 {/* Active Downloads */}
                 {activeDownloads.length > 0 && (
-                    <motion.section variants={fadeInUp} className="space-y-4">
+                    <m.section variants={fadeInUp} className="space-y-4">
                         <h2 className="text-lg font-semibold flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                            <div className="size-2 rounded-full bg-primary animate-pulse" />
                             Active Downloads
                             <span className="text-sm font-normal text-muted-foreground">
                                 ({activeDownloads.length})
                             </span>
                         </h2>
-                        <motion.div variants={staggerContainer} className="space-y-3">
+                        <m.div variants={staggerContainer} className="space-y-3">
                             {activeDownloads.map(item => (
                                 <DownloadCard
                                     key={item.id}
@@ -565,21 +572,21 @@ export function DownloadsPage() {
                                     onDelete={handleDelete}
                                 />
                             ))}
-                        </motion.div>
-                    </motion.section>
+                        </m.div>
+                    </m.section>
                 )}
 
                 {/* Completed Downloads */}
                 {completedDownloads.length > 0 && (
-                    <motion.section variants={fadeInUp} className="space-y-4">
+                    <m.section variants={fadeInUp} className="space-y-4">
                         <h2 className="text-lg font-semibold flex items-center gap-2 text-muted-foreground">
-                            <CheckCircle className="w-4 h-4 text-white" />
+                            <CheckCircle className="size-4 text-white" />
                             Completed
                             <span className="text-sm font-normal">
                                 ({completedDownloads.length})
                             </span>
                         </h2>
-                        <motion.div variants={staggerContainer} className="space-y-3">
+                        <m.div variants={staggerContainer} className="space-y-3">
                             {completedDownloads.map(item => (
                                 <DownloadCard
                                     key={item.id}
@@ -591,21 +598,21 @@ export function DownloadsPage() {
                                     onPlay={handlePlay}
                                 />
                             ))}
-                        </motion.div>
-                    </motion.section>
+                        </m.div>
+                    </m.section>
                 )}
 
                 {/* Failed Downloads */}
                 {failedDownloads.length > 0 && (
-                    <motion.section variants={fadeInUp} className="space-y-4">
+                    <m.section variants={fadeInUp} className="space-y-4">
                         <h2 className="text-lg font-semibold flex items-center gap-2 text-muted-foreground">
-                            <AlertCircle className="w-4 h-4 text-white/50" />
+                            <AlertCircle className="size-4 text-white/50" />
                             Failed / Cancelled
                             <span className="text-sm font-normal">
                                 ({failedDownloads.length})
                             </span>
                         </h2>
-                        <motion.div variants={staggerContainer} className="space-y-3">
+                        <m.div variants={staggerContainer} className="space-y-3">
                             {failedDownloads.map(item => (
                                 <DownloadCard
                                     key={item.id}
@@ -615,26 +622,26 @@ export function DownloadsPage() {
                                     onDelete={handleDelete}
                                 />
                             ))}
-                        </motion.div>
-                    </motion.section>
+                        </m.div>
+                    </m.section>
                 )}
 
                 {/* Empty state */}
                 {!isLoading && downloads.length === 0 && (
-                    <motion.div
+                    <m.div
                         variants={fadeInUp}
                         className="flex flex-col items-center justify-center py-20 text-center"
                     >
-                        <div className="w-20 h-20 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
-                            <Download className="w-10 h-10 text-muted-foreground" />
+                        <div className="size-20 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
+                            <Download className="size-10 text-muted-foreground" />
                         </div>
                         <h3 className="text-xl font-semibold mb-2">No downloads yet</h3>
                         <p className="text-muted-foreground max-w-sm">
                             Paste a URL on the home page to start downloading your favorite content.
                         </p>
-                    </motion.div>
+                    </m.div>
                 )}
-            </motion.div>
+            </m.div>
 
             {/* In-App Media Player */}
             <MediaPlayer
@@ -645,5 +652,6 @@ export function DownloadsPage() {
                 isAudio={playerIsAudio}
             />
         </>
+        </LazyMotion>
     );
 }

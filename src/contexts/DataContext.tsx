@@ -1,6 +1,6 @@
 // Data Sync Context - Provides cloud-synced data throughout the app
 // Uses Google Drive as personal database
-import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import { createContext, use, useState, useEffect, useEffectEvent, useRef, ReactNode, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 import { gdriveService, isGDriveAvailable } from '@/services/gdriveService';
 import { api, Download, SearchHistory, Setting } from '@/services/api';
@@ -53,7 +53,7 @@ export function DataProvider({ children }: DataProviderProps) {
     const [isLoading, setIsLoading] = useState(true);
     const [isSyncing, setIsSyncing] = useState(false);
     const [storageType, setStorageType] = useState<'local' | 'gdrive'>('local');
-    const [hasAutoSynced, setHasAutoSynced] = useState(false);
+    const hasAutoSynced = useRef(false);
 
     // Subscribe to Google Drive updates when user is logged in with GDrive access
     useEffect(() => {
@@ -421,18 +421,16 @@ export function DataProvider({ children }: DataProviderProps) {
             setSettings(mergedSettings);
 
             // Step 6: Also save merged data to local storage for offline access
-            // Clear and re-add to ensure sync (this is a full sync)
-            await api.clearDownloads();
-            for (const download of mergedDownloads) {
-                await api.addDownload(download);
-            }
-            await api.clearSearchHistory();
-            for (const search of mergedHistory) {
-                await api.addSearch(search.query, search.title, search.thumbnail);
-            }
-            for (const setting of mergedSettings) {
-                await api.saveSetting(setting.key, setting.value);
-            }
+            // Clear then re-add to ensure sync (this is a full sync)
+            await Promise.all([
+                api.clearDownloads(),
+                api.clearSearchHistory(),
+            ]);
+            await Promise.all([
+                ...mergedDownloads.map(d => api.addDownload(d)),
+                ...mergedHistory.map(s => api.addSearch(s.query, s.title, s.thumbnail)),
+                ...mergedSettings.map(s => api.saveSetting(s.key, s.value)),
+            ]);
 
             console.log('[DataContext] Full sync completed successfully!');
             console.log(`[DataContext] Synced: ${mergedDownloads.length} downloads, ${mergedHistory.length} searches, ${mergedSettings.length} settings`);
@@ -450,19 +448,21 @@ export function DataProvider({ children }: DataProviderProps) {
         } finally {
             setIsSyncing(false);
         }
-    }, [user]);
+    }, [user, isGDriveReady]);
+
+    const onAutoSync = useEffectEvent(syncWithGDrive);
 
     // Automatic Sync on Boot
     useEffect(() => {
         const gdriveAvailable = isGDriveAvailable() || hasGDriveToken;
-        if (user && isGDriveReady && gdriveAvailable && !hasAutoSynced && !isLoading) {
+        if (user && isGDriveReady && gdriveAvailable && !hasAutoSynced.current && !isLoading) {
             console.log('[DataContext] Automated GDrive sync starting...');
             // Delay slightly to ensure subscriptions are active and stable
             const timer = setTimeout(() => {
-                syncWithGDrive().then((result) => {
+                onAutoSync().then((result) => {
                     if (result.success) {
                         console.log('[DataContext] Automated GDrive sync completed');
-                        setHasAutoSynced(true);
+                        hasAutoSynced.current = true;
                     }
                 }).catch(err => {
                     console.error('[DataContext] Automated sync failed:', err);
@@ -470,7 +470,7 @@ export function DataProvider({ children }: DataProviderProps) {
             }, 3000); // 3 second delay for stability
             return () => clearTimeout(timer);
         }
-    }, [user, isGDriveReady, hasGDriveToken, hasAutoSynced, isLoading, syncWithGDrive]);
+    }, [user, isGDriveReady, hasGDriveToken, isLoading]);
 
     const value: DataContextType = {
         downloads,
@@ -500,7 +500,7 @@ export function DataProvider({ children }: DataProviderProps) {
 }
 
 export function useData() {
-    const context = useContext(DataContext);
+    const context = use(DataContext);
     if (context === undefined) {
         throw new Error('useData must be used within a DataProvider');
     }

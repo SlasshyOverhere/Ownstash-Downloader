@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { LazyMotion, m, domAnimation, AnimatePresence } from 'framer-motion';
 import {
     X,
     Play,
@@ -38,7 +38,7 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showControls, setShowControls] = useState(true);
-    const [hasRetriedTranscode, setHasRetriedTranscode] = useState(false);
+    const hasRetriedTranscodeRef = useRef(false);
     const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const [mediaSrc, setMediaSrc] = useState<string>('');
@@ -52,7 +52,7 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
             setDuration(0);
             setIsLoading(true);
             setError(null);
-            setHasRetriedTranscode(false);
+            hasRetriedTranscodeRef.current = false;
 
             // Use the robust media server URL which handles special characters and Range requests better
             api.getMediaStreamUrl(filePath)
@@ -179,8 +179,8 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
     };
 
     const handleError = async () => {
-        if (!isAudio && !hasRetriedTranscode && filePath) {
-            setHasRetriedTranscode(true);
+        if (!isAudio && !hasRetriedTranscodeRef.current && filePath) {
+            hasRetriedTranscodeRef.current = true;
             setIsLoading(true);
             setError(null);
 
@@ -222,11 +222,12 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
     };
 
     const modalContent = (
+        <LazyMotion features={domAnimation}>
         <AnimatePresence>
             {isOpen && (
                 <div className="fixed inset-0 z-[9999]">
                     {/* Backdrop */}
-                    <motion.div
+                    <m.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
@@ -236,7 +237,7 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
 
                     {/* Player Container */}
                     <div className="absolute inset-0 flex items-center justify-center p-4">
-                        <motion.div
+                        <m.div
                             ref={containerRef}
                             initial={{ opacity: 0, scale: 0.95 }}
                             animate={{ opacity: 1, scale: 1 }}
@@ -251,6 +252,7 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
                         >
                             {/* Close Button */}
                             <button
+                                type="button"
                                 onClick={onClose}
                                 aria-label="Close"
                                 className={cn(
@@ -258,7 +260,7 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
                                     !showControls && !isAudio && "opacity-0"
                                 )}
                             >
-                                <X className="w-6 h-6 text-white" />
+                                <X className="size-6 text-white" />
                             </button>
 
                             {/* Title */}
@@ -275,12 +277,12 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
                             {isAudio ? (
                                 <div className="p-8 pt-16">
                                     {/* Audio visualization placeholder */}
-                                    <div className="w-48 h-48 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-white/20 to-white/5 flex items-center justify-center">
-                                        <div className="w-24 h-24 rounded-full bg-white/10 flex items-center justify-center">
+                                    <div className="size-48 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-white/20 to-white/5 flex items-center justify-center">
+                                        <div className="size-24 rounded-full bg-white/10 flex items-center justify-center">
                                             {isPlaying ? (
                                                 <div className="flex items-center gap-1">
                                                     {[...Array(4)].map((_, i) => (
-                                                        <motion.div
+                                                        <m.div
                                                             key={i}
                                                             className="w-1 bg-white rounded-full"
                                                             animate={{
@@ -295,23 +297,26 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
                                                     ))}
                                                 </div>
                                             ) : (
-                                                <Play className="w-12 h-12 text-white" />
+                                                <Play className="size-12 text-white" />
                                             )}
                                         </div>
                                     </div>
                                     <audio
                                         ref={mediaRef as React.RefObject<HTMLAudioElement>}
                                         src={mediaSrc}
+                                        aria-label={`Audio player for ${title}`}
                                         onTimeUpdate={handleTimeUpdate}
                                         onLoadedMetadata={handleLoadedMetadata}
                                         onError={handleError}
                                         onEnded={() => setIsPlaying(false)}
-                                    />
+                                    >
+                                        <track kind="captions" />
+                                    </audio>
                                 </div>
                             ) : (
-                                <div className="aspect-video bg-black flex items-center justify-center">
+                                <div className="aspect-video bg-gray-950 flex items-center justify-center">
                                     {isLoading && !error && (
-                                        <Loader2 className="w-12 h-12 text-white animate-spin" />
+                                        <Loader2 className="size-12 text-white animate-spin" />
                                     )}
                                     {error && (
                                         <div className="text-white/50 text-center p-8">
@@ -322,27 +327,38 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
                                         ref={mediaRef as React.RefObject<HTMLVideoElement>}
                                         src={mediaSrc}
                                         className={cn("w-full h-full", isLoading && "hidden")}
+                                        aria-label={`Video player for ${title}`}
                                         onTimeUpdate={handleTimeUpdate}
                                         onLoadedMetadata={handleLoadedMetadata}
                                         onError={handleError}
                                         onEnded={() => setIsPlaying(false)}
                                         onClick={togglePlay}
-                                    />
+                                    >
+                                        <track kind="captions" />
+                                    </video>
                                 </div>
                             )}
 
                             {/* Play/Pause Overlay for Video */}
                             {!isAudio && !isLoading && !error && (
                                 <div
+                                    role="button"
+                                    tabIndex={0}
                                     className={cn(
                                         "absolute inset-0 flex items-center justify-center transition-opacity cursor-pointer",
                                         isPlaying && showControls ? "opacity-0" : "opacity-100"
                                     )}
                                     onClick={togglePlay}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                            e.preventDefault();
+                                            togglePlay();
+                                        }
+                                    }}
                                 >
                                     {!isPlaying && (
-                                        <div className="w-20 h-20 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                                            <Play className="w-10 h-10 text-white ml-1" />
+                                        <div className="size-20 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                                            <Play className="size-10 text-white ml-1" />
                                         </div>
                                     )}
                                 </div>
@@ -355,14 +371,29 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
                             )}>
                                 {/* Progress Bar */}
                                 <div
+                                    role="slider"
+                                    tabIndex={0}
+                                    aria-label="Seek"
+                                    aria-valuemin={0}
+                                    aria-valuemax={100}
+                                    aria-valuenow={Math.round(progress)}
                                     className="w-full h-1 bg-white/20 rounded-full mb-4 cursor-pointer group"
                                     onClick={handleSeek}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'ArrowRight') {
+                                            e.preventDefault();
+                                            skip(5);
+                                        } else if (e.key === 'ArrowLeft') {
+                                            e.preventDefault();
+                                            skip(-5);
+                                        }
+                                    }}
                                 >
                                     <div
                                         className="h-full bg-white rounded-full relative"
                                         style={{ width: `${progress}%` }}
                                     >
-                                        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
+                                        <div className="absolute right-0 top-1/2 -translate-y-1/2 size-3 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
                                     </div>
                                 </div>
 
@@ -371,46 +402,50 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
                                     <div className="flex items-center gap-4">
                                         {/* Play/Pause */}
                                         <button
+                                            type="button"
                                             onClick={togglePlay}
                                             aria-label={isPlaying ? "Pause" : "Play"}
                                             className="p-2 hover:bg-white/10 rounded-full transition-colors"
                                         >
                                             {isPlaying ? (
-                                                <Pause className="w-6 h-6 text-white" />
+                                                <Pause className="size-6 text-white" />
                                             ) : (
-                                                <Play className="w-6 h-6 text-white ml-0.5" />
+                                                <Play className="size-6 text-white ml-0.5" />
                                             )}
                                         </button>
 
                                         {/* Skip Buttons */}
                                         <button
+                                            type="button"
                                             onClick={() => skip(-10)}
                                             aria-label="Skip back 10 seconds"
                                             className="p-2 hover:bg-white/10 rounded-full transition-colors"
                                             title="Skip back 10s"
                                         >
-                                            <SkipBack className="w-5 h-5 text-white" />
+                                            <SkipBack className="size-5 text-white" />
                                         </button>
                                         <button
+                                            type="button"
                                             onClick={() => skip(10)}
                                             aria-label="Skip forward 10 seconds"
                                             className="p-2 hover:bg-white/10 rounded-full transition-colors"
                                             title="Skip forward 10s"
                                         >
-                                            <SkipForward className="w-5 h-5 text-white" />
+                                            <SkipForward className="size-5 text-white" />
                                         </button>
 
                                         {/* Volume */}
                                         <div className="flex items-center gap-2">
                                             <button
+                                                type="button"
                                                 onClick={toggleMute}
                                                 aria-label={isMuted || volume === 0 ? "Unmute" : "Mute"}
                                                 className="p-2 hover:bg-white/10 rounded-full transition-colors"
                                             >
                                                 {isMuted || volume === 0 ? (
-                                                    <VolumeX className="w-5 h-5 text-white" />
+                                                    <VolumeX className="size-5 text-white" />
                                                 ) : (
-                                                    <Volume2 className="w-5 h-5 text-white" />
+                                                    <Volume2 className="size-5 text-white" />
                                                 )}
                                             </button>
                                             <input
@@ -434,24 +469,26 @@ export function MediaPlayer({ isOpen, onClose, filePath, title, isAudio = false 
                                     {/* Right Controls */}
                                     {!isAudio && (
                                         <button
+                                            type="button"
                                             onClick={toggleFullscreen}
                                             aria-label={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
                                             className="p-2 hover:bg-white/10 rounded-full transition-colors"
                                         >
                                             {isFullscreen ? (
-                                                <Minimize className="w-5 h-5 text-white" />
+                                                <Minimize className="size-5 text-white" />
                                             ) : (
-                                                <Maximize className="w-5 h-5 text-white" />
+                                                <Maximize className="size-5 text-white" />
                                             )}
                                         </button>
                                     )}
                                 </div>
                             </div>
-                        </motion.div>
+                        </m.div>
                     </div>
                 </div>
             )}
         </AnimatePresence>
+        </LazyMotion>
     );
 
     if (typeof document !== 'undefined') {

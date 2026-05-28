@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { LazyMotion, m, domAnimation, AnimatePresence } from 'framer-motion';
 import {
     X,
     Download,
@@ -83,29 +83,14 @@ export function SpotifyInfoModal({
     onDownload,
     isDownloading
 }: SpotifyInfoModalProps) {
-    const [audioFormat, setAudioFormat] = useState('mp3');
-    const [audioQuality, setAudioQuality] = useState('320k');
-    const [embedLyrics, setEmbedLyrics] = useState(true);
+    const [audioFormat, setAudioFormat] = useState(() => localStorage.getItem('spotify_audio_format') || 'mp3');
+    const [audioQuality, setAudioQuality] = useState(() => localStorage.getItem('spotify_audio_quality') || '320k');
+    const [embedLyrics, setEmbedLyrics] = useState(() => {
+        const saved = localStorage.getItem('spotify_embed_lyrics');
+        return saved !== null ? saved === 'true' : true;
+    });
     const [showFormatDropdown, setShowFormatDropdown] = useState(false);
     const [showQualityDropdown, setShowQualityDropdown] = useState(false);
-
-    // Load saved preferences
-    useEffect(() => {
-        const savedFormat = localStorage.getItem('spotify_audio_format');
-        const savedQuality = localStorage.getItem('spotify_audio_quality');
-        const savedLyrics = localStorage.getItem('spotify_embed_lyrics');
-
-        if (savedFormat) setAudioFormat(savedFormat);
-        if (savedQuality) setAudioQuality(savedQuality);
-        if (savedLyrics !== null) setEmbedLyrics(savedLyrics === 'true');
-    }, []);
-
-    // Save preferences when they change
-    useEffect(() => {
-        localStorage.setItem('spotify_audio_format', audioFormat);
-        localStorage.setItem('spotify_audio_quality', audioQuality);
-        localStorage.setItem('spotify_embed_lyrics', embedLyrics.toString());
-    }, [audioFormat, audioQuality, embedLyrics]);
 
     const handleDownload = () => {
         onDownload({
@@ -127,9 +112,10 @@ export function SpotifyInfoModal({
     const ContentIcon = getContentTypeIcon(mediaInfo.content_type);
 
     const modalContent = (
+        <LazyMotion features={domAnimation}>
         <AnimatePresence>
             {isOpen && (
-                <motion.div
+                <m.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
@@ -137,7 +123,7 @@ export function SpotifyInfoModal({
                     onClick={(e) => e.target === e.currentTarget && onClose()}
                 >
                     {/* Backdrop */}
-                    <motion.div
+                    <m.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
@@ -145,7 +131,7 @@ export function SpotifyInfoModal({
                     />
 
                     {/* Modal */}
-                    <motion.div
+                    <m.div
                         initial={{ opacity: 0, scale: 0.9, y: 20 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.9, y: 20 }}
@@ -165,17 +151,18 @@ export function SpotifyInfoModal({
 
                             {/* Close button */}
                             <button
+                                type="button"
                                 onClick={onClose}
                                 aria-label="Close"
                                 className="absolute top-4 right-4 p-2 rounded-full bg-black/30 hover:bg-black/50 transition-colors"
                             >
-                                <X className="w-5 h-5" />
+                                <X className="size-5" />
                             </button>
 
                             {/* Content type badge */}
                             <div className="absolute bottom-4 left-6 flex items-center gap-2">
                                 <div className="p-2 rounded-xl bg-white/20 backdrop-blur-sm">
-                                    <ContentIcon className="w-5 h-5 text-white" />
+                                    <ContentIcon className="size-5 text-white" />
                                 </div>
                                 <span className="text-sm font-medium text-white/80">
                                     Spotify {getContentTypeLabel(mediaInfo.content_type)}
@@ -200,19 +187,19 @@ export function SpotifyInfoModal({
                                 <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
                                     {mediaInfo.artist && (
                                         <span className="flex items-center gap-1.5">
-                                            <User className="w-4 h-4" />
+                                            <User className="size-4" />
                                             {mediaInfo.artist}
                                         </span>
                                     )}
                                     {mediaInfo.album && (
                                         <span className="flex items-center gap-1.5">
-                                            <Disc className="w-4 h-4" />
+                                            <Disc className="size-4" />
                                             {mediaInfo.album}
                                         </span>
                                     )}
                                     {mediaInfo.duration && (
                                         <span className="flex items-center gap-1.5">
-                                            <Clock className="w-4 h-4" />
+                                            <Clock className="size-4" />
                                             {formatDuration(mediaInfo.duration)}
                                         </span>
                                     )}
@@ -222,17 +209,19 @@ export function SpotifyInfoModal({
                             {/* Download Options */}
                             <div className="space-y-4">
                                 <h3 className="text-lg font-semibold flex items-center gap-2">
-                                    <Download className="w-5 h-5 text-white" />
+                                    <Download className="size-5 text-white" />
                                     Download Options
                                 </h3>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     {/* Audio Format */}
                                     <div className="relative">
-                                        <label className="block text-sm font-medium mb-2 text-muted-foreground">
+                                        <label htmlFor="spotify-audio-format" className="block text-sm font-medium mb-2 text-muted-foreground">
                                             Audio Format
                                         </label>
                                         <button
+                                            type="button"
+                                            id="spotify-audio-format"
                                             onClick={() => {
                                                 setShowFormatDropdown(!showFormatDropdown);
                                                 setShowQualityDropdown(false);
@@ -245,7 +234,7 @@ export function SpotifyInfoModal({
                                             )}
                                         >
                                             <div className="flex items-center gap-3">
-                                                <Music className="w-5 h-5 text-white" />
+                                                <Music className="size-5 text-white" />
                                                 <div className="text-left">
                                                     <p className="font-medium">
                                                         {audioFormatOptions.find(f => f.value === audioFormat)?.label}
@@ -256,7 +245,7 @@ export function SpotifyInfoModal({
                                                 </div>
                                             </div>
                                             <ChevronDown className={cn(
-                                                "w-5 h-5 transition-transform",
+                                                "size-5 transition-transform",
                                                 showFormatDropdown && "rotate-180"
                                             )} />
                                         </button>
@@ -264,7 +253,7 @@ export function SpotifyInfoModal({
                                         {/* Format Dropdown */}
                                         <AnimatePresence>
                                             {showFormatDropdown && (
-                                                <motion.div
+                                                <m.div
                                                     initial={{ opacity: 0, y: -10 }}
                                                     animate={{ opacity: 1, y: 0 }}
                                                     exit={{ opacity: 0, y: -10 }}
@@ -272,9 +261,11 @@ export function SpotifyInfoModal({
                                                 >
                                                     {audioFormatOptions.map((format) => (
                                                         <button
+                                                            type="button"
                                                             key={format.value}
                                                             onClick={() => {
                                                                 setAudioFormat(format.value);
+                                                                localStorage.setItem('spotify_audio_format', format.value);
                                                                 setShowFormatDropdown(false);
                                                             }}
                                                             className={cn(
@@ -284,27 +275,29 @@ export function SpotifyInfoModal({
                                                                     : "hover:bg-muted"
                                                             )}
                                                         >
-                                                            <Music className="w-4 h-4" />
+                                                            <Music className="size-4" />
                                                             <div className="text-left flex-1">
                                                                 <p className="font-medium">{format.label}</p>
                                                                 <p className="text-xs text-muted-foreground">{format.desc}</p>
                                                             </div>
                                                             {audioFormat === format.value && (
-                                                                <Check className="w-4 h-4 text-white" />
+                                                                <Check className="size-4 text-white" />
                                                             )}
                                                         </button>
                                                     ))}
-                                                </motion.div>
+                                                </m.div>
                                             )}
                                         </AnimatePresence>
                                     </div>
 
                                     {/* Audio Quality */}
                                     <div className="relative">
-                                        <label className="block text-sm font-medium mb-2 text-muted-foreground">
+                                        <label htmlFor="spotify-audio-quality" className="block text-sm font-medium mb-2 text-muted-foreground">
                                             Audio Quality
                                         </label>
                                         <button
+                                            type="button"
+                                            id="spotify-audio-quality"
                                             onClick={() => {
                                                 setShowQualityDropdown(!showQualityDropdown);
                                                 setShowFormatDropdown(false);
@@ -317,7 +310,7 @@ export function SpotifyInfoModal({
                                             )}
                                         >
                                             <div className="flex items-center gap-3">
-                                                <Music className="w-5 h-5 text-white" />
+                                                <Music className="size-5 text-white" />
                                                 <div className="text-left">
                                                     <p className="font-medium">
                                                         {audioQualityOptions.find(q => q.value === audioQuality)?.label}
@@ -328,7 +321,7 @@ export function SpotifyInfoModal({
                                                 </div>
                                             </div>
                                             <ChevronDown className={cn(
-                                                "w-5 h-5 transition-transform",
+                                                "size-5 transition-transform",
                                                 showQualityDropdown && "rotate-180"
                                             )} />
                                         </button>
@@ -336,7 +329,7 @@ export function SpotifyInfoModal({
                                         {/* Quality Dropdown */}
                                         <AnimatePresence>
                                             {showQualityDropdown && (
-                                                <motion.div
+                                                <m.div
                                                     initial={{ opacity: 0, y: -10 }}
                                                     animate={{ opacity: 1, y: 0 }}
                                                     exit={{ opacity: 0, y: -10 }}
@@ -344,9 +337,11 @@ export function SpotifyInfoModal({
                                                 >
                                                     {audioQualityOptions.map((quality) => (
                                                         <button
+                                                            type="button"
                                                             key={quality.value}
                                                             onClick={() => {
                                                                 setAudioQuality(quality.value);
+                                                                localStorage.setItem('spotify_audio_quality', quality.value);
                                                                 setShowQualityDropdown(false);
                                                             }}
                                                             className={cn(
@@ -356,17 +351,17 @@ export function SpotifyInfoModal({
                                                                     : "hover:bg-muted"
                                                             )}
                                                         >
-                                                            <Music className="w-4 h-4" />
+                                                            <Music className="size-4" />
                                                             <div className="text-left flex-1">
                                                                 <p className="font-medium">{quality.label}</p>
                                                                 <p className="text-xs text-muted-foreground">{quality.desc}</p>
                                                             </div>
                                                             {audioQuality === quality.value && (
-                                                                <Check className="w-4 h-4 text-white" />
+                                                                <Check className="size-4 text-white" />
                                                             )}
                                                         </button>
                                                     ))}
-                                                </motion.div>
+                                                </m.div>
                                             )}
                                         </AnimatePresence>
                                     </div>
@@ -378,7 +373,11 @@ export function SpotifyInfoModal({
                                     role="switch"
                                     aria-checked={embedLyrics}
                                     aria-label="Embed lyrics"
-                                    onClick={() => setEmbedLyrics(!embedLyrics)}
+                                    onClick={() => {
+                                        const next = !embedLyrics;
+                                        setEmbedLyrics(next);
+                                        localStorage.setItem('spotify_embed_lyrics', String(next));
+                                    }}
                                     className={cn(
                                         "w-full flex items-center justify-between px-4 py-3 rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-black",
                                         embedLyrics ? "bg-white/10" : "bg-muted/50 hover:bg-muted"
@@ -386,7 +385,7 @@ export function SpotifyInfoModal({
                                 >
                                     <div className="flex items-center gap-3">
                                         <ListMusic className={cn(
-                                            "w-5 h-5",
+                                            "size-5",
                                             embedLyrics ? "text-white" : "text-muted-foreground"
                                         )} />
                                         <div className="text-left">
@@ -398,8 +397,8 @@ export function SpotifyInfoModal({
                                         "w-12 h-6 rounded-full p-1 transition-colors",
                                         embedLyrics ? "bg-white" : "bg-muted"
                                     )}>
-                                        <motion.div
-                                            className="w-4 h-4 rounded-full bg-black"
+                                        <m.div
+                                            className="size-4 rounded-full bg-gray-950"
                                             animate={{ x: embedLyrics ? 24 : 0 }}
                                             transition={{ type: 'spring', damping: 20, stiffness: 300 }}
                                         />
@@ -409,6 +408,7 @@ export function SpotifyInfoModal({
 
                             {/* Download Button */}
                             <button
+                                type="button"
                                 onClick={handleDownload}
                                 disabled={isDownloading}
                                 className={cn(
@@ -422,12 +422,12 @@ export function SpotifyInfoModal({
                             >
                                 {isDownloading ? (
                                     <>
-                                        <Loader2 className="w-6 h-6 animate-spin" />
-                                        <span>Starting Download...</span>
+                                        <Loader2 className="size-6 animate-spin" />
+                                        <span>Starting Download…</span>
                                     </>
                                 ) : (
                                     <>
-                                        <Download className="w-6 h-6" />
+                                        <Download className="size-6" />
                                         <span>Download from Spotify</span>
                                     </>
                                 )}
@@ -439,10 +439,11 @@ export function SpotifyInfoModal({
                                 Quality may vary based on available sources.
                             </p>
                         </div>
-                    </motion.div>
-                </motion.div>
+                    </m.div>
+                </m.div>
             )}
         </AnimatePresence>
+        </LazyMotion>
     );
 
     return createPortal(modalContent, document.body);

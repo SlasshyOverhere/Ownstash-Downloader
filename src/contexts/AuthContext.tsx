@@ -1,6 +1,6 @@
 // Authentication Context - Provides auth state throughout the app
 // Uses backend OAuth - no Firebase dependency
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { createContext, use, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { authService, AuthUser, initializeAuthState } from '@/services/auth';
 
 interface AuthContextType {
@@ -27,10 +27,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const [loading, setLoading] = useState(true);
     const [isGDriveReady, setIsGDriveReady] = useState(false);
     const [hasGDriveToken, setHasGDriveToken] = useState(false);
-    // Track if auth state has been resolved
-    const [authResolved, setAuthResolved] = useState(false);
-    // Track if GDrive token loading has been attempted
-    const [tokenLoadAttempted, setTokenLoadAttempted] = useState(false);
+    // Internal coordination flags — never read in JSX, so use refs to avoid unnecessary re-renders
+    const authResolvedRef = useRef(false);
+    const tokenLoadAttemptedRef = useRef(false);
+
+    // When both coordination flags are true, promote to render-driving state
+    const checkGDriveReady = useCallback(() => {
+        if (authResolvedRef.current && tokenLoadAttemptedRef.current) {
+            console.log('[Auth] Both auth and token load complete, setting isGDriveReady=true');
+            setIsGDriveReady(true);
+        }
+    }, []);
 
     // Function to check and load persisted token
     const recheckGDriveToken = useCallback(async (): Promise<boolean> => {
@@ -79,13 +86,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
             try {
                 const tokenLoaded = await recheckGDriveToken();
                 if (isMounted) {
-                    setTokenLoadAttempted(true);
+                    tokenLoadAttemptedRef.current = true;
+                    checkGDriveReady();
                     console.log('[Auth] GDrive token load complete, hasToken:', tokenLoaded);
                 }
             } catch (err) {
                 console.error('[Auth] Error in token load:', err);
                 if (isMounted) {
-                    setTokenLoadAttempted(true);
+                    tokenLoadAttemptedRef.current = true;
+                    checkGDriveReady();
                 }
             }
 
@@ -101,7 +110,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
             // Mark as resolved
             if (isMounted) {
                 setLoading(false);
-                setAuthResolved(true);
+                authResolvedRef.current = true;
+                checkGDriveReady();
             }
         };
 
@@ -113,7 +123,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
             if (isMounted) {
                 setUser(authUser);
                 setLoading(false);
-                setAuthResolved(true);
+                authResolvedRef.current = true;
+                checkGDriveReady();
             }
         });
 
@@ -121,16 +132,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             isMounted = false;
             unsubscribe();
         };
-    }, [recheckGDriveToken]);
-
-    // Set isGDriveReady only when BOTH auth is resolved AND token load was attempted
-    // This prevents DataContext from making decisions before we know the full state
-    useEffect(() => {
-        if (authResolved && tokenLoadAttempted) {
-            console.log('[Auth] Both auth and token load complete, setting isGDriveReady=true');
-            setIsGDriveReady(true);
-        }
-    }, [authResolved, tokenLoadAttempted]);
+    }, [recheckGDriveToken, checkGDriveReady]);
 
     const signInWithGoogle = async () => {
         const authUser = await authService.signInWithGoogle();
@@ -171,7 +173,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 }
 
 export function useAuth() {
-    const context = useContext(AuthContext);
+    const context = use(AuthContext);
     if (context === undefined) {
         throw new Error('useAuth must be used within an AuthProvider');
     }

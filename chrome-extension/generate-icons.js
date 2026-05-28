@@ -34,7 +34,7 @@ async function generateIcons() {
         fs.mkdirSync(OUTPUT_DIR, { recursive: true });
     }
 
-    for (const size of SIZES) {
+    await Promise.all(SIZES.map(async (size) => {
         const outputPath = path.join(OUTPUT_DIR, `icon${size}.png`);
 
         try {
@@ -50,7 +50,7 @@ async function generateIcons() {
         } catch (err) {
             console.error(`✗ Failed to generate icon${size}.png:`, err.message);
         }
-    }
+    }));
 
     console.log('\nDone! Icons are in the icons/ directory.');
 }

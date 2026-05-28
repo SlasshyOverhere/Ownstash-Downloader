@@ -13,11 +13,44 @@ import api, { DownloadProgress, SpotifyDownloadProgress } from '@/services/api';
 
 export type PageType = 'home' | 'downloads' | 'history' | 'settings';
 
+interface PageRouterProps {
+    currentPage: PageType;
+    extensionUrl: string | null;
+    onNavigateToDownloads: () => void;
+    onExtensionUrlConsumed: () => void;
+}
+
+function PageRouter({ currentPage, extensionUrl, onNavigateToDownloads, onExtensionUrlConsumed }: PageRouterProps) {
+    switch (currentPage) {
+        case 'home':
+            return (
+                <HomePage
+                    onNavigateToDownloads={onNavigateToDownloads}
+                    extensionUrl={extensionUrl}
+                    onExtensionUrlConsumed={onExtensionUrlConsumed}
+                />
+            );
+        case 'downloads':
+            return <DownloadsPage />;
+        case 'history':
+            return <HistoryPage />;
+        case 'settings':
+            return <SettingsPage />;
+        default:
+            return (
+                <HomePage
+                    onNavigateToDownloads={onNavigateToDownloads}
+                    extensionUrl={extensionUrl}
+                    onExtensionUrlConsumed={onExtensionUrlConsumed}
+                />
+            );
+    }
+}
+
 function App() {
     const { loading } = useAuth();
     const [currentPage, setCurrentPage] = useState<PageType>('home');
     const [extensionUrl, setExtensionUrl] = useState<string | null>(null);
-    const [isInstallingAppUpdate, setIsInstallingAppUpdate] = useState(false);
     const hasCheckedStartupUpdateRef = useRef(false);
     const isInstallingAppUpdateRef = useRef(false);
 
@@ -25,7 +58,6 @@ function App() {
         if (isInstallingAppUpdateRef.current) return;
 
         isInstallingAppUpdateRef.current = true;
-        setIsInstallingAppUpdate(true);
 
         try {
             toast.info('Downloading app update...');
@@ -36,7 +68,6 @@ function App() {
             toast.error('Failed to install update');
         } finally {
             isInstallingAppUpdateRef.current = false;
-            setIsInstallingAppUpdate(false);
         }
     };
 
@@ -92,7 +123,7 @@ function App() {
                     description: `v${info.version} is available (current v${info.current_version}).`,
                     duration: 20000,
                     action: {
-                        label: isInstallingAppUpdate ? 'Installing...' : 'Install',
+                        label: isInstallingAppUpdateRef.current ? 'Installing...' : 'Install',
                         onClick: () => {
                             void installAppUpdate();
                         },
@@ -107,7 +138,7 @@ function App() {
             cancelled = true;
             clearTimeout(timer);
         };
-    }, [loading, isInstallingAppUpdate]);
+    }, [loading]);
 
     // Setup download progress listeners for taskbar and notifications
     useEffect(() => {
@@ -223,37 +254,15 @@ function App() {
         );
     }
 
-    const renderPage = () => {
-        switch (currentPage) {
-            case 'home':
-                return (
-                    <HomePage
-                        onNavigateToDownloads={() => setCurrentPage('downloads')}
-                        extensionUrl={extensionUrl}
-                        onExtensionUrlConsumed={handleExtensionUrlConsumed}
-                    />
-                );
-            case 'downloads':
-                return <DownloadsPage />;
-            case 'history':
-                return <HistoryPage />;
-            case 'settings':
-                return <SettingsPage />;
-            default:
-                return (
-                    <HomePage
-                        onNavigateToDownloads={() => setCurrentPage('downloads')}
-                        extensionUrl={extensionUrl}
-                        onExtensionUrlConsumed={handleExtensionUrlConsumed}
-                    />
-                );
-        }
-    };
-
     return (
         <LazyMotion features={domAnimation}>
             <AppLayout currentPage={currentPage} onPageChange={setCurrentPage}>
-                {renderPage()}
+                <PageRouter
+                    currentPage={currentPage}
+                    extensionUrl={extensionUrl}
+                    onNavigateToDownloads={() => setCurrentPage('downloads')}
+                    onExtensionUrlConsumed={handleExtensionUrlConsumed}
+                />
             </AppLayout>
             <Toaster
                 theme="dark"

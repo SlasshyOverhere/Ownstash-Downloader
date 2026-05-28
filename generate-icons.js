@@ -146,14 +146,16 @@ async function generateIcons() {
         { name: 'icon.png', size: 512 },
     ];
 
-    for (const { name, size } of sizes) {
-        await image
-            .clone()
-            .resize(size, size, { fit: 'contain', kernel: sharp.kernel.lanczos3 })
-            .png()
-            .toFile(path.join(iconsDir, name));
-        console.log(`Generated ${name}`);
-    }
+    await Promise.all(
+        sizes.map(async ({ name, size }) => {
+            await image
+                .clone()
+                .resize(size, size, { fit: 'contain', kernel: sharp.kernel.lanczos3 })
+                .png()
+                .toFile(path.join(iconsDir, name));
+            console.log(`Generated ${name}`);
+        })
+    );
 
     // Generate ICO for Windows (contains multiple sizes as PNG)
     const icoSizes = [16, 32, 48, 64, 128, 256];

@@ -131,12 +131,14 @@ export function SettingsPage() {
     const [autostartEnabled, setAutostartEnabled] = useState(true);
     const [useSponsorblock, setUseSponsorblock] = useState(false); // Default OFF
     const [ytDlpInfo, setYtDlpInfo] = useState<YtDlpInfo | null>(null);
-    const [ytDlpLoading, setYtDlpLoading] = useState(true);
     const [ytDlpError, setYtDlpError] = useState<string | null>(null);
     const [ytDlpUpdating, setYtDlpUpdating] = useState(false);
     const [spotDlInfo, setSpotDlInfo] = useState<SpotDlInfo | null>(null);
-    const [spotDlLoading, setSpotDlLoading] = useState(true);
     const [spotDlError, setSpotDlError] = useState<string | null>(null);
+
+    // Derived loading states (computed during render)
+    const ytDlpLoading = ytDlpInfo === null && ytDlpError === null;
+    const spotDlLoading = spotDlInfo === null && spotDlError === null;
     const [spotDlUpdating, setSpotDlUpdating] = useState(false);
     const [supportedPlatforms, setSupportedPlatforms] = useState<string[]>([]);
     const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -220,7 +222,7 @@ export function SettingsPage() {
     };
 
     const checkYtDlp = async (notifyIfOutdated: boolean = false) => {
-        setYtDlpLoading(true);
+        setYtDlpInfo(null);
         setYtDlpError(null);
         try {
             const info = await api.checkYtDlp(true);
@@ -229,10 +231,7 @@ export function SettingsPage() {
                 toast.warning(`yt-dlp is outdated (current: ${info.version}, latest: ${info.latest_version}). Click Update Engine.`);
             }
         } catch (err) {
-            setYtDlpInfo(null);
             setYtDlpError(err instanceof Error ? err.message : 'yt-dlp not found');
-        } finally {
-            setYtDlpLoading(false);
         }
     };
 
@@ -250,12 +249,11 @@ export function SettingsPage() {
             toast.error(message);
         } finally {
             setYtDlpUpdating(false);
-            setYtDlpLoading(false);
         }
     };
 
     const checkSpotDl = async (notifyIfOutdated: boolean = false) => {
-        setSpotDlLoading(true);
+        setSpotDlInfo(null);
         setSpotDlError(null);
         try {
             const info = await api.checkSpotDl(true);
@@ -264,10 +262,7 @@ export function SettingsPage() {
                 toast.warning(`SpotDL is outdated (current: ${info.version}, latest: ${info.latest_version}). Click Update Engine.`);
             }
         } catch (err) {
-            setSpotDlInfo(null);
             setSpotDlError(err instanceof Error ? err.message : 'SpotDL not found');
-        } finally {
-            setSpotDlLoading(false);
         }
     };
 
@@ -285,7 +280,6 @@ export function SettingsPage() {
             toast.error(message);
         } finally {
             setSpotDlUpdating(false);
-            setSpotDlLoading(false);
         }
     };
 
