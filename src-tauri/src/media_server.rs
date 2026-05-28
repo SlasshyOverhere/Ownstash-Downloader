@@ -76,6 +76,9 @@ async fn handle_stream_request(
         return Err(warp::reject::not_found());
     }
 
+    let in_progress = crate::commands::is_transcode_in_progress(&decoded_path);
+
+    // For in-progress transcodes, re-stat to get the latest file size
     let file_size = tokio::fs::metadata(&path).await
         .map(|m| m.len())
         .map_err(|_| warp::reject::not_found())?;
@@ -90,23 +93,33 @@ async fn handle_stream_request(
         if let Some(range_str) = range.strip_prefix("bytes=") {
             let parts: Vec<&str> = range_str.split('-').collect();
             let start: u64 = parts[0].parse().unwrap_or(0);
+            // For in-progress files, allow requesting up to current size
             let end: u64 = parts.get(1).and_then(|&s| s.parse().ok()).unwrap_or(file_size - 1);
             
+            // For in-progress transcodes, re-stat to get latest available bytes
+            let actual_size = if in_progress {
+                tokio::fs::metadata(&path).await
+                    .map(|m| m.len())
+                    .unwrap_or(file_size)
+            } else {
+                file_size
+            };
+
             // Validate range
-            let start = start.min(file_size - 1);
-            let end = end.min(file_size - 1);
+            let start = start.min(actual_size.saturating_sub(1));
+            let end = end.min(actual_size.saturating_sub(1));
             let length = end - start + 1;
 
-            if start > end {
+            if start > end || actual_size == 0 {
                 return Ok(Response::builder()
                     .status(StatusCode::RANGE_NOT_SATISFIABLE)
-                    .header("Content-Range", format!("bytes */{}", file_size))
+                    .header("Content-Range", format!("bytes */{}", actual_size))
                     .body(warp::hyper::Body::empty())
                     .unwrap());
             }
 
             file.seek(std::io::SeekFrom::Start(start)).await.map_err(|_| warp::reject::not_found())?;
-            
+
             // Read specific chunk
             let mut buffer = vec![0; length as usize];
             file.read_exact(&mut buffer).await.map_err(|_| warp::reject::not_found())?;
@@ -115,7 +128,7 @@ async fn handle_stream_request(
                 .status(StatusCode::PARTIAL_CONTENT)
                 .header("Content-Type", content_type.as_ref())
                 .header("Accept-Ranges", "bytes")
-                .header("Content-Range", format!("bytes {}-{}/{}", start, end, file_size))
+                .header("Content-Range", format!("bytes {}-{}/{}", start, end, actual_size))
                 .header("Content-Length", length)
                 .body(warp::hyper::Body::from(buffer))
                 .unwrap());

@@ -3,6 +3,18 @@ use tauri::{AppHandle, Manager, State};
 use std::sync::Mutex;
 use std::process::Command;
 use sha2::{Sha256, Digest};
+use std::collections::HashSet;
+
+lazy_static::lazy_static! {
+    /// Tracks file paths currently being transcoded (progressive transcode in progress).
+    /// The media server re-stats file size for these paths instead of caching the initial size.
+    static ref IN_PROGRESS_TRANSCODES: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
+}
+
+/// Check if a file path has an in-progress transcode.
+pub fn is_transcode_in_progress(path: &str) -> bool {
+    IN_PROGRESS_TRANSCODES.lock().map(|set| set.contains(path)).unwrap_or(false)
+}
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -467,6 +479,7 @@ pub async fn transcode_for_playback(
         return Ok(TranscodeResult {
             output_path: input_path,
             was_transcoded: false,
+            in_progress: false,
         });
     }
 
@@ -489,6 +502,7 @@ pub async fn transcode_for_playback(
         return Ok(TranscodeResult {
             output_path: input_path,
             was_transcoded: false,
+            in_progress: false,
         });
     }
     
@@ -516,13 +530,65 @@ pub async fn transcode_for_playback(
         return Ok(TranscodeResult {
             output_path: output_path.to_string_lossy().to_string(),
             was_transcoded: true,
+            in_progress: false,
         });
     }
     
-    println!("[Transcode] Starting transcoding: {:?} -> {:?}", input, output_path);
-    
-    // Run FFmpeg transcoding
-    // Use fast settings for quick playback
+    // Try remux first (copy streams, only change container) — much faster than re-encoding
+    let video_codec = probe_primary_video_codec(&app_handle, &input_path);
+    let audio_codec = probe_primary_audio_codec(&app_handle, &input_path);
+    let can_remux = match (&video_codec, &audio_codec) {
+        (Some(v), Some(a)) => is_remux_safe(v, a),
+        _ => false,
+    };
+
+    if can_remux {
+        println!("[Transcode] Attempting remux (video={}, audio={}): {:?} -> {:?}",
+            video_codec.as_deref().unwrap_or("?"), audio_codec.as_deref().unwrap_or("?"), input, output_path);
+
+        let mut remux_cmd = TokioCommand::new(&ffmpeg_path);
+        remux_cmd.args([
+            "-y",
+            "-i", &input_path,
+            "-c", "copy",
+            "-movflags", "+faststart",
+            &output_path.to_string_lossy(),
+        ]);
+
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            remux_cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+
+        let remux_output = remux_cmd.output().await
+            .map_err(|e| format!("Failed to run FFmpeg remux: {}", e))?;
+
+        if remux_output.status.success() {
+            println!("[Transcode] Remux completed in ~1s: {:?}", output_path);
+            return Ok(TranscodeResult {
+                output_path: output_path.to_string_lossy().to_string(),
+                was_transcoded: true,
+                in_progress: false,
+            });
+        }
+
+        println!("[Transcode] Remux failed, falling back to full re-encode. Stderr: {}",
+            String::from_utf8_lossy(&remux_output.stderr));
+        // Clean up failed remux output
+        let _ = std::fs::remove_file(&output_path);
+    }
+
+    // Progressive transcode: use fragmented MP4 so playback starts immediately
+    println!("[Transcode] Starting progressive re-encode: {:?} -> {:?}", input, output_path);
+
+    let output_path_str = output_path.to_string_lossy().to_string();
+
+    // Mark as in-progress so the media server re-stats file size
+    if let Ok(mut set) = IN_PROGRESS_TRANSCODES.lock() {
+        set.insert(output_path_str.clone());
+    }
+
     let mut cmd = TokioCommand::new(&ffmpeg_path);
     cmd.args([
         "-y",                           // Overwrite output
@@ -532,29 +598,49 @@ pub async fn transcode_for_playback(
         "-crf", "23",                   // Quality (lower = better, 23 is default)
         "-c:a", "aac",                  // Audio codec
         "-b:a", "128k",                 // Audio bitrate
-        "-movflags", "+faststart",      // Enable streaming
-        &output_path.to_string_lossy(), // Output file
+        "-movflags", "frag_keyframe+empty_moov+default_base_moof", // Fragmented MP4 for instant playback
+        &output_path_str,               // Output file
     ]);
-    
+
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
-    
-    let output = cmd.output().await
-        .map_err(|e| format!("Failed to run FFmpeg: {}", e))?;
-    
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("FFmpeg transcoding failed: {}", stderr));
-    }
-    
-    println!("[Transcode] Transcoding completed: {:?}", output_path);
+
+    let mut child = cmd.spawn()
+        .map_err(|e| format!("Failed to spawn FFmpeg: {}", e))?;
+
+    // Spawn background task to monitor completion and clean up
+    let cleanup_path = output_path_str.clone();
+    let input_path_clone = input_path.clone();
+    tauri::async_runtime::spawn(async move {
+        let status = child.wait().await;
+        // Remove from in-progress set
+        if let Ok(mut set) = IN_PROGRESS_TRANSCODES.lock() {
+            set.remove(&cleanup_path);
+        }
+        match status {
+            Ok(s) if s.success() => {
+                println!("[Transcode] Progressive re-encode completed: {}", cleanup_path);
+            }
+            Ok(s) => {
+                eprintln!("[Transcode] FFmpeg exited with status: {} for {}", s, input_path_clone);
+                let _ = std::fs::remove_file(&cleanup_path);
+            }
+            Err(e) => {
+                eprintln!("[Transcode] FFmpeg process error: {} for {}", e, input_path_clone);
+                let _ = std::fs::remove_file(&cleanup_path);
+            }
+        }
+    });
+
+    // Return immediately — the media server will serve fragments as they're written
     
     Ok(TranscodeResult {
         output_path: output_path.to_string_lossy().to_string(),
         was_transcoded: true,
+        in_progress: false,
     })
 }
 
@@ -562,6 +648,8 @@ pub async fn transcode_for_playback(
 pub struct TranscodeResult {
     pub output_path: String,
     pub was_transcoded: bool,
+    #[serde(default)]
+    pub in_progress: bool,
 }
 
 fn find_ffmpeg(app_handle: &AppHandle) -> Option<String> {
@@ -683,11 +771,59 @@ fn probe_primary_video_codec(app_handle: &AppHandle, input_path: &str) -> Option
     }
 }
 
+fn probe_primary_audio_codec(app_handle: &AppHandle, input_path: &str) -> Option<String> {
+    let ffprobe_path = find_ffprobe(app_handle)?;
+    let mut cmd = Command::new(ffprobe_path);
+
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let output = cmd
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=codec_name",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            input_path,
+        ])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let codec = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_lowercase();
+
+    if codec.is_empty() {
+        None
+    } else {
+        Some(codec)
+    }
+}
+
 fn is_codec_supported_by_webview(codec: &str) -> bool {
     matches!(
         codec,
-        "h264" | "avc1" | "vp8" | "vp9" | "mpeg4" | "theora"
+        "h264" | "avc1" | "vp8" | "vp9" | "av1" | "mpeg4" | "theora"
     )
+}
+
+fn is_remux_safe(video_codec: &str, audio_codec: &str) -> bool {
+    let video_ok = matches!(video_codec, "h264" | "avc1");
+    let audio_ok = matches!(audio_codec, "aac" | "mp3" | "mp4a");
+    video_ok && audio_ok
 }
 
 // Download commands
@@ -711,9 +847,10 @@ pub async fn update_download_status(
     state: State<'_, AppState>,
     id: String,
     status: String,
+    size_bytes: Option<i64>,
 ) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    db.update_download_status(&id, &status).map_err(|e| e.to_string())
+    db.update_download_status(&id, &status, size_bytes).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

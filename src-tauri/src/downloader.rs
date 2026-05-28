@@ -868,12 +868,18 @@ impl Downloader {
         } else if let Some(quality) = &request.quality {
             // Use simpler format strings that are more reliable
             let format_selector = match quality.as_str() {
-                "best" | "4k" | "2160p" => "bestvideo+bestaudio/best",
-                "1080p" => "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
-                "720p" => "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
-                "480p" => "bestvideo[height<=480]+bestaudio/best[height<=480]/best",
-                "360p" => "bestvideo[height<=360]+bestaudio/best[height<=360]/best",
-                _ => "bestvideo+bestaudio/best",
+                "best" | "4k" | "2160p" =>
+                    "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+                "1080p" =>
+                    "bestvideo[vcodec^=avc1][height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+                "720p" =>
+                    "bestvideo[vcodec^=avc1][height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+                "480p" =>
+                    "bestvideo[vcodec^=avc1][height<=480][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=480]+bestaudio/best[height<=480]/best",
+                "360p" =>
+                    "bestvideo[vcodec^=avc1][height<=360][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=360]+bestaudio/best[height<=360]/best",
+                _ =>
+                    "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
             };
             args.extend(["-f".to_string(), format_selector.to_string()]);
             // Use user-selected output format when merging
@@ -1042,21 +1048,69 @@ impl Downloader {
                 }
             }
 
+            // On completion, read actual file size from disk
+            let (final_file_size, final_filename) = if final_status == "completed" {
+                match get_downloaded_file_info(&output_path) {
+                    Some((size, name)) => {
+                        println!("[Downloader] Completed file: {} ({} bytes)", name, size);
+                        (Some(size), Some(name))
+                    }
+                    None => {
+                        println!("[Downloader] Warning: Could not determine completed file size");
+                        (None, None)
+                    }
+                }
+            } else {
+                (None, None)
+            };
+
             let _ = app.emit("download-progress", DownloadProgress {
                 id: id.clone(),
                 progress: if final_status == "completed" { 100.0 } else { last_progress },
                 speed: String::new(),
                 eta: String::new(),
                 status: final_status.to_string(),
-                downloaded_bytes: None,
-                total_bytes: None,
-                filename: None,
+                downloaded_bytes: final_file_size,
+                total_bytes: final_file_size,
+                filename: final_filename,
                 engine_badge: Some(engine_badge.clone()),
             });
         });
 
         Ok(())
     }
+}
+
+/// Scan the output directory for the most recently modified media file,
+/// excluding subtitle files, temp files, and partial downloads.
+/// Returns (file_size_bytes, filename) on success.
+fn get_downloaded_file_info(output_dir: &str) -> Option<(i64, String)> {
+    let dir = std::fs::read_dir(output_dir).ok()?;
+    let skip_exts = ["vtt", "srt", "ass", "sub", "part", "temp", "ytdl", "tmp"];
+
+    dir.flatten()
+        .filter(|entry| {
+            let path = entry.path();
+            if !path.is_file() {
+                return false;
+            }
+            if let Some(ext) = path.extension() {
+                let ext_lower = ext.to_string_lossy().to_lowercase();
+                if skip_exts.contains(&ext_lower.as_str()) {
+                    return false;
+                }
+            }
+            true
+        })
+        .filter_map(|entry| {
+            let meta = entry.metadata().ok()?;
+            let modified = meta.modified().ok()?;
+            let size = meta.len() as i64;
+            let name = entry.file_name().to_string_lossy().to_string();
+            Some((modified, size, name))
+        })
+        .max_by_key(|(modified, _, _)| *modified)
+        .map(|(_, size, name)| (size, name))
 }
 
 fn handle_download_output_line(
@@ -1085,12 +1139,19 @@ fn handle_download_output_line(
             stabilized_progress = (*last_progress + 0.6).min(98.0);
         }
 
+        // Cap forward jumps at 5% per sample
+        if stabilized_progress > *last_progress + 5.0 && *last_progress > 0.0 {
+            stabilized_progress = *last_progress + 5.0;
+        }
+
         // Keep progress monotonic, but allow a genuine phase reset when yt-dlp
         // moves from one stream to another (high -> very low).
         if stabilized_progress < *last_progress {
             let is_stream_phase_reset = *last_progress >= 85.0 && stabilized_progress <= 5.0;
             if !is_stream_phase_reset {
                 stabilized_progress = *last_progress;
+            } else {
+                *smoothed_speed_bps = None;
             }
         }
 
@@ -1098,7 +1159,7 @@ fn handle_download_output_line(
 
         if let Some(raw_speed_bps) = progress.speed_bps {
             *smoothed_speed_bps = Some(match *smoothed_speed_bps {
-                Some(previous) => previous + (raw_speed_bps - previous) * 0.30,
+                Some(previous) => previous + (raw_speed_bps - previous) * 0.05,
                 None => raw_speed_bps,
             });
         }
@@ -1116,10 +1177,8 @@ fn handle_download_output_line(
             .unwrap_or_default();
         let eta_label = progress.eta;
 
-        let should_emit = last_emit_at.elapsed() >= Duration::from_millis(180)
-            || (stabilized_progress - *last_emitted_progress).abs() >= 0.5
-            || speed_label != *last_speed_label
-            || eta_label != *last_eta_label;
+        let should_emit = last_emit_at.elapsed() >= Duration::from_millis(500)
+            || (stabilized_progress - *last_emitted_progress).abs() >= 0.5;
 
         if should_emit {
             let event = DownloadProgress {
@@ -1151,6 +1210,7 @@ fn handle_download_output_line(
             *last_progress
         };
         *last_progress = merge_progress;
+        *smoothed_speed_bps = None;
         let event = DownloadProgress {
             id: id.to_string(),
             progress: merge_progress,
@@ -1223,7 +1283,7 @@ fn parse_progress_template(line: &str) -> Option<ParsedProgress> {
         None
     };
 
-    let progress = progress_from_bytes.or(progress_from_percent)?;
+    let progress = progress_from_percent.or(progress_from_bytes)?;
 
     let speed_raw = sanitize_metric(parts[1]);
     let speed_bps = parse_speed_to_bps(&speed_raw);

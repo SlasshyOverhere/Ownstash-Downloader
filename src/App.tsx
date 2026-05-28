@@ -115,7 +115,7 @@ function App() {
         let unlistenSpotify: (() => void) | undefined;
         let unlistenNotificationClick: (() => void) | undefined;
         const pendingTimers: ReturnType<typeof setTimeout>[] = [];
-        let activeCount = 0;
+        const activeDownloadIds = new Set<string>();
         const downloadTitles = new Map<string, string>();
 
         // yt-dlp progress listener
@@ -126,33 +126,29 @@ function App() {
             }
 
             // Update taskbar progress
-            if (progress.status === 'downloading') {
-                activeCount = Math.max(1, activeCount);
+            if (progress.status === 'downloading' || progress.status === 'starting') {
+                activeDownloadIds.add(progress.id);
                 api.updateTaskbarProgress(progress.progress, 'downloading').catch(console.error);
             } else if (progress.status === 'completed') {
-                activeCount = Math.max(0, activeCount - 1);
+                activeDownloadIds.delete(progress.id);
 
-                // Clear taskbar if no active downloads
-                if (activeCount === 0) {
+                if (activeDownloadIds.size === 0) {
                     api.clearTaskbarProgress().catch(console.error);
                 }
 
-                // Send native notification
                 const title = downloadTitles.get(progress.id) || 'Download';
                 api.notifyDownloadComplete(title, '').catch(console.error);
                 downloadTitles.delete(progress.id);
             } else if (progress.status === 'failed') {
-                activeCount = Math.max(0, activeCount - 1);
+                activeDownloadIds.delete(progress.id);
 
-                // Show error in taskbar
                 api.updateTaskbarProgress(100, 'error').catch(console.error);
                 pendingTimers.push(setTimeout(() => {
-                    if (activeCount === 0) {
+                    if (activeDownloadIds.size === 0) {
                         api.clearTaskbarProgress().catch(console.error);
                     }
                 }, 3000));
 
-                // Send failure notification
                 const title = downloadTitles.get(progress.id) || 'Download';
                 api.notifyDownloadFailed(title, 'Download failed').catch(console.error);
                 downloadTitles.delete(progress.id);
@@ -165,16 +161,32 @@ function App() {
                 downloadTitles.set(progress.id, progress.current_track);
             }
 
-            if (progress.status === 'downloading') {
+            if (progress.status === 'downloading' || progress.status === 'starting') {
+                activeDownloadIds.add(progress.id);
                 api.updateTaskbarProgress(progress.progress, 'downloading').catch(console.error);
             } else if (progress.status === 'completed') {
-                api.clearTaskbarProgress().catch(console.error);
+                activeDownloadIds.delete(progress.id);
+
+                if (activeDownloadIds.size === 0) {
+                    api.clearTaskbarProgress().catch(console.error);
+                }
+
                 const title = downloadTitles.get(progress.id) || 'Spotify Download';
                 api.notifyDownloadComplete(title, '').catch(console.error);
+                downloadTitles.delete(progress.id);
             } else if (progress.status === 'failed') {
+                activeDownloadIds.delete(progress.id);
+
                 api.updateTaskbarProgress(100, 'error').catch(console.error);
-                pendingTimers.push(setTimeout(() => api.clearTaskbarProgress().catch(console.error), 3000));
-                api.notifyDownloadFailed(downloadTitles.get(progress.id) || 'Spotify Download', 'Download failed').catch(console.error);
+                pendingTimers.push(setTimeout(() => {
+                    if (activeDownloadIds.size === 0) {
+                        api.clearTaskbarProgress().catch(console.error);
+                    }
+                }, 3000));
+
+                const title = downloadTitles.get(progress.id) || 'Spotify Download';
+                api.notifyDownloadFailed(title, 'Download failed').catch(console.error);
+                downloadTitles.delete(progress.id);
             }
         }).then(fn => { unlistenSpotify = fn; }).catch(console.error);
 

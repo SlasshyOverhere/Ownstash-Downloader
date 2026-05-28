@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
 // Track active Spotify download processes for cancellation
@@ -106,6 +109,45 @@ fn redact_external_output(output: &str) -> String {
     }
     result.push_str(remaining);
     result
+}
+
+/// Parse yt-dlp progress percentage from a stdout/stderr line.
+/// Handles two formats:
+///   1. Custom template: "50.0%|10.5MiB/s|00:05|52.5MiB|105.0MiB"
+///   2. Default format:  "[download]  50.0% of 100.00MiB at 10.00MiB/s ETA 00:05"
+fn parse_ytdlp_progress(line: &str) -> Option<f64> {
+    // Try custom template format first: "XX.X%|..."
+    if let Some(first_pipe) = line.find('|') {
+        let percent_part = line[..first_pipe].trim();
+        if percent_part.ends_with('%') {
+            let cleaned: String = percent_part
+                .trim_end_matches('%')
+                .chars()
+                .filter(|c| c.is_ascii_digit() || *c == '.')
+                .collect();
+            if let Ok(pct) = cleaned.parse::<f64>() {
+                if pct.is_finite() && (0.0..=100.0).contains(&pct) {
+                    return Some(pct);
+                }
+            }
+        }
+    }
+
+    // Fallback: default [download] XX.X% format
+    if !line.contains("[download]") {
+        return None;
+    }
+    line.split_whitespace()
+        .find(|s| s.ends_with('%'))
+        .and_then(|s| {
+            let cleaned: String = s
+                .trim_end_matches('%')
+                .chars()
+                .filter(|c| c.is_ascii_digit() || *c == '.')
+                .collect();
+            cleaned.parse::<f64>().ok()
+        })
+        .filter(|p| p.is_finite() && (0.0..=100.0).contains(p))
 }
 
 impl SpotifyDownloader {
@@ -834,6 +876,15 @@ impl SpotifyDownloader {
                         .replace("|", "-");
                     let output_template = format!("{}/{}.%(ext)s", output_path.replace("\\", "/"), safe_name);
                     
+                    // Progress template for line-by-line parsing (same as downloader.rs)
+                    let progress_template = format!(
+                        "download:%(progress._percent_str)s|\
+                         %(progress._speed_str)s|\
+                         %(progress._eta_str)s|\
+                         %(progress._downloaded_bytes_str)s|\
+                         %(progress._total_bytes_str)s"
+                    );
+
                     let args = vec![
                         "-x",  // Extract audio
                         "--audio-format",
@@ -848,6 +899,10 @@ impl SpotifyDownloader {
                         "4",
                         "--socket-timeout",
                         "20",
+                        "--progress",
+                        "--newline",
+                        "--progress-template",
+                        &progress_template,
                         "-o",
                         &output_template,
                         "--ffmpeg-location",
@@ -862,25 +917,121 @@ impl SpotifyDownloader {
                     }).collect();
                     println!("[SpotDL] Running yt-dlp with args: {:?}", redacted_args);
 
-                    let result = Command::new(&yt_dlp_path)
+                    // Spawn yt-dlp with piped stdout/stderr for sub-track progress
+                    let spawn_result = Command::new(&yt_dlp_path)
                         .args(&args)
-                        .output()
-                        .await;
+                        .stdout(Stdio::piped())
+                        .stderr(Stdio::piped())
+                        .spawn();
 
-                    match result {
-                        Ok(output) if output.status.success() => {
-                            completed += 1;
-                            println!("[SpotDL] Successfully downloaded: {}", display_name);
-                        }
-                        Ok(output) => {
-                            let stderr = String::from_utf8_lossy(&output.stderr);
-                            let stdout = String::from_utf8_lossy(&output.stdout);
-                            println!("[SpotDL] yt-dlp stdout: {}", redact_external_output(&stdout));
-                            println!("[SpotDL] yt-dlp stderr: {}", redact_external_output(&stderr));
-                            last_error = Some(format!("Failed to download {}", display_name));
+                    match spawn_result {
+                        Ok(mut child) => {
+                            let stdout = child.stdout.take().expect("stdout should be piped");
+                            let stderr = child.stderr.take().expect("stderr should be piped");
+                            let mut stdout_reader = BufReader::new(stdout).lines();
+                            let mut stderr_reader = BufReader::new(stderr).lines();
+                            let mut error_output = String::new();
+                            let mut last_emit_at = Instant::now()
+                                .checked_sub(Duration::from_millis(200))
+                                .unwrap_or_else(Instant::now);
+
+                            loop {
+                                tokio::select! {
+                                    // Check for cancellation during active download
+                                    _ = &mut cancel_rx => {
+                                        let _ = child.kill().await;
+                                        let _ = app.emit("spotify-download-progress", SpotifyDownloadProgress {
+                                            id: id.clone(),
+                                            progress: (completed as f64 / total_tracks as f64) * 100.0,
+                                            status: "cancelled".to_string(),
+                                            current_track: None,
+                                            total_tracks: Some(total_tracks as i32),
+                                            completed_tracks: Some(completed),
+                                            speed: String::new(),
+                                        });
+                                        return;
+                                    }
+                                    line_result = stdout_reader.next_line() => {
+                                        match line_result {
+                                            Ok(Some(line)) => {
+                                                println!("[SpotDL yt-dlp] {}", redact_external_output(&line));
+                                                if let Some(track_pct) = parse_ytdlp_progress(&line) {
+                                                    if last_emit_at.elapsed() >= Duration::from_millis(200) {
+                                                        let track_index = index as f64;
+                                                        let overall_pct = ((track_index + track_pct / 100.0) / total_tracks as f64) * 100.0;
+                                                        let _ = app.emit("spotify-download-progress", SpotifyDownloadProgress {
+                                                            id: id.clone(),
+                                                            progress: overall_pct,
+                                                            status: "downloading".to_string(),
+                                                            current_track: Some(format!("Downloading: {}", display_name)),
+                                                            total_tracks: Some(total_tracks as i32),
+                                                            completed_tracks: Some(completed),
+                                                            speed: format!("{}%", track_pct as i32),
+                                                        });
+                                                        last_emit_at = Instant::now();
+                                                    }
+                                                }
+                                            }
+                                            Ok(None) => break,
+                                            Err(e) => {
+                                                println!("[SpotDL] stdout read error: {}", e);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    line_result = stderr_reader.next_line() => {
+                                        match line_result {
+                                            Ok(Some(line)) => {
+                                                println!("[SpotDL yt-dlp stderr] {}", redact_external_output(&line));
+                                                if let Some(track_pct) = parse_ytdlp_progress(&line) {
+                                                    if last_emit_at.elapsed() >= Duration::from_millis(200) {
+                                                        let track_index = index as f64;
+                                                        let overall_pct = ((track_index + track_pct / 100.0) / total_tracks as f64) * 100.0;
+                                                        let _ = app.emit("spotify-download-progress", SpotifyDownloadProgress {
+                                                            id: id.clone(),
+                                                            progress: overall_pct,
+                                                            status: "downloading".to_string(),
+                                                            current_track: Some(format!("Downloading: {}", display_name)),
+                                                            total_tracks: Some(total_tracks as i32),
+                                                            completed_tracks: Some(completed),
+                                                            speed: format!("{}%", track_pct as i32),
+                                                        });
+                                                        last_emit_at = Instant::now();
+                                                    }
+                                                } else {
+                                                    error_output.push_str(&line);
+                                                    error_output.push('\n');
+                                                }
+                                            }
+                                            Ok(None) => {}
+                                            Err(_) => {}
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Wait for the process to exit
+                            let exit_status = child.wait().await;
+                            match exit_status {
+                                Ok(s) if s.success() => {
+                                    completed += 1;
+                                    println!("[SpotDL] Successfully downloaded: {}", display_name);
+                                }
+                                Ok(s) => {
+                                    println!("[SpotDL] yt-dlp exit status: {}", s);
+                                    if !error_output.is_empty() {
+                                        println!("[SpotDL] yt-dlp errors: {}", redact_external_output(&error_output));
+                                    }
+                                    last_error = Some(format!("Failed to download {}", display_name));
+                                }
+                                Err(e) => {
+                                    println!("[SpotDL] Error waiting for yt-dlp: {}", e);
+                                    last_error = Some(format!("Error: {}", e));
+                                }
+                            }
                         }
                         Err(e) => {
-                            println!("[SpotDL] Error running yt-dlp: {}", e);
+                            println!("[SpotDL] Error spawning yt-dlp: {}", e);
                             last_error = Some(format!("Error: {}", e));
                         }
                     }

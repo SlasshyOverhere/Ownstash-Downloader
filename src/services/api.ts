@@ -65,6 +65,8 @@ export interface FormatInfo {
     quality_label?: string;
 }
 
+export type ProgressQuality = 'calculating' | 'estimated' | 'precise' | 'indeterminate';
+
 export interface DownloadProgress {
     id: string;
     progress: number;
@@ -75,6 +77,8 @@ export interface DownloadProgress {
     total_bytes?: number;
     filename?: string;
     engine_badge?: string;  // "SNDE ACCELERATED", "SNDE SAFE", or "MEDIA ENGINE"
+    active_connections?: number;  // Number of active SNDE parallel connections
+    quality?: ProgressQuality;
 }
 
 export interface DownloadRequest {
@@ -124,6 +128,7 @@ interface MediaFileInfo {
 interface TranscodeResult {
     output_path: string;
     was_transcoded: boolean;
+    in_progress?: boolean;
 }
 
 // Spotify/SpotDL types
@@ -242,8 +247,8 @@ export const api = {
         return invoke('get_downloads');
     },
 
-    async updateDownloadStatus(id: string, status: string): Promise<void> {
-        return invoke('update_download_status', { id, status });
+    async updateDownloadStatus(id: string, status: string, size_bytes?: number): Promise<void> {
+        return invoke('update_download_status', { id, status, size_bytes });
     },
 
     async deleteDownload(id: string): Promise<void> {
@@ -685,6 +690,17 @@ export const api = {
 };
 
 // Helper functions
+export function formatSpeedBps(bps: number): string {
+    if (bps <= 0) return '';
+    const KB = 1024;
+    const MB = KB * 1024;
+    const GB = MB * 1024;
+    if (bps >= GB) return `${(bps / GB).toFixed(2)} GB/s`;
+    if (bps >= MB) return `${(bps / MB).toFixed(1)} MB/s`;
+    if (bps >= KB) return `${(bps / KB).toFixed(0)} KB/s`;
+    return `${Math.round(bps)} B/s`;
+}
+
 export function formatBytes(bytes: number): string {
     if (bytes === 0) return '0 B';
     const k = 1024;

@@ -37,5 +37,17 @@ fn main() {
 
     tracing::info!("Ownstash Downloader starting up");
 
+    // Set the Windows AppUserModelID so the volume mixer, taskbar, and jump lists
+    // show "Ownstash Downloader" instead of "WebView2".
+    #[cfg(target_os = "windows")]
+    {
+        use windows::core::PCWSTR;
+        use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
+        let app_id: Vec<u16> = "com.ownstash.downloader\0".encode_utf16().collect();
+        unsafe {
+            let _ = SetCurrentProcessExplicitAppUserModelID(PCWSTR(app_id.as_ptr()));
+        }
+    }
+
     ownstash_downloader_lib::run()
 }
