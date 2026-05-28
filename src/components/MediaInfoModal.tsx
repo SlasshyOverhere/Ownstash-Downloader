@@ -17,7 +17,7 @@ import {
     Scissors
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import api, { FormatInfo, MediaInfo, formatBytes, formatDuration } from '@/services/api';
+import { FormatInfo, MediaInfo, formatBytes, formatDuration } from '@/services/api';
 
 interface MediaInfoModalProps {
     isOpen: boolean;

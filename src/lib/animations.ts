@@ -28,13 +28,19 @@ export const staggerItem: Variants = {
 
 // Sidebar expand/collapse
 export const sidebarVariants: Variants = {
-    expanded: { width: 240 },
-    collapsed: { width: 72 },
+    expanded: { width: 240, transition: { type: 'tween', duration: 0.18, ease: 'easeOut' } },
+    collapsed: { width: 72, transition: { type: 'tween', duration: 0.18, ease: 'easeOut' } },
 };
 
 export const sidebarItemText: Variants = {
-    expanded: { opacity: 1, x: 0, display: 'block' },
-    collapsed: { opacity: 0, x: -10, transitionEnd: { display: 'none' } },
+    expanded: {
+        opacity: 1, x: 0, width: 'auto', marginLeft: 0,
+        transition: { type: 'tween', duration: 0.18, ease: 'easeOut' }
+    },
+    collapsed: {
+        opacity: 0, x: -10, width: 0, marginLeft: 0, pointerEvents: 'none' as const,
+        transition: { type: 'tween', duration: 0.18, ease: 'easeOut' }
+    },
 };
 
 // Page transitions

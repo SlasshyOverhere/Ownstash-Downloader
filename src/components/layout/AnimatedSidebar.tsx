@@ -47,10 +47,11 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
 
     return (
         <motion.aside
-            className="relative h-screen flex flex-col glass border-r border-white/5"
+            className="relative h-screen flex flex-col glass border-r border-white/5 overflow-hidden"
             variants={sidebarVariants}
             initial="expanded"
             animate={isExpanded ? 'expanded' : 'collapsed'}
+            style={{ willChange: 'width' }}
             transition={{ type: 'tween', duration: 0.18, ease: 'easeOut' }}
         >
             {/* Logo */}
@@ -87,7 +88,7 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
                             key={item.id}
                             onClick={() => onPageChange(item.id)}
                             className={cn(
-                                'w-full flex items-center py-2.5 rounded-xl transition-all duration-200',
+                                'w-full flex items-center py-2.5 rounded-xl transition-colors',
                                 'hover:bg-white/5 group relative overflow-hidden',
                                 isExpanded ? 'gap-3 px-3 justify-start' : 'gap-0 px-0 justify-center',
                                 isActive && 'bg-primary/10 border border-primary/20'
@@ -104,7 +105,7 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
 
                             {/* Icon with glow effect */}
                             <div className={cn(
-                                'relative z-10 p-1.5 rounded-lg transition-all duration-200',
+                                'relative z-10 p-1.5 rounded-lg transition-colors',
                                 isActive ? 'text-primary text-glow-sm' : 'text-muted-foreground group-hover:text-foreground'
                             )}>
                                 <Icon className="w-5 h-5" />
@@ -179,7 +180,7 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
                             className={cn(
                                 'w-full flex items-center py-2.5 rounded-xl',
                                 'text-muted-foreground hover:text-red-400 hover:bg-red-500/10',
-                                'transition-all duration-200 group',
+                                'transition-colors group',
                                 isExpanded ? 'gap-3 px-3 justify-start' : 'gap-0 px-0 justify-center',
                                 isSigningOut && 'opacity-50 cursor-not-allowed'
                             )}
@@ -208,14 +209,14 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
                     onClick={() => onPageChange('settings')}
                     aria-label="Settings"
                     className={cn(
-                        'w-full flex items-center py-2.5 rounded-xl transition-all duration-200',
+                        'w-full flex items-center py-2.5 rounded-xl transition-colors',
                         'hover:bg-white/5 group relative overflow-hidden',
                         isExpanded ? 'gap-3 px-3 justify-start' : 'gap-0 px-0 justify-center',
                         currentPage === 'settings' && 'bg-primary/10 border border-primary/20'
                     )}
                 >
                     <div className={cn(
-                        'relative z-10 p-1.5 rounded-lg transition-all duration-200',
+                        'relative z-10 p-1.5 rounded-lg transition-colors',
                         currentPage === 'settings'
                             ? 'text-primary text-glow-sm'
                             : 'text-muted-foreground group-hover:text-foreground'
@@ -245,7 +246,7 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
                     className={cn(
                         'w-full flex items-center py-2.5 rounded-xl',
                         'text-muted-foreground hover:text-foreground hover:bg-white/5',
-                        'transition-all duration-200',
+                        'transition-colors',
                         isExpanded ? 'gap-3 px-3 justify-start' : 'gap-0 px-0 justify-center'
                     )}
                 >
