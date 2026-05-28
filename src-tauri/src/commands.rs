@@ -65,28 +65,13 @@ fn open_path_in_explorer(path: &std::path::Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         if path.is_file() {
-            // Use ShellExecuteW to avoid cmd.exe command injection
-            use windows::Win32::UI::Shell::ShellExecuteW;
-            use windows::Win32::Foundation::HWND;
-            use windows::core::w;
-            let path_wide: Vec<u16> = path.to_string_lossy()
-                .encode_utf16()
-                .chain(std::iter::once(0))
-                .collect();
-            let verb = w!("open");
-            let result = unsafe {
-                ShellExecuteW(
-                    HWND(std::ptr::null_mut()),
-                    verb,
-                    windows::core::PCWSTR(path_wide.as_ptr()),
-                    windows::core::PCWSTR::null(),
-                    windows::core::PCWSTR::null(),
-                    windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL,
-                )
-            };
-            if result.0 as usize <= 32 {
-                return Err(format!("Failed to open file: ShellExecuteW returned {}", result.0 as usize));
-            }
+            // Use explorer /select to open the folder and highlight the file
+            // instead of opening the file directly in its associated app
+            Command::new("explorer")
+                .arg("/select,")
+                .arg(path)
+                .spawn()
+                .map_err(|e| format!("Failed to open folder: {}", e))?;
         } else {
             Command::new("explorer")
                 .arg(path)
