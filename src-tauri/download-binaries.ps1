@@ -8,7 +8,7 @@
 $binariesDir = Join-Path $PSScriptRoot "binaries"
 New-Item -ItemType Directory -Force -Path $binariesDir | Out-Null
 
-# Pin specific versions — update hashes when changing versions
+# Pin specific versions - update hashes when changing versions
 $YTDLP_VERSION = "2025.05.22"
 $SPOTDL_VERSION = "4.2.10"
 
@@ -28,7 +28,7 @@ function Verify-Checksum {
         [string]$BinaryName
     )
     if ($ExpectedHash -match "^PLACEHOLDER") {
-        Write-Host "  WARNING: No pinned hash for $BinaryName — skipping verification" -ForegroundColor Yellow
+        Write-Host "  WARNING: No pinned hash for $BinaryName - skipping verification" -ForegroundColor Yellow
         Write-Host "  Run: (Get-FileHash '$FilePath').Hash  to get the hash, then update the script" -ForegroundColor Yellow
         return $true
     }
@@ -80,7 +80,7 @@ Write-Host "  Downloaded zip to: $ffmpegZipPath" -ForegroundColor Green
 Write-Host "Extracting FFmpeg..." -ForegroundColor Cyan
 Expand-Archive -Path $ffmpegZipPath -DestinationPath $ffmpegExtractPath -Force
 
-# Find, verify, then copy — fail fast before overwriting existing binaries
+# Find, verify, then copy - fail fast before overwriting existing binaries
 $ffmpegExe = Get-ChildItem -Path $ffmpegExtractPath -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1
 $ffprobExe = Get-ChildItem -Path $ffmpegExtractPath -Recurse -Filter "ffprobe.exe" | Select-Object -First 1
 
