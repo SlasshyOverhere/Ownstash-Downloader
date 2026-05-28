@@ -208,7 +208,7 @@ pub fn run() {
                     background_mode_for_deep_link.store(false, Ordering::SeqCst);
                     show_main_window(&handle);
 
-                    let _ = handle.emit("oauth-deep-link", sanitize_log_input(payload));
+                    let _ = handle.emit("oauth-deep-link", payload);
                     return;
                 }
                 
@@ -226,7 +226,7 @@ pub fn run() {
                     println!("[DeepLink] Window brought to front");
                     
                     // Emit to frontend
-                    let _ = handle.emit("extension-download-request", &sanitize_log_input(&download_url));
+                    let _ = handle.emit("extension-download-request", &download_url);
                 }
             });
 
