@@ -9,17 +9,10 @@ interface AuthContextType {
     isGDriveReady: boolean;
     /** Indicates if GDrive token was successfully loaded from persistent storage */
     hasGDriveToken: boolean;
-    /** Indicates if user is in offline mode (no Google login) */
-    isOfflineMode: boolean;
-    /** Set offline mode (continue without login) */
-    setOfflineMode: (offline: boolean) => void;
     /** Force re-check GDrive availability (useful after manual sign-in) */
     recheckGDriveToken: () => Promise<boolean>;
-    signIn: (email: string, password: string) => Promise<void>;
-    signUp: (email: string, password: string, displayName?: string) => Promise<void>;
     signInWithGoogle: () => Promise<void>;
     signOut: () => Promise<void>;
-    resetPassword: (email: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -34,8 +27,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const [loading, setLoading] = useState(true);
     const [isGDriveReady, setIsGDriveReady] = useState(false);
     const [hasGDriveToken, setHasGDriveToken] = useState(false);
-    // Track if user is in offline mode (continue without login)
-    const [isOfflineMode, setIsOfflineMode] = useState(false);
     // Track if auth state has been resolved
     const [authResolved, setAuthResolved] = useState(false);
     // Track if GDrive token loading has been attempted
@@ -141,16 +132,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
     }, [authResolved, tokenLoadAttempted]);
 
-    const signIn = async (email: string, password: string) => {
-        const authUser = await authService.signIn(email, password);
-        setUser(authUser);
-    };
-
-    const signUp = async (email: string, password: string, displayName?: string) => {
-        const authUser = await authService.signUp(email, password, displayName);
-        setUser(authUser);
-    };
-
     const signInWithGoogle = async () => {
         const authUser = await authService.signInWithGoogle();
         // authUser will be null if redirect was used - user state will be updated after redirect completes
@@ -172,29 +153,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setUser(null);
     };
 
-    const resetPassword = async (email: string) => {
-        await authService.resetPassword(email);
-    };
-
-    // Function to enable/disable offline mode
-    const setOfflineMode = useCallback((offline: boolean) => {
-        console.log('[Auth] Setting offline mode:', offline);
-        setIsOfflineMode(offline);
-    }, []);
-
     const value: AuthContextType = {
         user,
         loading,
         isGDriveReady,
         hasGDriveToken,
-        isOfflineMode,
-        setOfflineMode,
         recheckGDriveToken,
-        signIn,
-        signUp,
         signInWithGoogle,
         signOut,
-        resetPassword,
     };
 
     return (
