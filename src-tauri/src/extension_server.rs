@@ -130,6 +130,7 @@ pub fn start_extension_server(app_handle: AppHandle) {
                             }
                         }
                     })
+                    .untuple_one()
             };
 
             // Health check endpoint (no auth required)
@@ -247,27 +248,24 @@ pub fn start_extension_server(app_handle: AppHandle) {
                     }))
                 });
 
-            // Rejection handler for invalid token (H2 fix)
-            let token_rejection = warp::recover(|rejection: warp::Rejection| async move {
-                if rejection.find::<InvalidToken>().is_some() {
-                    Ok(warp::reply::with_status(
-                        warp::reply::json(&serde_json::json!({
-                            "success": false,
-                            "message": "Invalid or missing extension token"
-                        })),
-                        warp::http::StatusCode::UNAUTHORIZED,
-                    ))
-                } else {
-                    Err(rejection)
-                }
-            });
-
-            // Combine routes
+            // Combine routes with rejection handler for invalid token (H2 fix)
             let routes = health
                 .or(token_endpoint)
                 .or(download)
                 .or(vault_download)
-                .recover(token_rejection);
+                .recover(|rejection: warp::Rejection| async move {
+                    if rejection.find::<InvalidToken>().is_some() {
+                        Ok(warp::reply::with_status(
+                            warp::reply::json(&serde_json::json!({
+                                "success": false,
+                                "message": "Invalid or missing extension token"
+                            })),
+                            warp::http::StatusCode::UNAUTHORIZED,
+                        ))
+                    } else {
+                        Err(rejection)
+                    }
+                });
 
             // Start the server
             warp::serve(routes)

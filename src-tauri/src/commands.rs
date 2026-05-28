@@ -2,9 +2,20 @@ use crate::database::{Database, Download, SearchHistory, Setting};
 use tauri::{AppHandle, Manager, State};
 use std::sync::Mutex;
 use std::process::Command;
+use sha2::{Sha256, Digest};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
+
+/// Sensitive setting keys that must not be exposed through IPC.
+const SENSITIVE_SETTING_KEYS: &[&str] = &[
+    "token", "hash", "secret", "key", "password", "credential", "pin",
+];
+
+fn is_sensitive_key(key: &str) -> bool {
+    let lower = key.to_lowercase();
+    SENSITIVE_SETTING_KEYS.iter().any(|s| lower.contains(s))
+}
 
 pub struct AppState {
     pub db: Mutex<Database>,
@@ -54,16 +65,29 @@ fn open_path_in_explorer(path: &std::path::Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         if path.is_file() {
-            // Use raw_arg to bypass Rust's argument escaping
-            // explorer.exe /select,<path> needs the comma directly attached
-            let path_str = path.to_string_lossy().replace("/", "\\");
-            let full_arg = format!("/select,{}", path_str);
-            Command::new("explorer.exe")
-                .raw_arg(&full_arg)
-                .spawn()
-                .map_err(|e| format!("Failed to open folder: {}", e))?;
+            // Use ShellExecuteW to avoid cmd.exe command injection
+            use windows::Win32::UI::Shell::ShellExecuteW;
+            use windows::Win32::Foundation::HWND;
+            use windows::core::w;
+            let path_wide: Vec<u16> = path.to_string_lossy()
+                .encode_utf16()
+                .chain(std::iter::once(0))
+                .collect();
+            let verb = w!("open");
+            let result = unsafe {
+                ShellExecuteW(
+                    HWND(std::ptr::null_mut()),
+                    verb,
+                    windows::core::PCWSTR(path_wide.as_ptr()),
+                    windows::core::PCWSTR::null(),
+                    windows::core::PCWSTR::null(),
+                    windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL,
+                )
+            };
+            if result.0 as usize <= 32 {
+                return Err(format!("Failed to open file: ShellExecuteW returned {}", result.0 as usize));
+            }
         } else {
-            // If it's a directory, just open it
             Command::new("explorer")
                 .arg(path)
                 .spawn()
