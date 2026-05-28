@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
@@ -7,11 +8,103 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
+use url::Url;
 
 // Import the v2.0 download control system
 use crate::download_router::{DownloadRouter, RoutingDecision, DOWNLOAD_ROUTER};
 use crate::health_metrics::{DownloadEngine, DownloadPhase, HEALTH_REGISTRY};
 use crate::snde::{SNDEEngine, SNDERequest, SNDE_ENGINE};
+
+/// Validate a URL is safe for external requests (anti-SSRF + anti-injection).
+/// Returns Ok(parsed_url) on success, Err(message) on failure.
+fn validate_url(raw: &str) -> Result<Url, String> {
+    // Reject yt-dlp flag injection: URLs must not contain "--" or start with "-"
+    if raw.starts_with('-') || raw.contains("--") {
+        return Err("URL contains invalid flag-like patterns".into());
+    }
+
+    let parsed = Url::parse(raw).map_err(|e| format!("Invalid URL: {}", e))?;
+
+    // Only allow http/https schemes
+    match parsed.scheme() {
+        "http" | "https" => {}
+        other => return Err(format!("URL scheme '{}' is not allowed", other)),
+    }
+
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| "URL has no host".to_string())?;
+
+    // Reject localhost variants
+    let host_lower = host.to_lowercase();
+    if host_lower == "localhost"
+        || host_lower.ends_with(".localhost")
+        || host_lower == "0.0.0.0"
+        || host_lower == "[::1]"
+        || host_lower == "::1"
+    {
+        return Err("URL targets localhost/internal host".into());
+    }
+
+    // Reject private/internal IP ranges
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        match ip {
+            IpAddr::V4(v4) => {
+                if v4.is_loopback()
+                    || v4.is_private()
+                    || v4.is_link_local()
+                    || v4.is_broadcast()
+                    || v4.is_unspecified()
+                    // 172.16.0.0/12
+                    || (v4.octets()[0] == 172 && (v4.octets()[1] >= 16 && v4.octets()[1] <= 31))
+                {
+                    return Err("URL targets a private/internal IP address".into());
+                }
+            }
+            IpAddr::V6(v6) => {
+                if v6.is_loopback() || v6.is_unspecified() {
+                    return Err("URL targets a private/internal IPv6 address".into());
+                }
+            }
+        }
+    }
+
+    Ok(parsed)
+}
+
+/// Extract only the scheme + host from a URL for safe logging.
+fn redact_url(raw: &str) -> String {
+    match Url::parse(raw) {
+        Ok(u) => format!("{}://{}", u.scheme(), u.host_str().unwrap_or("[redacted]")),
+        Err(_) => "[invalid-url]".to_string(),
+    }
+}
+
+/// Replace URLs in a line of text with their redacted host-only form.
+fn redact_line(line: &str) -> String {
+    // Simple regex-free approach: find http:// or https:// sequences
+    let mut result = String::with_capacity(line.len());
+    let mut remaining = line;
+    while let Some(pos) = remaining.find("http") {
+        // Check it's http:// or https://
+        let after = &remaining[pos..];
+        if after.starts_with("https://") || after.starts_with("http://") {
+            // Find end of URL (whitespace, quote, or bracket)
+            let end = after
+                .find(|c: char| c.is_whitespace() || c == '"' || c == '\'' || c == '>' || c == ')' || c == ']')
+                .unwrap_or(after.len());
+            let url = &after[..end];
+            result.push_str(&remaining[..pos]);
+            result.push_str(&redact_url(url));
+            remaining = &after[end..];
+        } else {
+            result.push_str(&remaining[..pos + 4]);
+            remaining = &remaining[pos + 4..];
+        }
+    }
+    result.push_str(remaining);
+    result
+}
 
 // Track active download processes for cancellation
 lazy_static::lazy_static! {
@@ -326,7 +419,7 @@ impl Downloader {
             asset_name
         );
 
-        println!("[Downloader] Updating yt-dlp from: {}", download_url);
+        println!("[Downloader] Updating yt-dlp from: {}", redact_url(&download_url));
         println!("[Downloader] Target path: {:?}", target_path);
 
         Self::download_binary(&download_url, &target_path).await?;
@@ -480,6 +573,9 @@ impl Downloader {
     }
 
     pub async fn get_media_info(&self, url: &str, check_sponsorblock: bool) -> Result<MediaInfo, String> {
+        // Validate URL before any yt-dlp invocation (anti-SSRF + anti-injection)
+        let _parsed_url = validate_url(url)?;
+
         let cache_key = format!("{}::{}", url.trim(), check_sponsorblock);
         {
             let cache = MEDIA_INFO_CACHE.lock().unwrap();
@@ -516,6 +612,7 @@ impl Downloader {
             args.push("all".to_string());
         }
 
+        args.push("--".to_string());
         args.push(url.to_string());
 
         let output = Self::create_hidden_command(&self.yt_dlp_path)
@@ -611,8 +708,11 @@ impl Downloader {
         request: DownloadRequest,
         app_handle: AppHandle,
     ) -> Result<(), String> {
+        // Validate URL before any processing (anti-SSRF + anti-injection)
+        let _parsed_url = validate_url(&request.url)?;
+
         let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel::<()>();
-        
+
         // Store the cancellation sender
         {
             let mut downloads = ACTIVE_DOWNLOADS.lock().unwrap();
@@ -623,7 +723,7 @@ impl Downloader {
         // Perform preflight routing to determine optimal engine and settings
         let routing_decision = DOWNLOAD_ROUTER.route(&request.url, None).await;
         
-        println!("[Downloader] Routing decision for {}: {:?}", request.url, routing_decision);
+        println!("[Downloader] Routing decision for {}: {:?}", redact_url(&request.url), routing_decision);
         println!("[Downloader] Selected engine: {} | Recommended connections: {} | Reason: {}",
             routing_decision.badge,
             routing_decision.recommended_connections,
@@ -804,7 +904,8 @@ impl Downloader {
             args.push("all".to_string());
         }
 
-        // Add URL
+        // Add URL (after `--` separator to prevent yt-dlp flag injection)
+        args.push("--".to_string());
         args.push(request.url.clone());
 
         let mut child = Self::create_hidden_command(&self.yt_dlp_path)
@@ -859,7 +960,7 @@ impl Downloader {
                     result = stdout_reader.next_line() => {
                         match result {
                             Ok(Some(line)) => {
-                                println!("[yt-dlp stdout] {}", line);
+                                println!("[yt-dlp stdout] {}", redact_line(&line));
                                 let _ = handle_download_output_line(
                                     &line,
                                     &app,
@@ -880,7 +981,7 @@ impl Downloader {
                     result = stderr_reader.next_line() => {
                         match result {
                             Ok(Some(line)) => {
-                                println!("[yt-dlp stderr] {}", line);
+                                println!("[yt-dlp stderr] {}", redact_line(&line));
                                 let handled = handle_download_output_line(
                                     &line,
                                     &app,
@@ -1285,7 +1386,10 @@ pub async fn get_media_info(app_handle: AppHandle, url: String, enable_sponsorbl
 #[tauri::command]
 pub async fn probe_direct_file(url: String) -> Result<DirectFileInfo, String> {
     use reqwest::header::{CONTENT_LENGTH, USER_AGENT};
-    
+
+    // Validate URL before making any request (anti-SSRF)
+    let _parsed_url = validate_url(&url)?;
+
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::limited(10))
         .timeout(std::time::Duration::from_secs(30))
@@ -1359,7 +1463,7 @@ pub async fn probe_direct_file(url: String) -> Result<DirectFileInfo, String> {
         ct.contains("octet-stream")
     }).unwrap_or(true);
     
-    println!("[ProbeDirectFile] URL: {}", url);
+    println!("[ProbeDirectFile] URL: {}", redact_url(&url));
     println!("[ProbeDirectFile] Size: {} bytes, Filename: {:?}, Type: {:?}", file_size, filename, content_type);
     
     Ok(DirectFileInfo {
