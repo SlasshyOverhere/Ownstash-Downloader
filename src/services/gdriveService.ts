@@ -2,7 +2,7 @@
 // Uses the App Data folder which is hidden from the user but accessible by the app
 // This provides privacy: user data never leaves their own Google account
 
-import { Download, SearchHistory, Setting } from './firestore';
+import { Download, SearchHistory, Setting, VaultFolderEntry } from './api';
 import { invoke } from '@tauri-apps/api/core';
 
 // File names in Google Drive App Data folder
@@ -668,16 +668,6 @@ export const gdriveService = {
 
 const VAULT_FILE = 'ownstash_vault_index.enc';
 
-// Vault file interface (matching Rust struct)
-// Represents a file or directory inside a vault folder
-export interface VaultFolderEntry {
-    name: string;           // File/folder name
-    path: string;           // Relative path within the folder
-    size_bytes: number;     // Size in bytes (0 for directories)
-    file_type: string;      // "video", "audio", "image", "file", "directory"
-    is_directory: boolean;  // True if this is a directory
-}
-
 export interface VaultFileEntry {
     id: string;
     original_name: string;
@@ -851,22 +841,6 @@ export async function loadVaultIndexFromGDrive(
 }
 
 /**
- * Check if vault index exists in Google Drive
- */
-export async function hasVaultInGDrive(): Promise<boolean> {
-    if (!isGDriveAvailable()) {
-        return false;
-    }
-
-    try {
-        const data = await readFile<{ encrypted: string; version: number }>(VAULT_FILE);
-        return data !== null && data.encrypted !== undefined;
-    } catch (e) {
-        return false;
-    }
-}
-
-/**
  * Delete vault index from Google Drive
  */
 export async function deleteVaultFromGDrive(): Promise<void> {
@@ -976,17 +950,6 @@ export async function deleteVaultConfigFromGDrive(): Promise<void> {
         console.log('[GDrive] Vault config deleted from cloud');
     } catch (e) {
         console.error('[GDrive] Failed to delete vault config:', e);
-    }
-}
-
-/**
- * Update last_accessed timestamp in vault config
- */
-export async function updateVaultLastAccessed(): Promise<void> {
-    const config = await loadVaultConfigFromGDrive();
-    if (config) {
-        config.last_accessed = Math.floor(Date.now() / 1000);
-        await saveVaultConfigToGDrive(config);
     }
 }
 
