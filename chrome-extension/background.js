@@ -158,6 +158,41 @@ async function toggleSite(pageUrl) {
 // ============================================
 const EXTENSION_SERVER_URL = 'http://127.0.0.1:47152';
 
+// Per-session token fetched from the app (H2 fix)
+let sessionToken = null;
+
+async function fetchSessionToken() {
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        const response = await fetch(`${EXTENSION_SERVER_URL}/token`, {
+            method: 'GET',
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (response.ok) {
+            const data = await response.json();
+            sessionToken = data.token;
+            console.log('[Ownstash Background] Session token fetched');
+            return sessionToken;
+        }
+    } catch (e) {
+        console.warn('[Ownstash Background] Could not fetch session token:', e.message);
+        sessionToken = null;
+    }
+    return null;
+}
+
+async function getAuthHeaders() {
+    if (!sessionToken) {
+        await fetchSessionToken();
+    }
+    return {
+        'Content-Type': 'application/json',
+        'x-extension-token': sessionToken || ''
+    };
+}
+
 async function sendToApp(url) {
     console.log('[Ownstash Background] Sending URL:', url);
 
@@ -165,12 +200,10 @@ async function sendToApp(url) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 3000); // Reduced timeout for faster fallback
 
+        const headers = await getAuthHeaders();
         const response = await fetch(`${EXTENSION_SERVER_URL}/download`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-extension-request': 'true'
-            },
+            headers,
             body: JSON.stringify({ url: url }),
             signal: controller.signal
         });
@@ -186,6 +219,25 @@ async function sendToApp(url) {
                 showNotification('Error', 'Failed to send to app');
                 return { success: false, error: 'Failed to send to app' };
             }
+        } else if (response.status === 401) {
+                // Token rejected - try refreshing token once
+                sessionToken = null;
+                const retryHeaders = await getAuthHeaders();
+                const retryResponse = await fetch(`${EXTENSION_SERVER_URL}/download`, {
+                    method: 'POST',
+                    headers: retryHeaders,
+                    body: JSON.stringify({ url: url }),
+                    signal: controller.signal
+                });
+                if (retryResponse.ok) {
+                    const retryData = await retryResponse.json();
+                    if (retryData.success) {
+                        showNotification('Sent to Ownstash', 'The URL has been sent to Ownstash Downloader');
+                        return { success: true };
+                    }
+                }
+                showNotification('Error', 'Authentication failed');
+                return { success: false, error: 'Authentication failed' };
         } else {
             showNotification('Error', 'App returned error: ' + response.status);
             return { success: false, error: 'App returned error: ' + response.status };
@@ -250,12 +302,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 5000);
 
+                const headers = await getAuthHeaders();
                 const response = await fetch(`${EXTENSION_SERVER_URL}/download`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'x-extension-request': 'true'
-                    },
+                    headers,
                     body: JSON.stringify({ url: message.url }),
                     signal: controller.signal
                 });
@@ -517,12 +567,10 @@ async function sendToVault(url, filename, fileSize) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
 
+        const headers = await getAuthHeaders();
         const response = await fetch(`${EXTENSION_SERVER_URL}/vault-download`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-extension-request': 'true'
-            },
+            headers,
             body: JSON.stringify({
                 url: url,
                 filename: filename,
