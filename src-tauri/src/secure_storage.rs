@@ -10,11 +10,37 @@ use rand::RngCore;
 use tauri::{AppHandle, Manager, State};
 use crate::commands::AppState;
 use std::fs;
+use uuid::Uuid;
 
 const NONCE_SIZE: usize = 12;
 const KEY_SIZE: usize = 32;
+const APP_SECRET_SIZE: usize = 32;
 const SECURE_STORAGE_SALT_FILE: &str = "ss_salt.bin";
-const APP_SECRET: &[u8] = b"ownstash_secure_token_vault_2025_v1";
+const APP_SECRET_FILE: &str = "app_secret.bin";
+const INSTALL_UUID_FILE: &str = "install_uuid.bin";
+
+/// Get or create the per-installation app secret (32 random bytes persisted to disk).
+/// This replaces the previous compile-time constant, ensuring each installation
+/// has a unique secret that isn't extractable from the binary alone.
+fn get_or_create_app_secret(app_data_dir: &std::path::Path) -> Result<[u8; APP_SECRET_SIZE], String> {
+    let secret_path = app_data_dir.join(APP_SECRET_FILE);
+    if secret_path.exists() {
+        let data = fs::read(&secret_path)
+            .map_err(|e| format!("Failed to read app secret: {}", e))?;
+        if data.len() == APP_SECRET_SIZE {
+            let mut secret = [0u8; APP_SECRET_SIZE];
+            secret.copy_from_slice(&data);
+            return Ok(secret);
+        }
+    }
+    // Generate a new random secret
+    let mut secret = [0u8; APP_SECRET_SIZE];
+    rand::thread_rng().fill_bytes(&mut secret);
+    fs::create_dir_all(app_data_dir).ok();
+    fs::write(&secret_path, &secret)
+        .map_err(|e| format!("Failed to save app secret: {}", e))?;
+    Ok(secret)
+}
 
 /// Helper to convert bytes to hex string
 fn to_hex(bytes: &[u8]) -> String {
@@ -35,25 +61,67 @@ fn from_hex(hex: &str) -> Result<Vec<u8>, String> {
         .collect()
 }
 
-/// Get a machine-specific identifier
-fn get_machine_id() -> Vec<u8> {
+/// Get or create a persistent per-install UUID used as fallback machine entropy.
+fn get_or_create_install_uuid(app_data_dir: &std::path::Path) -> Result<String, String> {
+    let uuid_path = app_data_dir.join(INSTALL_UUID_FILE);
+    if uuid_path.exists() {
+        if let Ok(s) = fs::read_to_string(&uuid_path) {
+            if !s.trim().is_empty() {
+                return Ok(s.trim().to_string());
+            }
+        }
+    }
+    let new_uuid = Uuid::new_v4().to_string();
+    fs::create_dir_all(app_data_dir).ok();
+    fs::write(&uuid_path, &new_uuid)
+        .map_err(|e| format!("Failed to save install UUID: {}", e))?;
+    Ok(new_uuid)
+}
+
+/// Get a machine-specific identifier with multiple entropy sources.
+/// Combines environment variables (COMPUTERNAME, USERNAME, PROCESSOR_IDENTIFIER)
+/// with additional Windows-specific identifiers and a persisted random UUID
+/// to resist prediction.
+fn get_machine_id(app_data_dir: &std::path::Path) -> Vec<u8> {
     let mut id = Vec::new();
 
-    // On Windows, use USERNAME and COMPUTERNAME environment variables
-    // These are usually enough to bind the data to the current machine and session
+    // Primary: standard environment variables
     if let Ok(val) = std::env::var("COMPUTERNAME") {
+        id.extend_from_slice(b"CN:");
         id.extend_from_slice(val.as_bytes());
     }
     if let Ok(val) = std::env::var("USERNAME") {
+        id.extend_from_slice(b"UN:");
         id.extend_from_slice(val.as_bytes());
     }
     if let Ok(val) = std::env::var("PROCESSOR_IDENTIFIER") {
+        id.extend_from_slice(b"PI:");
         id.extend_from_slice(val.as_bytes());
     }
 
-    // If all fail, return a fallback
-    if id.is_empty() {
-        id.extend_from_slice(b"fallback_machine_id");
+    // Additional Windows-specific entropy sources
+    if let Ok(val) = std::env::var("USERDOMAIN") {
+        id.extend_from_slice(b"UD:");
+        id.extend_from_slice(val.as_bytes());
+    }
+    if let Ok(val) = std::env::var("LOGONSERVER") {
+        id.extend_from_slice(b"LS:");
+        id.extend_from_slice(val.as_bytes());
+    }
+    if let Ok(val) = std::env::var("SystemDrive") {
+        id.extend_from_slice(b"SD:");
+        id.extend_from_slice(val.as_bytes());
+    }
+
+    // Persisted random UUID as fallback — never use a static constant
+    match get_or_create_install_uuid(app_data_dir) {
+        Ok(uuid) => {
+            id.extend_from_slice(b"UUID:");
+            id.extend_from_slice(uuid.as_bytes());
+        }
+        Err(e) => {
+            eprintln!("[SecureStorage] Failed to load install UUID: {}", e);
+        }
     }
 
     id
@@ -61,29 +129,32 @@ fn get_machine_id() -> Vec<u8> {
 
 /// Get the machine-specific key
 fn get_system_key(app_handle: &AppHandle) -> Result<[u8; KEY_SIZE], String> {
-    let machine_id = get_machine_id();
-
-    // Persistent Salt (local to this installation)
     let app_data_dir = app_handle.path().app_data_dir()
         .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+
+    // Per-installation random secret (replaces hardcoded constant)
+    let app_secret = get_or_create_app_secret(&app_data_dir)?;
+    let machine_id = get_machine_id(&app_data_dir);
+
+    // Persistent Salt (local to this installation)
     let salt_path = app_data_dir.join(SECURE_STORAGE_SALT_FILE);
-    
+
     let salt = if salt_path.exists() {
         fs::read(&salt_path).map_err(|e| format!("Failed to read salt: {}", e))?
     } else {
-        let mut new_salt = vec![0u8; 16];
+        let mut new_salt = vec![0u8; 32];
         rand::thread_rng().fill_bytes(&mut new_salt);
         fs::create_dir_all(&app_data_dir).ok();
         fs::write(&salt_path, &new_salt).map_err(|e| format!("Failed to save salt: {}", e))?;
         new_salt
     };
 
-    // Derive key using Argon2
+    // Derive key using Argon2 — input = per-install secret + machine ID
     let mut key = [0u8; KEY_SIZE];
     let mut input = Vec::new();
-    input.extend_from_slice(APP_SECRET);
+    input.extend_from_slice(&app_secret);
     input.extend_from_slice(&machine_id);
-    
+
     Argon2::default()
         .hash_password_into(&input, &salt, &mut key)
         .map_err(|e| format!("Failed to derive system key: {}", e))?;
