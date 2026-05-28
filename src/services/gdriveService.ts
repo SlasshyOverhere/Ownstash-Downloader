@@ -213,7 +213,7 @@ export async function findFile(fileName: string): Promise<string | null> {
     const response = await driveRequest(`/files?spaces=appDataFolder&q=${query}&fields=files(id,name)`);
 
     if (!response.ok) {
-        console.error('[GDrive] Failed to search files:', await response.text());
+        console.error('[GDrive] Failed to search files:', response.status, response.statusText);
         return null;
     }
 
@@ -233,7 +233,7 @@ async function readFile<T>(fileName: string): Promise<T | null> {
 
     const response = await driveRequest(`/files/${fileId}?alt=media`);
     if (!response.ok) {
-        console.error('[GDrive] Failed to read file:', await response.text());
+        console.error('[GDrive] Failed to read file:', response.status, response.statusText);
         return null;
     }
 
@@ -885,8 +885,10 @@ export async function saveVaultConfigToGDrive(config: VaultConfig): Promise<void
     }
 
     try {
-        await writeFile(VAULT_CONFIG_FILE, config);
-        console.log('[GDrive] Vault config saved to cloud');
+        // Strip sensitive fields (pin_hash, salt) before uploading to Drive
+        const { pin_hash, salt, rust_pin_hash, rust_salt, ...safeConfig } = config;
+        await writeFile(VAULT_CONFIG_FILE, safeConfig);
+        console.log('[GDrive] Vault config saved to cloud (PIN hash excluded)');
     } catch (e) {
         console.error('[GDrive] Failed to save vault config:', e);
         throw e;
@@ -903,7 +905,7 @@ export async function loadVaultConfigFromGDrive(): Promise<VaultConfig | null> {
 
     try {
         const config = await readFile<VaultConfig>(VAULT_CONFIG_FILE);
-        if (config && config.pin_hash) {
+        if (config && config.created_at) {
             console.log('[GDrive] Vault config loaded from cloud');
             return config;
         }
@@ -927,8 +929,8 @@ export async function hasVaultConfigInGDrive(): Promise<boolean> {
     try {
         console.log('[GDrive] hasVaultConfigInGDrive - reading config file:', VAULT_CONFIG_FILE);
         const config = await readFile<VaultConfig>(VAULT_CONFIG_FILE);
-        console.log('[GDrive] hasVaultConfigInGDrive - config:', config);
-        const hasConfig = config !== null && !!config.pin_hash;
+        console.log('[GDrive] hasVaultConfigInGDrive - config:', config !== null ? 'present' : 'null');
+        const hasConfig = config !== null && !!config.created_at;
         console.log('[GDrive] hasVaultConfigInGDrive - result:', hasConfig);
         return hasConfig;
     } catch (e) {
