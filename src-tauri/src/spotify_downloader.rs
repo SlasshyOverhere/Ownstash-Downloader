@@ -1178,3 +1178,23 @@ pub async fn cancel_spotify_download(id: String) -> Result<(), String> {
 pub fn is_spotify_url(url: &str) -> bool {
     url.contains("spotify.com") || url.contains("open.spotify.com")
 }
+
+/// Ensure spotdl is available. Downloads it if missing.
+/// Called when user first tries to use Spotify features.
+#[tauri::command]
+pub async fn ensure_spotdl(app_handle: AppHandle) -> Result<SpotDlInfo, String> {
+    let downloader = SpotifyDownloader::new(&app_handle);
+
+    // Check if already available at managed path
+    if !downloader.spotdl_path.is_empty() && downloader.spotdl_path != "spotdl" {
+        if let Ok(info) = downloader.check_spotdl(false).await {
+            if info.is_available {
+                return Ok(info);
+            }
+        }
+    }
+
+    // Not available -- download it using existing update mechanism
+    println!("[Setup] SpotDL not found, downloading...");
+    SpotifyDownloader::update_spotdl(&app_handle).await
+}

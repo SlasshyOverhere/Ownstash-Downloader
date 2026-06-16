@@ -192,6 +192,14 @@ export interface VaultFolderEntry {
     is_directory: boolean;  // True if this is a directory
 }
 
+export interface SetupProgress {
+    binary: string;      // "yt-dlp", "ffmpeg", "spotdl", "done"
+    phase: string;       // "downloading", "extracting", "complete", "error"
+    progress: number;    // 0-100
+    message: string;
+    error?: string | null;
+}
+
 interface VaultFile {
     id: string;
     original_name: string;
@@ -396,6 +404,25 @@ export const api = {
 
     async updateSpotDl(): Promise<SpotDlInfo> {
         return invoke('update_spotdl');
+    },
+
+    // Setup - First-launch binary download
+    async checkSetupStatus(): Promise<boolean> {
+        return invoke('check_setup_status');
+    },
+
+    async setupDownloadBinaries(): Promise<void> {
+        return invoke('setup_download_binaries');
+    },
+
+    onSetupProgress(callback: (progress: SetupProgress) => void): Promise<UnlistenFn> {
+        return listen<SetupProgress>('setup-progress', (event) => {
+            callback(event.payload);
+        });
+    },
+
+    async ensureSpotDl(): Promise<SpotDlInfo> {
+        return invoke('ensure_spotdl');
     },
 
     async getSpotifyInfo(url: string): Promise<SpotifyMediaInfo> {

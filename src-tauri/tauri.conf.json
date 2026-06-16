@@ -43,12 +43,7 @@
             "icons/128x128@2x.png",
             "icons/icon.ico"
         ],
-        "resources": [
-            "binaries/yt-dlp.exe",
-            "binaries/spotdl.exe",
-            "binaries/ffmpeg.exe",
-            "binaries/ffprobe.exe"
-        ],
+        "resources": [],
         "category": "Utility",
         "shortDescription": "Fast desktop media downloader for 1000+ platforms",
         "longDescription": "Ownstash Downloader is a desktop-first media downloader powered by yt-dlp and SpotDL, built for fast local downloads from supported platforms.",

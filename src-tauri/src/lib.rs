@@ -338,9 +338,12 @@ pub fn run() {
             downloader::get_supported_platforms,
             downloader::get_default_download_path,
             downloader::get_download_folder_size,
+            downloader::check_setup_status,
+            downloader::setup_download_binaries,
             // SpotDL (Spotify) commands
             spotify_downloader::check_spotdl,
             spotify_downloader::update_spotdl,
+            spotify_downloader::ensure_spotdl,
             spotify_downloader::get_spotify_info,
             spotify_downloader::start_spotify_download,
             spotify_downloader::cancel_spotify_download,
