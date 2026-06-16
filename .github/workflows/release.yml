@@ -78,16 +78,6 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
-      - name: Ensure bundled binaries are available
-        shell: pwsh
-        working-directory: src-tauri
-        run: |
-          if (Test-Path "./download-binaries.ps1") {
-            powershell -ExecutionPolicy Bypass -File ./download-binaries.ps1
-          } else {
-            Write-Host "download-binaries.ps1 not found; assuming binaries are already present."
-          }
-
       - name: Build and publish GitHub release
         uses: tauri-apps/tauri-action@v0
         env:
