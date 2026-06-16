@@ -22,7 +22,7 @@ function LoadingFallback() {
 export function AppLayout({ children, currentPage, onPageChange }: AppLayoutProps) {
     return (
         <LazyMotion features={domAnimation}>
-        <div className="h-screen w-screen overflow-hidden bg-background">
+        <div className="h-screen w-screen overflow-hidden flex flex-col bg-background">
             {/* Background layers */}
             <div className="fixed inset-0 pointer-events-none">
                 <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-primary/5" />
@@ -35,7 +35,7 @@ export function AppLayout({ children, currentPage, onPageChange }: AppLayoutProp
             <TitleBar />
 
             {/* Content below titlebar */}
-            <div className="h-screen w-screen flex pt-9 overflow-hidden">
+            <div className="flex-1 min-h-0 w-screen flex pt-9 overflow-hidden">
                 {/* Sidebar */}
                 <AnimatedSidebar
                     currentPage={currentPage}
