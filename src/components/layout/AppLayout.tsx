@@ -22,23 +22,20 @@ function LoadingFallback() {
 export function AppLayout({ children, currentPage, onPageChange }: AppLayoutProps) {
     return (
         <LazyMotion features={domAnimation}>
-        <div className="h-screen w-screen overflow-hidden flex flex-col bg-background">
+        <div className="h-screen w-screen overflow-hidden bg-background">
             {/* Background layers */}
             <div className="fixed inset-0 pointer-events-none">
-                {/* Base gradient */}
                 <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-primary/5" />
-
-                {/* Static gradient orbs (lighter than continuous pulse animation) */}
                 <div className="absolute size-96 -left-48 -top-48 bg-white/5 rounded-full blur-3xl" />
                 <div className="absolute size-96 -right-48 -bottom-48 bg-white/3 rounded-full blur-3xl" />
                 <div className="absolute size-64 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white/2 rounded-full blur-3xl" />
             </div>
 
-            {/* Custom titlebar */}
+            {/* Fixed titlebar */}
             <TitleBar />
 
-            {/* Sidebar + Content */}
-            <div className="flex-1 flex overflow-hidden">
+            {/* Content below titlebar */}
+            <div className="h-screen w-screen flex pt-9 overflow-hidden">
                 {/* Sidebar */}
                 <AnimatedSidebar
                     currentPage={currentPage}

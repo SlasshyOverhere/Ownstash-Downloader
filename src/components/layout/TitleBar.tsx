@@ -4,87 +4,108 @@ import { Minus, Square, X, Copy } from 'lucide-react';
 
 export function TitleBar() {
     const [isMaximized, setIsMaximized] = useState(false);
-    const [isReady, setIsReady] = useState(false);
     const win = getCurrentWindow();
 
-    // Remove native decorations after window is fully loaded
+    const refreshWindowState = useCallback(async () => {
+        try {
+            setIsMaximized(await win.isMaximized());
+        } catch {}
+    }, [win]);
+
+    // Listen for resize events to track maximize state
     useEffect(() => {
-        const timer = setTimeout(() => {
-            win.setDecorations(false).then(() => {
-                setIsReady(true);
-            }).catch((err) => {
-                console.warn('[TitleBar] Failed to set decorations:', err);
-                setIsReady(true); // Show titlebar anyway
+        let unlisten: (() => void) | null = null;
+        const setup = async () => {
+            await refreshWindowState();
+            const fn = await win.onResized(async () => {
+                await refreshWindowState();
             });
-        }, 500); // Small delay to let WebView2 fully initialize
-        return () => clearTimeout(timer);
-    }, [win]);
+            unlisten = () => fn();
+        };
+        setup();
+        return () => { unlisten?.(); };
+    }, [refreshWindowState]);
 
+    // Toggle body class for maximized state
     useEffect(() => {
-        const unlisten = win.onResized(() => {
-            win.isMaximized().then(setIsMaximized).catch(() => {});
-        });
-        return () => { unlisten.then(fn => fn()); };
-    }, [win]);
-
-    // Fallback: start dragging on mousedown
-    const handleMouseDown = useCallback((e: React.MouseEvent) => {
-        if ((e.target as HTMLElement).closest('button')) return;
-        if (e.button !== 0) return;
-        win.startDragging().catch(() => {});
-    }, [win]);
-
-    const handleMinimize = () => win.minimize().catch(() => {});
-    const handleMaximize = () => win.toggleMaximize().catch(() => {});
-    const handleClose = () => win.close().catch(() => {});
-
-    // Don't render until decorations are removed (prevents double titlebar flash)
-    if (!isReady) return null;
+        document.body.classList.toggle('app-window-maximized', isMaximized);
+        return () => { document.body.classList.remove('app-window-maximized'); };
+    }, [isMaximized]);
 
     return (
-        <div
-            data-tauri-drag-region
-            onMouseDown={handleMouseDown}
-            className="h-9 flex items-center select-none shrink-0 bg-background/80 border-b border-white/5"
-        >
-            {/* Left: App title */}
-            <div className="flex items-center gap-2 px-3 pointer-events-none">
-                <span className="text-xs font-medium text-muted-foreground tracking-wide">
-                    SlasshyDownloader
-                </span>
-            </div>
+        <header className="fixed top-0 left-0 right-0 h-9 z-[220] border-b border-white/10 bg-background select-none">
+            <div className="relative h-full w-full flex items-center justify-between">
+                {/* Invisible top resize handle (1.5px) */}
+                <div className="absolute top-0 left-0 right-0 h-1.5" />
 
-            {/* Center: drag region */}
-            <div className="flex-1 h-full" data-tauri-drag-region />
+                {/* Drag region - starts below resize handle, leaves room for buttons */}
+                <div
+                    data-tauri-drag-region
+                    onDoubleClick={async () => {
+                        await win.toggleMaximize();
+                        await refreshWindowState();
+                    }}
+                    className="absolute left-0 top-1.5 bottom-0 right-[120px]"
+                />
 
-            {/* Right: Window controls */}
-            <div className="flex h-full">
-                <button
-                    onClick={handleMinimize}
-                    className="h-full w-12 flex items-center justify-center hover:bg-white/10 transition-colors"
-                    aria-label="Minimize"
-                >
-                    <Minus className="size-3.5 text-muted-foreground" />
-                </button>
-                <button
-                    onClick={handleMaximize}
-                    className="h-full w-12 flex items-center justify-center hover:bg-white/10 transition-colors"
-                    aria-label={isMaximized ? 'Restore' : 'Maximize'}
-                >
-                    {isMaximized ? (
-                        <Copy className="size-3 text-muted-foreground" />
-                    ) : (
-                        <Square className="size-3 text-muted-foreground" />
-                    )}
-                </button>
-                <button
-                    onClick={handleClose}
-                    className="h-full w-12 flex items-center justify-center hover:bg-red-500/80 hover:text-white transition-colors group"
-                    aria-label="Close"
-                >
-                    <X className="size-3.5 text-muted-foreground group-hover:text-white" />
-                </button>
+                {/* Left: Logo + App name */}
+                <div className="flex items-center gap-2 pl-3 pointer-events-none">
+                    <img
+                        data-tauri-drag-region
+                        src="/logo.png"
+                        alt=""
+                        draggable={false}
+                        className="pointer-events-none size-4 object-contain"
+                    />
+                    <span
+                        data-tauri-drag-region
+                        className="pointer-events-none text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-400"
+                    >
+                        SlasshyDownloader
+                    </span>
+                </div>
+
+                {/* Right: Window controls */}
+                <div className="flex items-center h-full pr-1.5">
+                    <button
+                        type="button"
+                        onClick={() => win.minimize().catch(() => {})}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                        className="h-7 w-8 rounded-md border border-transparent text-neutral-400 transition-colors hover:border-white/10 hover:bg-white/10 hover:text-white"
+                        title="Minimize"
+                        aria-label="Minimize window"
+                    >
+                        <Minus className="mx-auto size-3.5" />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={async () => {
+                            await win.toggleMaximize().catch(() => {});
+                            await refreshWindowState();
+                        }}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                        className="h-7 w-8 rounded-md border border-transparent text-neutral-400 transition-colors hover:border-white/10 hover:bg-white/10 hover:text-white"
+                        title={isMaximized ? 'Restore' : 'Maximize'}
+                        aria-label={isMaximized ? 'Restore window' : 'Maximize window'}
+                    >
+                        {isMaximized ? (
+                            <Copy className="mx-auto size-3" />
+                        ) : (
+                            <Square className="mx-auto size-3" />
+                        )}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={async () => { await win.close().catch(() => {}); }}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                        className="h-7 w-8 rounded-md border border-transparent text-neutral-400 transition-colors hover:border-rose-500/40 hover:bg-rose-500/20 hover:text-rose-200"
+                        title="Close"
+                        aria-label="Close window"
+                    >
+                        <X className="mx-auto size-3.5" />
+                    </button>
+                </div>
             </div>
-        </div>
+        </header>
     );
 }
