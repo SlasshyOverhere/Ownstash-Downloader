@@ -35,9 +35,9 @@ const config: Config = {
                 destructive: 'hsl(var(--destructive))',
             },
             fontFamily: {
-                sans: ['Inter', 'system-ui', 'sans-serif'],
-                display: ['Outfit', 'sans-serif'],
-                mono: ['JetBrains Mono', 'monospace'],
+                sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+                display: ['Outfit', 'Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+                mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Consolas', 'monospace'],
             },
             boxShadow: {
                 'elegant': '0 4px 20px rgba(255, 255, 255, 0.1), 0 0 0 1px rgba(255, 255, 255, 0.05)',

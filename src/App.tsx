@@ -181,7 +181,7 @@ function App() {
                 }, 3000));
 
                 const title = downloadTitles.get(progress.id) || 'Download';
-                api.notifyDownloadFailed(title, 'Download failed').catch(console.error);
+                api.notifyDownloadFailed(title, progress.error_message || 'Download failed').catch(console.error);
                 downloadTitles.delete(progress.id);
             }
         }).then(fn => { unlistenYtdlp = fn; }).catch(console.error);
@@ -216,7 +216,7 @@ function App() {
                 }, 3000));
 
                 const title = downloadTitles.get(progress.id) || 'Spotify Download';
-                api.notifyDownloadFailed(title, 'Download failed').catch(console.error);
+                api.notifyDownloadFailed(title, progress.error_message || 'Download failed').catch(console.error);
                 downloadTitles.delete(progress.id);
             }
         }).then(fn => { unlistenSpotify = fn; }).catch(console.error);

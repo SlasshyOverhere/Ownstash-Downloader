@@ -152,6 +152,22 @@ pub fn run() {
             // Store in app state
             app.manage(AppState { db: Mutex::new(db) });
 
+            // Recover stuck downloads from previous session
+            {
+                let app_state = app.state::<AppState>();
+                let db_guard = app_state.db.lock();
+                if let Ok(ref db) = db_guard {
+                    if let Ok(downloads) = db.get_downloads() {
+                        for dl in downloads {
+                            if dl.status == "downloading" || dl.status == "starting" || dl.status == "pending" {
+                                let _ = db.update_download_status(&dl.id, "failed", None);
+                                println!("[Startup] Recovered stuck download: {} (was {})", dl.title, dl.status);
+                            }
+                        }
+                    }
+                }
+            }
+
             // Handle autostart by default (if not already set)
             let app_state = app.state::<AppState>();
             if let Ok(db) = app_state.db.lock() {

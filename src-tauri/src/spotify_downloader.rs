@@ -23,6 +23,8 @@ pub struct SpotifyDownloadProgress {
     pub total_tracks: Option<i32>,
     pub completed_tracks: Option<i32>,
     pub speed: String,
+    #[serde(default)]
+    pub error_message: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -571,8 +573,12 @@ impl SpotifyDownloader {
         
         // Add binaries directory to PATH
         let current_path = std::env::var("PATH").unwrap_or_default();
-        let new_path = format!("{};{}", binaries_dir.replace("/", "\\"), current_path);
-        
+        #[cfg(windows)]
+        let path_sep = ";";
+        #[cfg(not(windows))]
+        let path_sep = ":";
+        let new_path = format!("{}{}{}", binaries_dir.replace("/", "\\"), path_sep, current_path);
+
         let output = Self::create_hidden_command(&spotdl_path_clean)
             .args([
                 "save",
@@ -708,6 +714,7 @@ impl SpotifyDownloader {
             total_tracks: None,
             completed_tracks: Some(0),
             speed: "Searching...".to_string(),
+            error_message: None,
         });
 
         // Step 1: Use SpotDL to get track metadata including YouTube URL
@@ -715,7 +722,11 @@ impl SpotifyDownloader {
         
         // Clean paths and set PATH for SpotDL
         let current_path = std::env::var("PATH").unwrap_or_default();
-        let new_path = format!("{};{}", binaries_dir.replace("/", "\\"), current_path);
+        #[cfg(windows)]
+        let path_sep = ";";
+        #[cfg(not(windows))]
+        let path_sep = ":";
+        let new_path = format!("{}{}{}", binaries_dir.replace("/", "\\"), path_sep, current_path);
         
         println!("[SpotDL] Getting track info for: {}", redact_url(&request.url));
         
@@ -761,11 +772,14 @@ impl SpotifyDownloader {
             total_tracks: Some(total_tracks as i32),
             completed_tracks: Some(0),
             speed: "Starting download...".to_string(),
+            error_message: None,
         });
 
         // Step 2: Download each track using yt-dlp
-        let yt_dlp_path = binaries_dir.clone() + "/yt-dlp.exe";
-        let ffmpeg_path = binaries_dir.clone() + "/ffmpeg.exe";
+        let yt_dlp_binary = if cfg!(windows) { "yt-dlp.exe" } else { "yt-dlp" };
+        let yt_dlp_path = binaries_dir.clone() + "/" + yt_dlp_binary;
+        let ffmpeg_binary = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
+        let ffmpeg_path = binaries_dir.clone() + "/" + ffmpeg_binary;
         let spotdl_for_url = spotdl_path_clean.clone();
         let binaries_for_spawn = binaries_dir.clone();
         let path_for_spawn = new_path.clone();
@@ -780,7 +794,7 @@ impl SpotifyDownloader {
 
         tokio::spawn(async move {
             let mut completed = 0;
-            let mut last_error: Option<String> = None;
+            let mut all_errors: Vec<String> = Vec::new();
 
             for (index, track) in tracks.iter().enumerate() {
                 // Check for cancellation
@@ -793,6 +807,7 @@ impl SpotifyDownloader {
                         total_tracks: Some(total_tracks as i32),
                         completed_tracks: Some(completed),
                         speed: String::new(),
+                        error_message: None,
                     });
                     return;
                 }
@@ -821,10 +836,17 @@ impl SpotifyDownloader {
                     total_tracks: Some(total_tracks as i32),
                     completed_tracks: Some(completed),
                     speed: format!("Track {}/{}", index + 1, total_tracks),
+                    error_message: None,
                 });
 
                 // Use spotdl url command to get the YouTube URL
-                let url_result = Command::new(&spotdl_for_url)
+                let mut url_cmd = Command::new(&spotdl_for_url);
+                #[cfg(windows)]
+                {
+                    use std::os::windows::process::CommandExt;
+                    url_cmd.creation_flags(0x08000000);
+                }
+                let url_result = url_cmd
                     .args(["url", spotify_url])
                     .current_dir(&binaries_for_spawn)
                     .env("PATH", &path_for_spawn)
@@ -842,10 +864,12 @@ impl SpotifyDownloader {
                     Ok(output) => {
                         let stderr = String::from_utf8_lossy(&output.stderr);
                         println!("[SpotDL] Failed to get YouTube URL: {}", redact_external_output(&stderr));
+                        all_errors.push(format!("Failed to get YouTube URL for: {} ({})", display_name, stderr.trim()));
                         None
                     }
                     Err(e) => {
                         println!("[SpotDL] Error getting YouTube URL: {}", e);
+                        all_errors.push(format!("Error getting YouTube URL for {}: {}", display_name, e));
                         None
                     }
                 };
@@ -861,6 +885,7 @@ impl SpotifyDownloader {
                         total_tracks: Some(total_tracks as i32),
                         completed_tracks: Some(completed),
                         speed: "Downloading from YouTube...".to_string(),
+                        error_message: None,
                     });
 
                     // Use yt-dlp to download the audio from YouTube
@@ -918,7 +943,13 @@ impl SpotifyDownloader {
                     println!("[SpotDL] Running yt-dlp with args: {:?}", redacted_args);
 
                     // Spawn yt-dlp with piped stdout/stderr for sub-track progress
-                    let spawn_result = Command::new(&yt_dlp_path)
+                    let mut ytdlp_cmd = Command::new(&yt_dlp_path);
+                    #[cfg(windows)]
+                    {
+                        use std::os::windows::process::CommandExt;
+                        ytdlp_cmd.creation_flags(0x08000000);
+                    }
+                    let spawn_result = ytdlp_cmd
                         .args(&args)
                         .stdout(Stdio::piped())
                         .stderr(Stdio::piped())
@@ -948,6 +979,7 @@ impl SpotifyDownloader {
                                             total_tracks: Some(total_tracks as i32),
                                             completed_tracks: Some(completed),
                                             speed: String::new(),
+                                            error_message: None,
                                         });
                                         return;
                                     }
@@ -967,6 +999,7 @@ impl SpotifyDownloader {
                                                             total_tracks: Some(total_tracks as i32),
                                                             completed_tracks: Some(completed),
                                                             speed: format!("{}%", track_pct as i32),
+                                                            error_message: None,
                                                         });
                                                         last_emit_at = Instant::now();
                                                     }
@@ -995,6 +1028,7 @@ impl SpotifyDownloader {
                                                             total_tracks: Some(total_tracks as i32),
                                                             completed_tracks: Some(completed),
                                                             speed: format!("{}%", track_pct as i32),
+                                                            error_message: None,
                                                         });
                                                         last_emit_at = Instant::now();
                                                     }
@@ -1022,22 +1056,22 @@ impl SpotifyDownloader {
                                     if !error_output.is_empty() {
                                         println!("[SpotDL] yt-dlp errors: {}", redact_external_output(&error_output));
                                     }
-                                    last_error = Some(format!("Failed to download {}", display_name));
+                                    all_errors.push(format!("Failed to download {}", display_name));
                                 }
                                 Err(e) => {
                                     println!("[SpotDL] Error waiting for yt-dlp: {}", e);
-                                    last_error = Some(format!("Error: {}", e));
+                                    all_errors.push(format!("Error waiting for yt-dlp: {}", e));
                                 }
                             }
                         }
                         Err(e) => {
                             println!("[SpotDL] Error spawning yt-dlp: {}", e);
-                            last_error = Some(format!("Error: {}", e));
+                            all_errors.push(format!("Error spawning yt-dlp for {}: {}", display_name, e));
                         }
                     }
                 } else {
                     println!("[SpotDL] No YouTube URL found for: {}", display_name);
-                    last_error = Some(format!("No YouTube URL found for: {}", display_name));
+                    all_errors.push(format!("No YouTube URL found for: {}", display_name));
                 }
 
                 let _ = app.emit("spotify-download-progress", SpotifyDownloadProgress {
@@ -1048,6 +1082,7 @@ impl SpotifyDownloader {
                     total_tracks: Some(total_tracks as i32),
                     completed_tracks: Some(completed),
                     speed: "Downloading...".to_string(),
+                    error_message: None,
                 });
             }
 
@@ -1058,20 +1093,36 @@ impl SpotifyDownloader {
             }
 
             // Emit final status
+            let error_message = if all_errors.is_empty() {
+                None
+            } else {
+                Some(all_errors.join("; "))
+            };
+
             let final_status = if completed > 0 { "completed" } else { "failed" };
-            
+
+            let current_track_msg = if completed > 0 && completed < total_tracks as i32 {
+                Some(format!(
+                    "{} of {} tracks downloaded. Failed tracks: {}",
+                    completed,
+                    total_tracks,
+                    all_errors.join(", ")
+                ))
+            } else if completed > 0 {
+                Some(format!("Downloaded {} tracks", completed))
+            } else {
+                all_errors.first().cloned()
+            };
+
             let _ = app.emit("spotify-download-progress", SpotifyDownloadProgress {
                 id: id.clone(),
                 progress: if completed > 0 { 100.0 } else { 0.0 },
                 status: final_status.to_string(),
-                current_track: if completed > 0 { 
-                    Some(format!("Downloaded {} tracks", completed)) 
-                } else { 
-                    last_error 
-                },
+                current_track: current_track_msg,
                 total_tracks: Some(total_tracks as i32),
                 completed_tracks: Some(completed),
                 speed: String::new(),
+                error_message,
             });
         });
 

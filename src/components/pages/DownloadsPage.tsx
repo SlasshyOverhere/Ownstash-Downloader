@@ -26,6 +26,7 @@ interface DownloadItem extends DownloadType {
     speed?: string;
     eta?: string;
     engine_badge?: string;  // "SNDE ACCELERATED", "SNDE SAFE", or "MEDIA ENGINE"
+    error_message?: string;
 }
 
 const clampProgress = (value: number): number => {
@@ -255,9 +256,9 @@ const DownloadCard = memo(function DownloadCard({ item, progress, onCancel, onDe
 
                     {/* Failed indicator */}
                     {status === 'failed' && (
-                        <div className="mt-2 flex items-center gap-2 text-white/50 text-sm">
-                            <AlertCircle className="size-4" />
-                            <span>Download failed</span>
+                        <div className="mt-2 flex items-start gap-2 text-white/50 text-sm">
+                            <AlertCircle className="size-4 shrink-0 mt-0.5" />
+                            <span>{progress?.error_message || item.error_message || 'Download failed'}</span>
                         </div>
                     )}
 
@@ -358,6 +359,7 @@ export function DownloadsPage() {
                             ? `${progress.completed_tracks}/${progress.total_tracks} tracks`
                             : '',
                         status: progress.status,
+                        error_message: progress.error_message,
                     };
                     const previousProgress = prev.get(progress.id);
                     const stabilized = stabilizeProgressEvent(nextProgress, previousProgress);

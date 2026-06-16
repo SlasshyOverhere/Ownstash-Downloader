@@ -20,8 +20,19 @@ const EXPECTED_HASHES: &[(&str, &str)] = &[
     // ("yt-dlp", "PLACEHOLDER_YTDLP_LINUX_SHA256"),
 ];
 
-fn verify_binary_hashes(binaries_dir: &Path) -> bool {
-    let mut all_ok = true;
+/// Binaries from rolling-release sources whose checksums are expected to change
+/// frequently. A mismatch for these produces a warning but does not abort the build.
+const ROLLING_RELEASE_BINARIES: &[&str] = &[
+    "ffmpeg.exe", "ffprobe.exe", "ffmpeg", "ffprobe",
+];
+
+/// Verify checksums of all present binaries.
+/// Returns `(pinned_ok, rolling_ok)`:
+///   - `pinned_ok`  — false if any pinned binary (yt-dlp, spotdl) mismatched
+///   - `rolling_ok` — false if any rolling-release binary (ffmpeg, ffprobe) mismatched
+fn verify_binary_hashes(binaries_dir: &Path) -> (bool, bool) {
+    let mut pinned_ok = true;
+    let mut rolling_ok = true;
     for (name, expected_hash) in EXPECTED_HASHES {
         let path = binaries_dir.join(name);
         if !path.exists() {
@@ -38,7 +49,11 @@ fn verify_binary_hashes(binaries_dir: &Path) -> bool {
             Ok(d) => d,
             Err(e) => {
                 println!("cargo:warning=Failed to read {}: {}", name, e);
-                all_ok = false;
+                if ROLLING_RELEASE_BINARIES.contains(name) {
+                    rolling_ok = false;
+                } else {
+                    pinned_ok = false;
+                }
                 continue;
             }
         };
@@ -50,17 +65,21 @@ fn verify_binary_hashes(binaries_dir: &Path) -> bool {
                 "cargo:warning=SECURITY: Checksum mismatch for {}! Expected {}, got {}. Binary may be tampered.",
                 name, expected_hash, actual
             );
-            all_ok = false;
+            if ROLLING_RELEASE_BINARIES.contains(name) {
+                rolling_ok = false;
+            } else {
+                pinned_ok = false;
+            }
         }
     }
-    all_ok
+    (pinned_ok, rolling_ok)
 }
 
 fn main() {
     let binaries_dir = Path::new("binaries");
 
     let required_binaries = if cfg!(target_os = "windows") {
-        vec!["yt-dlp.exe", "ffmpeg.exe", "ffprobe.exe"]
+        vec!["yt-dlp.exe", "ffmpeg.exe", "ffprobe.exe", "spotdl.exe"]
     } else if cfg!(target_os = "macos") {
         vec!["yt-dlp_macos", "ffmpeg", "ffprobe"]
     } else {
@@ -101,9 +120,16 @@ fn main() {
         }
     }
 
-    // Verify checksums of all present binaries — halt build on mismatch
-    if binaries_dir.exists() && !verify_binary_hashes(binaries_dir) {
-        panic!("SECURITY: Binary checksum verification failed. Build aborted. See warnings above.");
+    // Verify checksums of all present binaries — warn on mismatch for rolling-release
+    // binaries (ffmpeg/ffprobe), but only panic for pinned binaries (yt-dlp, spotdl).
+    if binaries_dir.exists() {
+        let (pinned_ok, rolling_ok) = verify_binary_hashes(binaries_dir);
+        if !rolling_ok {
+            println!("cargo:warning=SECURITY: Rolling-release binary checksums (ffmpeg/ffprobe) mismatched. Review warnings above.");
+        }
+        if !pinned_ok {
+            panic!("SECURITY: Pinned binary checksum verification failed (yt-dlp/spotdl). Build aborted. See warnings above.");
+        }
     }
 
     tauri_build::build()

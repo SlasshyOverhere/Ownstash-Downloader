@@ -79,6 +79,7 @@ export interface DownloadProgress {
     engine_badge?: string;  // "SNDE ACCELERATED", "SNDE SAFE", or "MEDIA ENGINE"
     active_connections?: number;  // Number of active SNDE parallel connections
     quality?: ProgressQuality;
+    error_message?: string;
 }
 
 export interface DownloadRequest {
@@ -95,6 +96,7 @@ export interface DownloadRequest {
     audio_format: string;
     video_format: string;
     use_sponsorblock: boolean;
+    cookies_from_browser?: string;
 }
 
 export interface YtDlpInfo {
@@ -152,6 +154,7 @@ export interface SpotifyDownloadProgress {
     total_tracks?: number;
     completed_tracks?: number;
     speed: string;
+    error_message?: string;
 }
 
 export interface SpotifyDownloadRequest {
@@ -350,8 +353,8 @@ export const api = {
     },
 
     // Media Info & Downloading - Rust backend
-    async getMediaInfo(url: string, enableSponsorblock?: boolean): Promise<MediaInfo> {
-        return invoke('get_media_info', { url, enableSponsorblock });
+    async getMediaInfo(url: string, enableSponsorblock?: boolean, cookiesFromBrowser?: string): Promise<MediaInfo> {
+        return invoke('get_media_info', { url, enableSponsorblock, cookiesFromBrowser });
     },
 
     async probeDirectFile(url: string): Promise<DirectFileInfo> {

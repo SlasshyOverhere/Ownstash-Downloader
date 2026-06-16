@@ -17,7 +17,7 @@ import {
     Scissors
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { FormatInfo, MediaInfo, formatBytes, formatDuration } from '@/services/api';
+import { api, FormatInfo, MediaInfo, formatBytes, formatDuration } from '@/services/api';
 
 interface MediaInfoModalProps {
     isOpen: boolean;
@@ -267,6 +267,19 @@ export function MediaInfoModal({
             }
         }
     }, [maxVideoHeight, mediaInfo.formats]);
+
+    // Load saved SponsorBlock preference
+    useEffect(() => {
+        const loadSetting = async () => {
+            try {
+                const saved = await api.getSetting('use_sponsorblock');
+                if (saved !== null) setUseSponsorblock(saved === 'true');
+            } catch (e) {
+                console.warn('Failed to load SponsorBlock setting:', e);
+            }
+        };
+        loadSetting();
+    }, []);
 
     // SponsorBlock: always starts disabled, user can toggle on per-session
 

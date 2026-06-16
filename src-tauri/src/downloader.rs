@@ -19,7 +19,7 @@ use crate::snde::{SNDEEngine, SNDERequest, SNDE_ENGINE};
 /// Returns Ok(parsed_url) on success, Err(message) on failure.
 fn validate_url(raw: &str) -> Result<Url, String> {
     // Reject yt-dlp flag injection: URLs must not contain "--" or start with "-"
-    if raw.starts_with('-') || raw.contains("--") {
+    if raw.starts_with('-') {
         return Err("URL contains invalid flag-like patterns".into());
     }
 
@@ -127,6 +127,8 @@ pub struct DownloadProgress {
     /// Engine badge for UI display: "SNDE ACCELERATED", "SNDE SAFE", or "MEDIA ENGINE"
     #[serde(default)]
     pub engine_badge: Option<String>,
+    #[serde(default)]
+    pub error_message: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -144,6 +146,8 @@ pub struct DownloadRequest {
     pub audio_format: String,
     pub video_format: String,
     pub use_sponsorblock: bool,
+    #[serde(default)]
+    pub cookies_from_browser: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -572,7 +576,7 @@ impl Downloader {
         })
     }
 
-    pub async fn get_media_info(&self, url: &str, check_sponsorblock: bool) -> Result<MediaInfo, String> {
+    pub async fn get_media_info(&self, url: &str, check_sponsorblock: bool, cookies_from_browser: Option<&str>) -> Result<MediaInfo, String> {
         // Validate URL before any yt-dlp invocation (anti-SSRF + anti-injection)
         let _parsed_url = validate_url(url)?;
 
@@ -610,6 +614,15 @@ impl Downloader {
         if check_sponsorblock {
             args.push("--sponsorblock-mark".to_string());
             args.push("all".to_string());
+        }
+
+        // Use browser cookies for age-restricted or login-required content
+        if let Some(browser) = cookies_from_browser {
+            if !browser.is_empty() {
+                args.push("--cookies-from-browser".to_string());
+                args.push(browser.to_string());
+                println!("[Downloader] Using cookies from browser: {}", browser);
+            }
         }
 
         args.push("--".to_string());
@@ -752,6 +765,7 @@ impl Downloader {
             total_bytes: routing_decision.file_size.map(|s| s as i64),
             filename: None,
             engine_badge: Some(engine_badge.clone()),
+            error_message: None,
         });
         
         // === V2.0: Route to SNDE for static files ===
@@ -848,6 +862,9 @@ impl Downloader {
             println!("[Downloader] Warning: FFmpeg not found. Some downloads may fail.");
         }
 
+        // Prevent silent data loss when two downloads share the same title
+        args.push("--no-overwrites".to_string());
+
         // Output template
         let output_template = format!("{}/%(title)s.%(ext)s", request.output_path);
         args.extend(["-o".to_string(), output_template]);
@@ -866,20 +883,38 @@ impl Downloader {
                 args.extend(["-f".to_string(), format.clone()]);
             }
         } else if let Some(quality) = &request.quality {
-            // Use simpler format strings that are more reliable
-            let format_selector = match quality.as_str() {
-                "best" | "4k" | "2160p" =>
-                    "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
-                "1080p" =>
-                    "bestvideo[vcodec^=avc1][height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
-                "720p" =>
-                    "bestvideo[vcodec^=avc1][height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best",
-                "480p" =>
-                    "bestvideo[vcodec^=avc1][height<=480][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=480]+bestaudio/best[height<=480]/best",
-                "360p" =>
-                    "bestvideo[vcodec^=avc1][height<=360][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=360]+bestaudio/best[height<=360]/best",
-                _ =>
-                    "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+            let is_youtube = request.url.contains("youtube.com") || request.url.contains("youtu.be");
+            let format_selector = if is_youtube {
+                match quality.as_str() {
+                    "best" | "4k" | "2160p" =>
+                        "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+                    "1080p" =>
+                        "bestvideo[vcodec^=avc1][height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+                    "720p" =>
+                        "bestvideo[vcodec^=avc1][height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+                    "480p" =>
+                        "bestvideo[vcodec^=avc1][height<=480][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=480]+bestaudio/best[height<=480]/best",
+                    "360p" =>
+                        "bestvideo[vcodec^=avc1][height<=360][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=360]+bestaudio/best[height<=360]/best",
+                    _ =>
+                        "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+                }
+            } else {
+                // Simpler format selectors for non-YouTube sites that may not support codec filtering
+                match quality.as_str() {
+                    "best" | "4k" | "2160p" =>
+                        "bestvideo[height<=2160]+bestaudio/bestvideo+bestaudio/best",
+                    "1080p" =>
+                        "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+                    "720p" =>
+                        "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+                    "480p" =>
+                        "bestvideo[height<=480]+bestaudio/best[height<=480]/best",
+                    "360p" =>
+                        "bestvideo[height<=360]+bestaudio/best[height<=360]/best",
+                    _ =>
+                        "bestvideo+bestaudio/best",
+                }
             };
             args.extend(["-f".to_string(), format_selector.to_string()]);
             // Use user-selected output format when merging
@@ -908,6 +943,15 @@ impl Downloader {
         if request.use_sponsorblock {
             args.push("--sponsorblock-remove".to_string());
             args.push("all".to_string());
+        }
+
+        // Use browser cookies for age-restricted or login-required content
+        if let Some(ref browser) = request.cookies_from_browser {
+            if !browser.is_empty() {
+                args.push("--cookies-from-browser".to_string());
+                args.push(browser.clone());
+                println!("[Downloader] Using cookies from browser: {}", browser);
+            }
         }
 
         // Add URL (after `--` separator to prevent yt-dlp flag injection)
@@ -960,6 +1004,7 @@ impl Downloader {
                             total_bytes: None,
                             filename: None,
                             engine_badge: Some(engine_badge.clone()),
+                            error_message: None,
                         });
                         break;
                     }
@@ -1026,22 +1071,45 @@ impl Downloader {
             HEALTH_REGISTRY.unregister_download(&id);
 
             // Emit final status
-            let final_status = match status {
-                Ok(exit_status) if exit_status.success() => "completed",
-                _ => "failed",
+            let (final_status, failure_error_msg) = match status {
+                Ok(exit_status) if exit_status.success() => ("completed", None),
+                Ok(exit_status) => {
+                    let code = exit_status.code().unwrap_or(-1);
+                    let stderr_msg = error_output.trim().to_string();
+                    let msg = if !stderr_msg.is_empty() {
+                        stderr_msg
+                    } else {
+                        format!("yt-dlp exited with code {}", code)
+                    };
+                    ("failed", Some(msg))
+                }
+                Err(e) => {
+                    ("failed", Some(format!("Failed to run yt-dlp: {}", e)))
+                }
             };
 
             // Clean up standalone subtitle files if subtitles were embedded
+            // Only delete subtitle files that were created very recently (within last 2 minutes)
+            // to avoid deleting pre-existing subtitle files in the output directory
             if should_cleanup_subs && final_status == "completed" {
-                // Delete .vtt, .srt, .ass, .sub files from the output directory
+                let now = std::time::SystemTime::now();
                 if let Ok(entries) = std::fs::read_dir(&output_path) {
                     for entry in entries.flatten() {
                         let path = entry.path();
                         if let Some(ext) = path.extension() {
                             let ext_lower = ext.to_string_lossy().to_lowercase();
                             if ext_lower == "vtt" || ext_lower == "srt" || ext_lower == "ass" || ext_lower == "sub" {
-                                let _ = std::fs::remove_file(&path);
-                                println!("[Downloader] Cleaned up subtitle file: {:?}", path);
+                                // Only delete subtitle files that were created very recently (within last 2 minutes)
+                                if let Ok(metadata) = path.metadata() {
+                                    if let Ok(modified) = metadata.modified() {
+                                        if let Ok(elapsed) = now.duration_since(modified) {
+                                            if elapsed.as_secs() < 120 {
+                                                let _ = std::fs::remove_file(&path);
+                                                println!("[Downloader] Cleaned up recent subtitle file: {:?}", path);
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1074,6 +1142,7 @@ impl Downloader {
                 total_bytes: final_file_size,
                 filename: final_filename,
                 engine_badge: Some(engine_badge.clone()),
+                error_message: failure_error_msg,
             });
         });
 
@@ -1191,6 +1260,7 @@ fn handle_download_output_line(
                 total_bytes: None,
                 filename: None,
                 engine_badge: Some(engine_badge.to_string()),
+                error_message: None,
             };
             let _ = app.emit("download-progress", event);
             *last_emit_at = Instant::now();
@@ -1221,6 +1291,7 @@ fn handle_download_output_line(
             total_bytes: None,
             filename: None,
             engine_badge: Some(engine_badge.to_string()),
+            error_message: None,
         };
         let _ = app.emit("download-progress", event);
         *last_emit_at = Instant::now();
@@ -1437,9 +1508,9 @@ pub async fn update_yt_dlp(app_handle: AppHandle) -> Result<YtDlpInfo, String> {
 }
 
 #[tauri::command]
-pub async fn get_media_info(app_handle: AppHandle, url: String, enable_sponsorblock: Option<bool>) -> Result<MediaInfo, String> {
+pub async fn get_media_info(app_handle: AppHandle, url: String, enable_sponsorblock: Option<bool>, cookies_from_browser: Option<String>) -> Result<MediaInfo, String> {
     let downloader = Downloader::new(&app_handle);
-    downloader.get_media_info(&url, enable_sponsorblock.unwrap_or(false)).await
+    downloader.get_media_info(&url, enable_sponsorblock.unwrap_or(false), cookies_from_browser.as_deref()).await
 }
 
 /// Probe a direct file URL to get size and filename without using yt-dlp

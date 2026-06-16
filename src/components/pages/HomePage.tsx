@@ -96,6 +96,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
     const [showSpotifyModal, setShowSpotifyModal] = useState(false);
     const [stats, setStats] = useState({ downloads: 0, storage: '0 MB', platforms: 0 });
     const downloadPathRef = useRef<string>('');
+    const cookiesFromBrowserRef = useRef<string>('');
     const hasConsumedExtensionRef = useRef(false);
 
     const detectedPlatform = detectPlatform(url);
@@ -104,6 +105,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
     useEffect(() => {
         loadStats();
         loadDownloadPath();
+        loadCookiesSetting();
 
         // Reload download path when component becomes visible/active
         // This ensures changes from settings are reflected
@@ -200,6 +202,19 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
         }
     };
 
+    const loadCookiesSetting = async () => {
+        try {
+            const saved = await api.getSetting('cookies_from_browser');
+            if (saved && saved !== 'none') {
+                cookiesFromBrowserRef.current = saved;
+            } else {
+                cookiesFromBrowserRef.current = '';
+            }
+        } catch (err) {
+            console.error('Failed to load cookies setting:', err);
+        }
+    };
+
     const formatStorageSize = (bytes: number): string => {
         if (bytes === 0) return '0 MB';
         const mb = bytes / (1024 * 1024);
@@ -232,7 +247,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                 setShowSpotifyModal(true);
                 toast.success(`Found: ${info.title}`);
             } catch (err) {
-                const errorMsg = err instanceof Error ? err.message : 'Failed to fetch Spotify info';
+                const errorMsg = typeof err === 'string' ? err : (err instanceof Error ? err.message : 'Failed to fetch Spotify info');
                 setError(errorMsg);
                 toast.error(errorMsg);
             } finally {
@@ -244,7 +259,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
 
             try {
                 // Fast metadata path: skip SponsorBlock chapter probing during info fetch.
-                const info = await api.getMediaInfo(targetUrl, false);
+                const info = await api.getMediaInfo(targetUrl, false, cookiesFromBrowserRef.current || undefined);
 
                 // For direct file hosting services, probe for accurate file size
                 const directFilePlatforms = ['googledrive', 'generic', 'onedrive', 'dropbox', 'mega', 'mediafire'];
@@ -269,7 +284,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                 setShowModal(true);
                 toast.success(`Found: ${info.title}`);
             } catch (err) {
-                const errorMsg = err instanceof Error ? err.message : 'Failed to fetch media info';
+                const errorMsg = typeof err === 'string' ? err : (err instanceof Error ? err.message : 'Failed to fetch media info');
                 setError(errorMsg);
                 toast.error(errorMsg);
             } finally {
@@ -305,7 +320,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                 setShowSpotifyModal(true);
                 toast.success(`Found: ${info.title}`);
             } catch (err) {
-                const errorMsg = err instanceof Error ? err.message : 'Failed to fetch Spotify info';
+                const errorMsg = typeof err === 'string' ? err : (err instanceof Error ? err.message : 'Failed to fetch Spotify info');
                 setError(errorMsg);
                 toast.error(errorMsg);
             } finally {
@@ -318,7 +333,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
             try {
                 // Fetch media info first
                 // Fast metadata path: skip SponsorBlock chapter probing during info fetch.
-                const info = await api.getMediaInfo(url, false);
+                const info = await api.getMediaInfo(url, false, cookiesFromBrowserRef.current || undefined);
 
                 // For direct file hosting services, also probe the URL directly for accurate file size
                 const directFilePlatforms = ['googledrive', 'generic', 'onedrive', 'dropbox', 'mega', 'mediafire'];
@@ -347,7 +362,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                 setShowModal(true);
                 toast.success(`Found: ${info.title}`);
             } catch (err) {
-                const errorMsg = err instanceof Error ? err.message : 'Failed to fetch media info';
+                const errorMsg = typeof err === 'string' ? err : (err instanceof Error ? err.message : 'Failed to fetch media info');
                 setError(errorMsg);
                 toast.error(errorMsg);
             } finally {
@@ -394,6 +409,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                 audio_format: options.audioFormat,
                 video_format: options.videoFormat,
                 use_sponsorblock: options.useSponsorblock,
+                cookies_from_browser: cookiesFromBrowserRef.current || undefined,
             };
 
             // Fire and forget - don't await the download completion
@@ -416,7 +432,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                 onNavigateToDownloads();
             }
         } catch (err) {
-            const errorMsg = err instanceof Error ? err.message : 'Failed to start download';
+            const errorMsg = typeof err === 'string' ? err : (err instanceof Error ? err.message : 'Failed to start download');
             toast.error(errorMsg);
         } finally {
             setIsDownloading(false);
@@ -473,7 +489,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                 }, 500);
             }
         } catch (err) {
-            const errorMsg = err instanceof Error ? err.message : 'Failed to start Spotify download';
+            const errorMsg = typeof err === 'string' ? err : (err instanceof Error ? err.message : 'Failed to start Spotify download');
             toast.error(errorMsg);
         } finally {
             setIsDownloading(false);
