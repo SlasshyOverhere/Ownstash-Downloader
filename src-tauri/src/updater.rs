@@ -1,4 +1,4 @@
-// Auto-update functionality for Ownstash Downloader
+// Auto-update functionality for Slasshy Downloader
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 use tauri_plugin_updater::UpdaterExt;

@@ -53,7 +53,7 @@ fn ensure_main_window(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
         MAIN_WINDOW_LABEL,
         tauri::WebviewUrl::App("index.html".into()),
     )
-    .title("Ownstash Downloader")
+    .title("Slasshy Downloader")
     .inner_size(1280.0, 800.0)
     .min_inner_size(900.0, 600.0)
     .resizable(true)
@@ -121,7 +121,7 @@ pub fn run() {
             
             // Check if any argument is an OAuth callback URL
             for arg in argv.iter() {
-                if arg.contains("ownstash://auth") || arg.contains("oauth") || arg.contains("callback") {
+                if arg.contains("slasshy://auth") || arg.contains("oauth") || arg.contains("callback") {
                     println!("[SingleInstance] Found OAuth callback (redacted)");
                     // Emit the OAuth callback to the frontend
                     let _ = app.emit("oauth-deep-link", arg.clone());
@@ -410,7 +410,7 @@ pub fn run() {
         });
 }
 
-/// Parse a deep link URL like ownstash://download?url=<encoded_url>
+/// Parse a deep link URL like slasshy://download?url=<encoded_url>
 fn parse_deep_link(deep_link: &str) -> Option<String> {
     // Remove quotes if present
     let clean = deep_link.trim().trim_matches('"').trim_matches('[').trim_matches(']');

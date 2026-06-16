@@ -45,7 +45,7 @@ jobs:
         run: |
           if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
             echo "::error::Missing repository secret TAURI_SIGNING_PRIVATE_KEY."
-            echo "::error::Generate one with: npm run tauri signer generate -- -w ~/.tauri/ownstash.key"
+            echo "::error::Generate one with: npm run tauri signer generate -- -w ~/.tauri/slasshy.key"
             exit 1
           fi
 
@@ -96,20 +96,20 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: Ownstash Downloader ${{ github.ref_name }}
+          releaseName: SlasshyDownloader ${{ github.ref_name }}
           releaseBody: |
             ## Automated Release
             - Built from tag `${{ github.ref_name }}`
             - Uses synchronized app versions across package.json, Cargo.toml, and tauri.conf.json
             - Includes signed updater assets and `latest.json`
             - Windows installer and updater bundles are attached below
-            - Stable latest installer URL: `https://github.com/${{ github.repository }}/releases/latest/download/ownstash-downloader-windows-x64-setup.exe`
+            - Stable latest installer URL: `https://github.com/${{ github.repository }}/releases/latest/download/slasshy-downloader-windows-x64-setup.exe`
           generateReleaseNotes: true
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           includeUpdaterJson: true
           updaterJsonPreferNsis: true
-          assetNamePattern: ownstash-downloader-windows-x64[setup][ext]
+          assetNamePattern: slasshy-downloader-windows-x64[setup][ext]
           retryAttempts: 2
 
       - name: Mark release as latest

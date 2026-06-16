@@ -21,7 +21,7 @@ const LOG_INJECTION_CHARS: &[char] = &[
 ///
 /// # Examples
 /// ```no_run
-/// use ownstash_downloader_lib::log_sanitizer::sanitize_for_log;
+/// use slasshy_downloader_lib::log_sanitizer::sanitize_for_log;
 /// let safe = sanitize_for_log("normal text");
 /// assert_eq!(safe, "normal text");
 ///
@@ -84,7 +84,7 @@ pub fn sanitize_for_log(input: &str) -> String {
 ///
 /// # Examples
 /// ```no_run
-/// use ownstash_downloader_lib::log_sanitizer::redact_url;
+/// use slasshy_downloader_lib::log_sanitizer::redact_url;
 /// let redacted = redact_url("https://example.com/path?token=secret");
 /// assert_eq!(redacted, "https://example.com");
 ///
@@ -148,7 +148,7 @@ const SENSITIVE_PATTERNS: &[&str] = &[
 ///
 /// # Examples
 /// ```no_run
-/// use ownstash_downloader_lib::log_sanitizer::redact_sensitive;
+/// use slasshy_downloader_lib::log_sanitizer::redact_sensitive;
 /// let safe = redact_sensitive("token=abc123&user=test");
 /// assert!(safe.contains("[REDACTED]"));
 /// assert!(safe.contains("user=test"));
@@ -202,7 +202,7 @@ pub fn redact_sensitive(input: &str) -> String {
 ///
 /// # Examples
 /// ```no_run
-/// use ownstash_downloader_lib::log_sanitizer::safe_log;
+/// use slasshy_downloader_lib::log_sanitizer::safe_log;
 /// let safe = safe_log("token=abc\nInjected line");
 /// assert!(!safe.contains("\n"));
 /// assert!(safe.contains("[REDACTED]"));

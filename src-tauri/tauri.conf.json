@@ -1,6 +1,6 @@
 {
     "$schema": "https://schema.tauri.app/config/2",
-    "productName": "Ownstash Downloader",
+    "productName": "SlasshyDownloader",
     "version": "1.0.8",
     "identifier": "com.ownstash.downloader",
     "build": {
@@ -19,7 +19,7 @@
         },
         "windows": [
             {
-                "title": "Ownstash Downloader",
+                "title": "SlasshyDownloader",
                 "width": 1280,
                 "height": 800,
                 "minWidth": 900,
@@ -46,7 +46,7 @@
         "resources": [],
         "category": "Utility",
         "shortDescription": "Fast desktop media downloader for 1000+ platforms",
-        "longDescription": "Ownstash Downloader is a desktop-first media downloader powered by yt-dlp and SpotDL, built for fast local downloads from supported platforms.",
+        "longDescription": "SlasshyDownloader is a desktop-first media downloader powered by yt-dlp and SpotDL, built for fast local downloads from supported platforms.",
         "windows": {
             "certificateThumbprint": null,
             "digestAlgorithm": "sha256",
@@ -60,14 +60,14 @@
         "updater": {
             "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU0NzZBMTkzNzYzQzlCQTQKUldTa216eDJrNkYyVkFqdGMzVGZLd0NtdXRRVG53ZXpVREx4ZkJOT0ROMXo2Ly9maGF0cUpMWmUK",
             "endpoints": [
-                "https://github.com/SlasshyOverhere/Ownstash-Downloader/releases/latest/download/latest.json"
+                "https://github.com/SlasshyOverhere/SlasshyDownloader/releases/latest/download/latest.json"
             ]
         },
         "deep-link": {
             "mobile": [],
             "desktop": {
                 "schemes": [
-                    "ownstash"
+                    "slasshy"
                 ]
             }
         }

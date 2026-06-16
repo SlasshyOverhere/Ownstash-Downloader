@@ -1,4 +1,4 @@
-//! SNDE - Ownstash Native Download Engine
+//! SNDE - Slasshy Native Download Engine
 //!
 //! A high-performance parallel download engine designed to maximize bandwidth utilization
 //! for static files (archives, executables, ISOs, direct media files).

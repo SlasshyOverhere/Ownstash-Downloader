@@ -288,7 +288,7 @@ impl Downloader {
 
     async fn fetch_latest_yt_dlp_version() -> Result<String, String> {
         let client = reqwest::Client::builder()
-            .user_agent("OwnstashDownloader/1.0")
+            .user_agent("SlasshyDownloader/1.0")
             .timeout(std::time::Duration::from_secs(20))
             .build()
             .map_err(|e| format!("Failed to initialize HTTP client: {}", e))?;
@@ -375,7 +375,7 @@ impl Downloader {
         app_handle: &AppHandle,
     ) -> Result<(), String> {
         let client = reqwest::Client::builder()
-            .user_agent("OwnstashDownloader/1.0")
+            .user_agent("SlasshyDownloader/1.0")
             .timeout(Duration::from_secs(600))
             .build()
             .map_err(|e| format!("Failed to initialize HTTP client: {}", e))?;
@@ -451,7 +451,7 @@ impl Downloader {
         };
 
         let client = reqwest::Client::builder()
-            .user_agent("OwnstashDownloader/1.0")
+            .user_agent("SlasshyDownloader/1.0")
             .timeout(Duration::from_secs(600))
             .build()
             .map_err(|e| format!("Failed to initialize HTTP client: {}", e))?;
@@ -559,7 +559,7 @@ impl Downloader {
 
     async fn download_binary(url: &str, target_path: &Path) -> Result<(), String> {
         let client = reqwest::Client::builder()
-            .user_agent("OwnstashDownloader/1.0")
+            .user_agent("SlasshyDownloader/1.0")
             .timeout(std::time::Duration::from_secs(180))
             .build()
             .map_err(|e| format!("Failed to initialize HTTP client: {}", e))?;
@@ -1864,8 +1864,8 @@ pub async fn get_supported_platforms() -> Result<Vec<String>, String> {
 pub async fn get_default_download_path(app_handle: AppHandle) -> Result<String, String> {
     // Try to get user's Downloads folder
     if let Some(download_dir) = dirs::download_dir() {
-        let ownstash_dir = download_dir.join("Ownstash Downloads");
-        return Ok(ownstash_dir.to_string_lossy().to_string());
+        let slasshy_dir = download_dir.join("Slasshy Downloads");
+        return Ok(slasshy_dir.to_string_lossy().to_string());
     }
     
     // Fallback to app data directory

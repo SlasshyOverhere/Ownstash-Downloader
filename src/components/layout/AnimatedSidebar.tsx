@@ -61,7 +61,7 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
             )}>
                 <img
                     src="/logo.png"
-                    alt="Ownstash logo"
+                    alt="Slasshy logo"
                     className="size-10 rounded-xl object-contain shadow-elegant"
                 />
                 <m.div
@@ -69,7 +69,7 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
                     className="overflow-hidden"
                 >
                     <h1 className="font-display font-bold text-lg gradient-text whitespace-nowrap">
-                        Ownstash
+                        Slasshy
                     </h1>
                     <p className="text-[10px] text-muted-foreground whitespace-nowrap">
                         Downloader

@@ -189,7 +189,7 @@ impl SpotifyDownloader {
 
     async fn download_binary(url: &str, target_path: &Path) -> Result<(), String> {
         let client = reqwest::Client::builder()
-            .user_agent("OwnstashDownloader/1.0")
+            .user_agent("SlasshyDownloader/1.0")
             .timeout(std::time::Duration::from_secs(180))
             .build()
             .map_err(|e| format!("Failed to initialize HTTP client: {}", e))?;
@@ -308,7 +308,7 @@ impl SpotifyDownloader {
 
     async fn fetch_latest_spotdl_version() -> Result<String, String> {
         let client = reqwest::Client::builder()
-            .user_agent("OwnstashDownloader/1.0")
+            .user_agent("SlasshyDownloader/1.0")
             .timeout(std::time::Duration::from_secs(20))
             .build()
             .map_err(|e| format!("Failed to initialize HTTP client: {}", e))?;
@@ -389,7 +389,7 @@ impl SpotifyDownloader {
 
     pub async fn update_spotdl(app_handle: &AppHandle) -> Result<SpotDlInfo, String> {
         let client = reqwest::Client::builder()
-            .user_agent("OwnstashDownloader/1.0")
+            .user_agent("SlasshyDownloader/1.0")
             .timeout(std::time::Duration::from_secs(30))
             .build()
             .map_err(|e| format!("Failed to initialize HTTP client: {}", e))?;

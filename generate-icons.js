@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const inputPath = path.join(__dirname, 'src-tauri', 'icons', 'ownstash downloader with bg.png');
+const inputPath = path.join(__dirname, 'src-tauri', 'icons', 'slasshy downloader with bg.png');
 const iconsDir = path.join(__dirname, 'src-tauri', 'icons');
 
 function getDarkPixelRanges(raw, width, height, channels, threshold = 80, minPixelsPerRow = 20) {

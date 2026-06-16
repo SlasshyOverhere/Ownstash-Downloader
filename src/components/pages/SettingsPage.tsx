@@ -756,7 +756,7 @@ export function SettingsPage() {
             >
                 <div className="space-y-3">
                     <p className="text-sm text-muted-foreground leading-relaxed border-b border-white/5 pb-3">
-                        Ownstash Downloader is a desktop-first media downloader that uses yt-dlp and SpotDL
+                        SlasshyDownloader is a desktop-first media downloader that uses yt-dlp and SpotDL
                         to fetch and save videos, audio, and playlists from supported platforms.
                     </p>
                     <SettingRow

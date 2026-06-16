@@ -3,7 +3,7 @@
 
 // Structured logging via tracing:
 //   RUST_LOG=trace / debug / info / warn / error
-//   RUST_LOG=ownstash_downloader_lib=debug  — app-specific level
+//   RUST_LOG=slasshy_downloader_lib=debug  — app-specific level
 //   RUST_LOG=off                             — disable tracing (println! still works)
 // Use tracing macros (info!, warn!, error!, debug!, trace!) in library code.
 // Use the security_audit! macro below for security-relevant events.
@@ -35,10 +35,10 @@ fn main() {
         .with_timer(tracing_subscriber::fmt::time::uptime())
         .init();
 
-    tracing::info!("Ownstash Downloader starting up");
+    tracing::info!("Slasshy Downloader starting up");
 
     // Set the Windows AppUserModelID so the volume mixer, taskbar, and jump lists
-    // show "Ownstash Downloader" instead of "WebView2".
+    // show "Slasshy Downloader" instead of "WebView2".
     #[cfg(target_os = "windows")]
     {
         use windows::core::PCWSTR;
@@ -49,5 +49,5 @@ fn main() {
         }
     }
 
-    ownstash_downloader_lib::run()
+    slasshy_downloader_lib::run()
 }

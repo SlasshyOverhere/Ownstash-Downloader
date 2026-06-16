@@ -96,7 +96,7 @@ export function SetupScreen({ onComplete }: { onComplete: () => void }) {
                         <Download className="size-8 text-primary" />
                     </div>
                     <h1 className="text-2xl font-display font-bold mb-2">
-                        Setting up Ownstash Downloader
+                        Setting up SlasshyDownloader
                     </h1>
                     <p className="text-muted-foreground text-sm">
                         Downloading required components. This only happens once.
