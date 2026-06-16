@@ -512,10 +512,6 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
             >
                 {/* Hero Section */}
                 <m.div variants={fadeInUp} className="text-center space-y-4 pt-8">
-                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass text-sm flex-wrap justify-center">
-                        <Sparkles className="size-4 text-primary" />
-                        <span className="text-muted-foreground">1000+ Platforms + Spotify</span>
-                    </div>
                     <h1 className="text-5xl font-display font-bold gradient-text">
                         Download Anything
                     </h1>
