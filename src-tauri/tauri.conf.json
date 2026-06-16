@@ -20,12 +20,11 @@
         "windows": [
             {
                 "title": "SlasshyDownloader",
-                "width": 1280,
-                "height": 800,
-                "minWidth": 900,
-                "minHeight": 600,
-                "resizable": true,
+                "width": 1283,
+                "height": 905,
+                "resizable": false,
                 "fullscreen": false,
+                "maximizable": false,
                 "decorations": false,
                 "transparent": false,
                 "center": true,

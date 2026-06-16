@@ -45,6 +45,12 @@
         "core:window:allow-hide",
         "core:window:allow-inner-size",
         "core:window:allow-outer-size",
-        "core:window:allow-set-content-protected"
+        "core:window:allow-set-content-protected",
+        "core:window:allow-set-size",
+        "core:window:allow-set-min-size",
+        "core:window:allow-set-max-size",
+        "core:window:allow-center",
+        "core:window:allow-primary-monitor",
+        "core:window:allow-available-monitors"
     ]
 }
