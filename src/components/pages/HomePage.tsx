@@ -511,7 +511,7 @@ export function HomePage({ onNavigateToDownloads, extensionUrl, onExtensionUrlCo
                 className="max-w-4xl mx-auto space-y-8"
             >
                 {/* Hero Section */}
-                <m.div variants={fadeInUp} className="text-center space-y-4 pt-8">
+                <m.div variants={fadeInUp} className="text-center space-y-4 pt-8 pb-2">
                     <h1 className="text-5xl font-display font-bold gradient-text">
                         Download Anything
                     </h1>
