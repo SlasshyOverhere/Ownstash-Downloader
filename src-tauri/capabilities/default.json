@@ -30,6 +30,21 @@
         "notification:allow-request-permission",
         "notification:allow-notify",
         "notification:allow-permission-state",
-        "autostart:default"
+        "autostart:default",
+        "core:window:default",
+        "core:window:allow-start-dragging",
+        "core:window:allow-set-decorations",
+        "core:window:allow-minimize",
+        "core:window:allow-maximize",
+        "core:window:allow-unmaximize",
+        "core:window:allow-toggle-maximize",
+        "core:window:allow-close",
+        "core:window:allow-set-focus",
+        "core:window:allow-is-maximized",
+        "core:window:allow-show",
+        "core:window:allow-hide",
+        "core:window:allow-inner-size",
+        "core:window:allow-outer-size",
+        "core:window:allow-set-content-protected"
     ]
 }
