@@ -48,7 +48,7 @@ export function AnimatedSidebar({ currentPage, onPageChange }: AnimatedSidebarPr
     return (
         <LazyMotion features={domAnimation}>
         <m.aside
-            className="relative h-screen flex flex-col glass border-r border-white/5 overflow-hidden"
+            className="relative h-full flex flex-col glass border-r border-white/5 overflow-hidden"
             variants={sidebarVariants}
             initial="expanded"
             animate={isExpanded ? 'expanded' : 'collapsed'}
