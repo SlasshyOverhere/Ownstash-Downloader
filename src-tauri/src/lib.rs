@@ -53,7 +53,7 @@ fn ensure_main_window(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
         MAIN_WINDOW_LABEL,
         tauri::WebviewUrl::App("index.html".into()),
     )
-    .title("Ownstash Downloader")
+    .title("Slasshy Downloader")
     .inner_size(1280.0, 800.0)
     .min_inner_size(900.0, 600.0)
     .resizable(true)
@@ -121,7 +121,7 @@ pub fn run() {
             
             // Check if any argument is an OAuth callback URL
             for arg in argv.iter() {
-                if arg.contains("ownstash://auth") || arg.contains("oauth") || arg.contains("callback") {
+                if arg.contains("slasshy://auth") || arg.contains("oauth") || arg.contains("callback") {
                     println!("[SingleInstance] Found OAuth callback (redacted)");
                     // Emit the OAuth callback to the frontend
                     let _ = app.emit("oauth-deep-link", arg.clone());
@@ -152,6 +152,22 @@ pub fn run() {
             // Store in app state
             app.manage(AppState { db: Mutex::new(db) });
 
+            // Recover stuck downloads from previous session
+            {
+                let app_state = app.state::<AppState>();
+                let db_guard = app_state.db.lock();
+                if let Ok(ref db) = db_guard {
+                    if let Ok(downloads) = db.get_downloads() {
+                        for dl in downloads {
+                            if dl.status == "downloading" || dl.status == "starting" || dl.status == "pending" {
+                                let _ = db.update_download_status(&dl.id, "failed", None);
+                                println!("[Startup] Recovered stuck download: {} (was {})", dl.title, dl.status);
+                            }
+                        }
+                    }
+                }
+            }
+
             // Handle autostart by default (if not already set)
             let app_state = app.state::<AppState>();
             if let Ok(db) = app_state.db.lock() {
@@ -170,6 +186,22 @@ pub fn run() {
                 close_main_window(&app_handle);
             } else {
                 background_mode_for_setup.store(false, Ordering::SeqCst);
+
+                // DPI-aware window sizing: scale from 1080p reference (1283x905)
+                if let Some(window) = app_handle.get_webview_window(MAIN_WINDOW_LABEL) {
+                    if let Some(monitor) = window.primary_monitor().ok().flatten() {
+                        let screen = monitor.size();
+                        // Ratios from 1080p reference: 1283/1920, 905/1080
+                        let w = ((screen.width as f64) * 0.6682).round() as u32;
+                        let h = ((screen.height as f64) * 0.8380).round() as u32;
+                        let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(w, h)));
+                        let _ = window.set_min_size(Some(tauri::Size::Physical(tauri::PhysicalSize::new(w, h))));
+                        let _ = window.set_max_size(Some(tauri::Size::Physical(tauri::PhysicalSize::new(w, h))));
+                        let _ = window.center();
+                        println!("[Window] Sized to {}x{} for {}x{} screen", w, h, screen.width, screen.height);
+                    }
+                }
+
                 show_main_window(&app_handle);
             }
 
@@ -322,9 +354,12 @@ pub fn run() {
             downloader::get_supported_platforms,
             downloader::get_default_download_path,
             downloader::get_download_folder_size,
+            downloader::check_setup_status,
+            downloader::setup_download_binaries,
             // SpotDL (Spotify) commands
             spotify_downloader::check_spotdl,
             spotify_downloader::update_spotdl,
+            spotify_downloader::ensure_spotdl,
             spotify_downloader::get_spotify_info,
             spotify_downloader::start_spotify_download,
             spotify_downloader::cancel_spotify_download,
@@ -391,7 +426,7 @@ pub fn run() {
         });
 }
 
-/// Parse a deep link URL like ownstash://download?url=<encoded_url>
+/// Parse a deep link URL like slasshy://download?url=<encoded_url>
 fn parse_deep_link(deep_link: &str) -> Option<String> {
     // Remove quotes if present
     let clean = deep_link.trim().trim_matches('"').trim_matches('[').trim_matches(']');

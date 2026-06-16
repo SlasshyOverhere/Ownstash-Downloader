@@ -139,7 +139,7 @@ pub fn start_extension_server(app_handle: AppHandle) {
                 .map(|| {
                     warp::reply::json(&serde_json::json!({
                         "status": "ok",
-                        "app": "ownstash-downloader"
+                        "app": "slasshy-downloader"
                     }))
                 });
 

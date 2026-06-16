@@ -19,7 +19,7 @@ use crate::snde::{SNDEEngine, SNDERequest, SNDE_ENGINE};
 /// Returns Ok(parsed_url) on success, Err(message) on failure.
 fn validate_url(raw: &str) -> Result<Url, String> {
     // Reject yt-dlp flag injection: URLs must not contain "--" or start with "-"
-    if raw.starts_with('-') || raw.contains("--") {
+    if raw.starts_with('-') {
         return Err("URL contains invalid flag-like patterns".into());
     }
 
@@ -127,6 +127,18 @@ pub struct DownloadProgress {
     /// Engine badge for UI display: "SNDE ACCELERATED", "SNDE SAFE", or "MEDIA ENGINE"
     #[serde(default)]
     pub engine_badge: Option<String>,
+    #[serde(default)]
+    pub error_message: Option<String>,
+}
+
+/// Progress event payload emitted during first-launch setup.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetupProgress {
+    pub binary: String,
+    pub phase: String,
+    pub progress: f64,
+    pub message: String,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -144,6 +156,8 @@ pub struct DownloadRequest {
     pub audio_format: String,
     pub video_format: String,
     pub use_sponsorblock: bool,
+    #[serde(default)]
+    pub cookies_from_browser: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -274,7 +288,7 @@ impl Downloader {
 
     async fn fetch_latest_yt_dlp_version() -> Result<String, String> {
         let client = reqwest::Client::builder()
-            .user_agent("OwnstashDownloader/1.0")
+            .user_agent("SlasshyDownloader/1.0")
             .timeout(std::time::Duration::from_secs(20))
             .build()
             .map_err(|e| format!("Failed to initialize HTTP client: {}", e))?;
@@ -353,9 +367,199 @@ impl Downloader {
             != Self::normalize_version_token(latest_version)
     }
 
+    /// Download a binary with streaming progress, emitting setup-progress events.
+    async fn download_binary_with_progress(
+        url: &str,
+        target_path: &Path,
+        binary_name: &str,
+        app_handle: &AppHandle,
+    ) -> Result<(), String> {
+        let client = reqwest::Client::builder()
+            .user_agent("SlasshyDownloader/1.0")
+            .timeout(Duration::from_secs(600))
+            .build()
+            .map_err(|e| format!("Failed to initialize HTTP client: {}", e))?;
+
+        let response = client.get(url).send().await
+            .map_err(|e| format!("Failed to download {}: {}", binary_name, e))?;
+
+        if !response.status().is_success() {
+            return Err(format!("Failed to download {} (HTTP {})", binary_name, response.status()));
+        }
+
+        let total_size = response.content_length().unwrap_or(0);
+        let mut stream = response.bytes_stream();
+        let mut downloaded: u64 = 0;
+        let mut bytes = Vec::with_capacity(total_size as usize);
+
+        use futures_util::StreamExt;
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|e| format!("Download error for {}: {}", binary_name, e))?;
+            bytes.extend_from_slice(&chunk);
+            downloaded += chunk.len() as u64;
+
+            let progress = if total_size > 0 {
+                (downloaded as f64 / total_size as f64) * 100.0
+            } else {
+                0.0
+            };
+
+            let _ = app_handle.emit("setup-progress", SetupProgress {
+                binary: binary_name.to_string(),
+                phase: "downloading".to_string(),
+                progress,
+                message: format!("Downloading {}... {:.0}%", binary_name, progress),
+                error: None,
+            });
+        }
+
+        let parent = target_path.parent()
+            .ok_or_else(|| "Invalid destination path".to_string())?;
+        tokio::fs::create_dir_all(parent).await
+            .map_err(|e| format!("Failed to create directory: {}", e))?;
+        let temp_path = target_path.with_extension("download.tmp");
+        tokio::fs::write(&temp_path, &bytes).await
+            .map_err(|e| format!("Failed to write {}: {}", binary_name, e))?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            tokio::fs::set_permissions(&temp_path, std::fs::Permissions::from_mode(0o755)).await
+                .map_err(|e| format!("Failed to set permissions: {}", e))?;
+        }
+
+        if target_path.exists() {
+            tokio::fs::remove_file(target_path).await.ok();
+        }
+        tokio::fs::rename(&temp_path, target_path).await
+            .map_err(|e| format!("Failed to finalize {}: {}", binary_name, e))?;
+
+        Ok(())
+    }
+
+    /// Download ffmpeg+ffprobe from BtbN/FFmpeg-Builds zip and extract both.
+    async fn download_ffmpeg_with_progress(
+        app_handle: &AppHandle,
+        binaries_dir: &Path,
+    ) -> Result<(), String> {
+        let zip_url = if cfg!(target_os = "windows") {
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+        } else if cfg!(target_os = "macos") {
+            return Err("ffmpeg auto-download not yet supported on macOS. Please install ffmpeg manually.".to_string());
+        } else {
+            return Err("ffmpeg auto-download not yet supported on Linux. Please install ffmpeg manually (apt install ffmpeg).".to_string());
+        };
+
+        let client = reqwest::Client::builder()
+            .user_agent("SlasshyDownloader/1.0")
+            .timeout(Duration::from_secs(600))
+            .build()
+            .map_err(|e| format!("Failed to initialize HTTP client: {}", e))?;
+
+        let response = client.get(zip_url).send().await
+            .map_err(|e| format!("Failed to download ffmpeg: {}", e))?;
+
+        if !response.status().is_success() {
+            return Err(format!("Failed to download ffmpeg (HTTP {})", response.status()));
+        }
+
+        let total_size = response.content_length().unwrap_or(0);
+        let mut stream = response.bytes_stream();
+        let mut downloaded: u64 = 0;
+        let mut zip_bytes: Vec<u8> = Vec::with_capacity(total_size as usize);
+
+        use futures_util::StreamExt;
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|e| format!("Download error: {}", e))?;
+            zip_bytes.extend_from_slice(&chunk);
+            downloaded += chunk.len() as u64;
+
+            let progress = if total_size > 0 {
+                (downloaded as f64 / total_size as f64) * 100.0
+            } else { 0.0 };
+
+            let _ = app_handle.emit("setup-progress", SetupProgress {
+                binary: "ffmpeg".to_string(),
+                phase: "downloading".to_string(),
+                progress,
+                message: format!("Downloading ffmpeg... {:.0}%", progress),
+                error: None,
+            });
+        }
+
+        let _ = app_handle.emit("setup-progress", SetupProgress {
+            binary: "ffmpeg".to_string(),
+            phase: "extracting".to_string(),
+            progress: 0.0,
+            message: "Extracting ffmpeg and ffprobe...".to_string(),
+            error: None,
+        });
+
+        let reader = std::io::Cursor::new(&zip_bytes);
+        let mut archive = zip::ZipArchive::new(reader)
+            .map_err(|e| format!("Failed to open ffmpeg zip: {}", e))?;
+
+        let suffix = if cfg!(windows) { ".exe" } else { "" };
+        let ffmpeg_name = format!("ffmpeg{}", suffix);
+        let ffprobe_name = format!("ffprobe{}", suffix);
+
+        let mut found_ffmpeg = false;
+        let mut found_ffprobe = false;
+
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i)
+                .map_err(|e| format!("Failed to read zip entry: {}", e))?;
+            let entry_name = file.name().to_string();
+            let basename = std::path::Path::new(&entry_name)
+                .file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_default();
+
+            if basename == ffmpeg_name || basename == ffprobe_name {
+                let target = binaries_dir.join(&basename);
+                let temp_target = target.with_extension("download.tmp");
+
+                let mut out_file = std::fs::File::create(&temp_target)
+                    .map_err(|e| format!("Failed to create {}: {}", basename, e))?;
+                std::io::copy(&mut file, &mut out_file)
+                    .map_err(|e| format!("Failed to extract {}: {}", basename, e))?;
+
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    std::fs::set_permissions(&temp_target, std::fs::Permissions::from_mode(0o755)).ok();
+                }
+
+                if target.exists() { std::fs::remove_file(&target).ok(); }
+                std::fs::rename(&temp_target, &target)
+                    .map_err(|e| format!("Failed to move {}: {}", basename, e))?;
+
+                if basename == ffmpeg_name { found_ffmpeg = true; }
+                if basename == ffprobe_name { found_ffprobe = true; }
+            }
+        }
+
+        if !found_ffmpeg {
+            return Err("ffmpeg not found in downloaded archive".to_string());
+        }
+        if !found_ffprobe {
+            return Err("ffprobe not found in downloaded archive".to_string());
+        }
+
+        let _ = app_handle.emit("setup-progress", SetupProgress {
+            binary: "ffmpeg".to_string(),
+            phase: "complete".to_string(),
+            progress: 100.0,
+            message: "ffmpeg and ffprobe ready".to_string(),
+            error: None,
+        });
+
+        Ok(())
+    }
+
     async fn download_binary(url: &str, target_path: &Path) -> Result<(), String> {
         let client = reqwest::Client::builder()
-            .user_agent("OwnstashDownloader/1.0")
+            .user_agent("SlasshyDownloader/1.0")
             .timeout(std::time::Duration::from_secs(180))
             .build()
             .map_err(|e| format!("Failed to initialize HTTP client: {}", e))?;
@@ -572,7 +776,7 @@ impl Downloader {
         })
     }
 
-    pub async fn get_media_info(&self, url: &str, check_sponsorblock: bool) -> Result<MediaInfo, String> {
+    pub async fn get_media_info(&self, url: &str, check_sponsorblock: bool, cookies_from_browser: Option<&str>) -> Result<MediaInfo, String> {
         // Validate URL before any yt-dlp invocation (anti-SSRF + anti-injection)
         let _parsed_url = validate_url(url)?;
 
@@ -610,6 +814,15 @@ impl Downloader {
         if check_sponsorblock {
             args.push("--sponsorblock-mark".to_string());
             args.push("all".to_string());
+        }
+
+        // Use browser cookies for age-restricted or login-required content
+        if let Some(browser) = cookies_from_browser {
+            if !browser.is_empty() {
+                args.push("--cookies-from-browser".to_string());
+                args.push(browser.to_string());
+                println!("[Downloader] Using cookies from browser: {}", browser);
+            }
         }
 
         args.push("--".to_string());
@@ -752,6 +965,7 @@ impl Downloader {
             total_bytes: routing_decision.file_size.map(|s| s as i64),
             filename: None,
             engine_badge: Some(engine_badge.clone()),
+            error_message: None,
         });
         
         // === V2.0: Route to SNDE for static files ===
@@ -848,6 +1062,9 @@ impl Downloader {
             println!("[Downloader] Warning: FFmpeg not found. Some downloads may fail.");
         }
 
+        // Prevent silent data loss when two downloads share the same title
+        args.push("--no-overwrites".to_string());
+
         // Output template
         let output_template = format!("{}/%(title)s.%(ext)s", request.output_path);
         args.extend(["-o".to_string(), output_template]);
@@ -866,20 +1083,38 @@ impl Downloader {
                 args.extend(["-f".to_string(), format.clone()]);
             }
         } else if let Some(quality) = &request.quality {
-            // Use simpler format strings that are more reliable
-            let format_selector = match quality.as_str() {
-                "best" | "4k" | "2160p" =>
-                    "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
-                "1080p" =>
-                    "bestvideo[vcodec^=avc1][height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
-                "720p" =>
-                    "bestvideo[vcodec^=avc1][height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best",
-                "480p" =>
-                    "bestvideo[vcodec^=avc1][height<=480][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=480]+bestaudio/best[height<=480]/best",
-                "360p" =>
-                    "bestvideo[vcodec^=avc1][height<=360][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=360]+bestaudio/best[height<=360]/best",
-                _ =>
-                    "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+            let is_youtube = request.url.contains("youtube.com") || request.url.contains("youtu.be");
+            let format_selector = if is_youtube {
+                match quality.as_str() {
+                    "best" | "4k" | "2160p" =>
+                        "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+                    "1080p" =>
+                        "bestvideo[vcodec^=avc1][height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+                    "720p" =>
+                        "bestvideo[vcodec^=avc1][height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+                    "480p" =>
+                        "bestvideo[vcodec^=avc1][height<=480][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=480]+bestaudio/best[height<=480]/best",
+                    "360p" =>
+                        "bestvideo[vcodec^=avc1][height<=360][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=360]+bestaudio/best[height<=360]/best",
+                    _ =>
+                        "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+                }
+            } else {
+                // Simpler format selectors for non-YouTube sites that may not support codec filtering
+                match quality.as_str() {
+                    "best" | "4k" | "2160p" =>
+                        "bestvideo[height<=2160]+bestaudio/bestvideo+bestaudio/best",
+                    "1080p" =>
+                        "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+                    "720p" =>
+                        "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+                    "480p" =>
+                        "bestvideo[height<=480]+bestaudio/best[height<=480]/best",
+                    "360p" =>
+                        "bestvideo[height<=360]+bestaudio/best[height<=360]/best",
+                    _ =>
+                        "bestvideo+bestaudio/best",
+                }
             };
             args.extend(["-f".to_string(), format_selector.to_string()]);
             // Use user-selected output format when merging
@@ -908,6 +1143,15 @@ impl Downloader {
         if request.use_sponsorblock {
             args.push("--sponsorblock-remove".to_string());
             args.push("all".to_string());
+        }
+
+        // Use browser cookies for age-restricted or login-required content
+        if let Some(ref browser) = request.cookies_from_browser {
+            if !browser.is_empty() {
+                args.push("--cookies-from-browser".to_string());
+                args.push(browser.clone());
+                println!("[Downloader] Using cookies from browser: {}", browser);
+            }
         }
 
         // Add URL (after `--` separator to prevent yt-dlp flag injection)
@@ -960,6 +1204,7 @@ impl Downloader {
                             total_bytes: None,
                             filename: None,
                             engine_badge: Some(engine_badge.clone()),
+                            error_message: None,
                         });
                         break;
                     }
@@ -1026,22 +1271,45 @@ impl Downloader {
             HEALTH_REGISTRY.unregister_download(&id);
 
             // Emit final status
-            let final_status = match status {
-                Ok(exit_status) if exit_status.success() => "completed",
-                _ => "failed",
+            let (final_status, failure_error_msg) = match status {
+                Ok(exit_status) if exit_status.success() => ("completed", None),
+                Ok(exit_status) => {
+                    let code = exit_status.code().unwrap_or(-1);
+                    let stderr_msg = error_output.trim().to_string();
+                    let msg = if !stderr_msg.is_empty() {
+                        stderr_msg
+                    } else {
+                        format!("yt-dlp exited with code {}", code)
+                    };
+                    ("failed", Some(msg))
+                }
+                Err(e) => {
+                    ("failed", Some(format!("Failed to run yt-dlp: {}", e)))
+                }
             };
 
             // Clean up standalone subtitle files if subtitles were embedded
+            // Only delete subtitle files that were created very recently (within last 2 minutes)
+            // to avoid deleting pre-existing subtitle files in the output directory
             if should_cleanup_subs && final_status == "completed" {
-                // Delete .vtt, .srt, .ass, .sub files from the output directory
+                let now = std::time::SystemTime::now();
                 if let Ok(entries) = std::fs::read_dir(&output_path) {
                     for entry in entries.flatten() {
                         let path = entry.path();
                         if let Some(ext) = path.extension() {
                             let ext_lower = ext.to_string_lossy().to_lowercase();
                             if ext_lower == "vtt" || ext_lower == "srt" || ext_lower == "ass" || ext_lower == "sub" {
-                                let _ = std::fs::remove_file(&path);
-                                println!("[Downloader] Cleaned up subtitle file: {:?}", path);
+                                // Only delete subtitle files that were created very recently (within last 2 minutes)
+                                if let Ok(metadata) = path.metadata() {
+                                    if let Ok(modified) = metadata.modified() {
+                                        if let Ok(elapsed) = now.duration_since(modified) {
+                                            if elapsed.as_secs() < 120 {
+                                                let _ = std::fs::remove_file(&path);
+                                                println!("[Downloader] Cleaned up recent subtitle file: {:?}", path);
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1074,6 +1342,7 @@ impl Downloader {
                 total_bytes: final_file_size,
                 filename: final_filename,
                 engine_badge: Some(engine_badge.clone()),
+                error_message: failure_error_msg,
             });
         });
 
@@ -1191,6 +1460,7 @@ fn handle_download_output_line(
                 total_bytes: None,
                 filename: None,
                 engine_badge: Some(engine_badge.to_string()),
+                error_message: None,
             };
             let _ = app.emit("download-progress", event);
             *last_emit_at = Instant::now();
@@ -1221,6 +1491,7 @@ fn handle_download_output_line(
             total_bytes: None,
             filename: None,
             engine_badge: Some(engine_badge.to_string()),
+            error_message: None,
         };
         let _ = app.emit("download-progress", event);
         *last_emit_at = Instant::now();
@@ -1437,9 +1708,9 @@ pub async fn update_yt_dlp(app_handle: AppHandle) -> Result<YtDlpInfo, String> {
 }
 
 #[tauri::command]
-pub async fn get_media_info(app_handle: AppHandle, url: String, enable_sponsorblock: Option<bool>) -> Result<MediaInfo, String> {
+pub async fn get_media_info(app_handle: AppHandle, url: String, enable_sponsorblock: Option<bool>, cookies_from_browser: Option<String>) -> Result<MediaInfo, String> {
     let downloader = Downloader::new(&app_handle);
-    downloader.get_media_info(&url, enable_sponsorblock.unwrap_or(false)).await
+    downloader.get_media_info(&url, enable_sponsorblock.unwrap_or(false), cookies_from_browser.as_deref()).await
 }
 
 /// Probe a direct file URL to get size and filename without using yt-dlp
@@ -1593,8 +1864,8 @@ pub async fn get_supported_platforms() -> Result<Vec<String>, String> {
 pub async fn get_default_download_path(app_handle: AppHandle) -> Result<String, String> {
     // Try to get user's Downloads folder
     if let Some(download_dir) = dirs::download_dir() {
-        let ownstash_dir = download_dir.join("Ownstash Downloads");
-        return Ok(ownstash_dir.to_string_lossy().to_string());
+        let slasshy_dir = download_dir.join("Slasshy Downloads");
+        return Ok(slasshy_dir.to_string_lossy().to_string());
     }
     
     // Fallback to app data directory
@@ -1636,4 +1907,107 @@ pub async fn get_download_folder_size(path: String) -> Result<i64, String> {
     calculate_dir_size(path)
         .map(|size| size as i64)
         .map_err(|e| format!("Failed to calculate folder size: {}", e))
+}
+
+/// Returns true if the first-launch setup has been completed.
+#[tauri::command]
+pub async fn check_setup_status(app_handle: AppHandle) -> Result<bool, String> {
+    let binaries_dir = Downloader::binaries_dir(&app_handle)?;
+    let flag_path = binaries_dir.join("initialized.flag");
+
+    // Check if flag exists (new installs)
+    if flag_path.exists() {
+        return Ok(true);
+    }
+
+    // Migration: if yt-dlp already exists from a previous install, skip setup
+    let suffix = if cfg!(windows) { ".exe" } else { "" };
+    let ytdlp_path = binaries_dir.join(format!("yt-dlp{}", suffix));
+    if ytdlp_path.exists() {
+        // Write flag so we don't check again
+        let _ = tokio::fs::write(&flag_path, chrono::Utc::now().to_rfc3339()).await;
+        println!("[Setup] Existing yt-dlp found, skipping setup (migration)");
+        return Ok(true);
+    }
+
+    // Also check bundled resource directory (for users upgrading from bundled version)
+    if let Ok(resource_dir) = app_handle.path().resource_dir() {
+        let resource_ytdlp = resource_dir.join("binaries").join(format!("yt-dlp{}", suffix));
+        if resource_ytdlp.exists() {
+            let _ = tokio::fs::write(&flag_path, chrono::Utc::now().to_rfc3339()).await;
+            println!("[Setup] Bundled yt-dlp found, skipping setup (migration)");
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+/// First-launch setup: download all required binaries with progress events.
+#[tauri::command]
+pub async fn setup_download_binaries(app_handle: AppHandle) -> Result<(), String> {
+    let binaries_dir = Downloader::binaries_dir(&app_handle)?;
+    tokio::fs::create_dir_all(&binaries_dir).await.ok();
+
+    let suffix = if cfg!(windows) { ".exe" } else { "" };
+
+    // Step 1: Download yt-dlp
+    let ytdlp_path = binaries_dir.join(format!("yt-dlp{}", suffix));
+    if !ytdlp_path.exists() {
+        let asset_name = Downloader::preferred_yt_dlp_asset_name();
+        let url = format!(
+            "https://github.com/yt-dlp/yt-dlp/releases/latest/download/{}",
+            asset_name
+        );
+        if let Err(e) = Downloader::download_binary_with_progress(
+            &url, &ytdlp_path, "yt-dlp", &app_handle
+        ).await {
+            let _ = app_handle.emit("setup-progress", SetupProgress {
+                binary: "yt-dlp".to_string(),
+                phase: "error".to_string(),
+                progress: 0.0,
+                message: format!("Failed: {}", e),
+                error: Some(e),
+            });
+            return Err("yt-dlp download failed".to_string());
+        }
+        let _ = app_handle.emit("setup-progress", SetupProgress {
+            binary: "yt-dlp".to_string(),
+            phase: "complete".to_string(),
+            progress: 100.0,
+            message: "yt-dlp ready".to_string(),
+            error: None,
+        });
+    }
+
+    // Step 2: Download ffmpeg+ffprobe
+    let ffmpeg_path = binaries_dir.join(format!("ffmpeg{}", suffix));
+    let ffprobe_path = binaries_dir.join(format!("ffprobe{}", suffix));
+    if !ffmpeg_path.exists() || !ffprobe_path.exists() {
+        if let Err(e) = Downloader::download_ffmpeg_with_progress(&app_handle, &binaries_dir).await {
+            let _ = app_handle.emit("setup-progress", SetupProgress {
+                binary: "ffmpeg".to_string(),
+                phase: "error".to_string(),
+                progress: 0.0,
+                message: format!("Failed: {}", e),
+                error: Some(e),
+            });
+            return Err("ffmpeg download failed".to_string());
+        }
+    }
+
+    // Step 3: Write initialized flag
+    let flag_path = binaries_dir.join("initialized.flag");
+    tokio::fs::write(&flag_path, chrono::Utc::now().to_rfc3339()).await.ok();
+
+    // Emit completion
+    let _ = app_handle.emit("setup-progress", SetupProgress {
+        binary: "done".to_string(),
+        phase: "complete".to_string(),
+        progress: 100.0,
+        message: "Setup complete!".to_string(),
+        error: None,
+    });
+
+    Ok(())
 }

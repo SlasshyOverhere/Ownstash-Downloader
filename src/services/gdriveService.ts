@@ -7,9 +7,9 @@ import { invoke } from '@tauri-apps/api/core';
 
 // File names in Google Drive App Data folder
 const FILES = {
-    DOWNLOADS: 'ownstash_downloads.json',
-    SEARCH_HISTORY: 'ownstash_search_history.json',
-    SETTINGS: 'ownstash_settings.json',
+    DOWNLOADS: 'slasshy_downloads.json',
+    SEARCH_HISTORY: 'slasshy_search_history.json',
+    SETTINGS: 'slasshy_settings.json',
 };
 
 // Google Drive API endpoints
@@ -666,7 +666,7 @@ export const gdriveService = {
 // The vault index contains sensitive metadata (file names, dates, etc.)
 // We encrypt it with the vault PIN before uploading to Google Drive
 
-const VAULT_FILE = 'ownstash_vault_index.enc';
+const VAULT_FILE = 'slasshy_vault_index.enc';
 
 export interface VaultFileEntry {
     id: string;
@@ -862,7 +862,7 @@ export async function deleteVaultFromGDrive(): Promise<void> {
 // This means there's NOTHING vault-related on local disk except encrypted .vault files
 // Complete deniability: no evidence of vault existence on local machine
 
-const VAULT_CONFIG_FILE = 'ownstash_vault_config.json';
+const VAULT_CONFIG_FILE = 'slasshy_vault_config.json';
 
 // Vault config interface (matches Rust struct)
 export interface VaultConfig {

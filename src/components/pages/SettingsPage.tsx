@@ -130,6 +130,7 @@ export function SettingsPage() {
     const [minimizeToTray, setMinimizeToTray] = useState(false);
     const [autostartEnabled, setAutostartEnabled] = useState(true);
     const [useSponsorblock, setUseSponsorblock] = useState(false); // Default OFF
+    const [cookiesFromBrowser, setCookiesFromBrowser] = useState('none');
     const [ytDlpInfo, setYtDlpInfo] = useState<YtDlpInfo | null>(null);
     const [ytDlpError, setYtDlpError] = useState<string | null>(null);
     const [ytDlpUpdating, setYtDlpUpdating] = useState(false);
@@ -191,6 +192,9 @@ export function SettingsPage() {
 
             const savedSponsorblock = await api.getSetting('use_sponsorblock');
             if (savedSponsorblock !== null) setUseSponsorblock(savedSponsorblock === 'true');
+
+            const savedCookies = await api.getSetting('cookies_from_browser');
+            if (savedCookies !== null) setCookiesFromBrowser(savedCookies);
 
             const savedAutoCheckUpdates = await api.getSetting('auto_check_app_updates');
             if (savedAutoCheckUpdates === null) {
@@ -524,6 +528,33 @@ export function SettingsPage() {
                 icon={RefreshCw}
             >
                 <div className="space-y-3">
+                    {/* Browser cookies for age-restricted content */}
+                    <div className="py-3 border-b border-white/5">
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm">Browser cookies</span>
+                        </div>
+                        <select
+                            value={cookiesFromBrowser}
+                            onChange={(e) => {
+                                setCookiesFromBrowser(e.target.value);
+                                handleSaveSetting('cookies_from_browser', e.target.value);
+                            }}
+                            className="w-full p-2 rounded-lg bg-muted/50 border border-white/10 text-sm"
+                        >
+                            <option value="none">Disabled</option>
+                            <option value="chrome">Chrome</option>
+                            <option value="firefox">Firefox</option>
+                            <option value="edge">Edge</option>
+                            <option value="brave">Brave</option>
+                            <option value="opera">Opera</option>
+                            <option value="vivaldi">Vivaldi</option>
+                            <option value="chromium">Chromium</option>
+                        </select>
+                        <p className="text-xs text-muted-foreground mt-1">
+                            Extract cookies from your browser for age-restricted or login-required videos. Requires the browser to be closed.
+                        </p>
+                    </div>
+
                     {/* Status indicator */}
                     <div className="p-4 rounded-xl bg-muted/30 border border-white/10">
                         {ytDlpLoading ? (
@@ -725,7 +756,7 @@ export function SettingsPage() {
             >
                 <div className="space-y-3">
                     <p className="text-sm text-muted-foreground leading-relaxed border-b border-white/5 pb-3">
-                        Ownstash Downloader is a desktop-first media downloader that uses yt-dlp and SpotDL
+                        SlasshyDownloader is a desktop-first media downloader that uses yt-dlp and SpotDL
                         to fetch and save videos, audio, and playlists from supported platforms.
                     </p>
                     <SettingRow

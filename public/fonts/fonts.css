@@ -1,39 +1,21 @@
-/* Self-hosted Google Fonts — security fix for L7 (no external CDN) */
+/* Inter Variable — single file covers weights 100-900 */
 @font-face {
   font-family: 'Inter';
   font-style: normal;
-  font-weight: 300;
+  font-weight: 100 900;
   font-display: swap;
-  src: url('/fonts/Inter-Light.ttf') format('truetype');
+  src: url('/fonts/InterVariable.woff2') format('woff2');
 }
+
 @font-face {
   font-family: 'Inter';
-  font-style: normal;
-  font-weight: 400;
+  font-style: italic;
+  font-weight: 100 900;
   font-display: swap;
-  src: url('/fonts/Inter-Regular.ttf') format('truetype');
+  src: url('/fonts/InterVariable-Italic.woff2') format('woff2');
 }
-@font-face {
-  font-family: 'Inter';
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url('/fonts/Inter-Medium.ttf') format('truetype');
-}
-@font-face {
-  font-family: 'Inter';
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url('/fonts/Inter-SemiBold.ttf') format('truetype');
-}
-@font-face {
-  font-family: 'Inter';
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url('/fonts/Inter-Bold.ttf') format('truetype');
-}
+
+/* JetBrains Mono for code/format IDs */
 @font-face {
   font-family: 'JetBrains Mono';
   font-style: normal;
@@ -48,6 +30,8 @@
   font-display: swap;
   src: url('/fonts/JetBrainsMono-Medium.ttf') format('truetype');
 }
+
+/* Outfit for display headings */
 @font-face {
   font-family: 'Outfit';
   font-style: normal;

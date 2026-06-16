@@ -104,3 +104,4 @@ public/New folder/
 **/*.py
 !src-tauri/download-binaries.ps1
 
+.serena/

@@ -1,16 +1,16 @@
-# Ownstash Downloader
+# SlasshyDownloader
 
-Ownstash Downloader is a desktop-first media downloader built with Tauri (Rust backend + React frontend).  
+SlasshyDownloader is a desktop-first media downloader built with Tauri (Rust backend + React frontend).  
 It focuses on fast local downloads with built-in engine management for `yt-dlp` and `SpotDL`.
 
 ## Download
 
 - Latest Windows installer (stable URL):  
-  `https://github.com/SlasshyOverhere/Ownstash-Downloader/releases/latest/download/ownstash-downloader-windows-x64-setup.exe`
+  `https://github.com/SlasshyOverhere/SlasshyDownloader/releases/latest/download/slasshy-downloader-windows-x64-setup.exe`
 - Latest release page:  
-  `https://github.com/SlasshyOverhere/Ownstash-Downloader/releases/latest`
+  `https://github.com/SlasshyOverhere/SlasshyDownloader/releases/latest`
 - All releases:  
-  `https://github.com/SlasshyOverhere/Ownstash-Downloader/releases`
+  `https://github.com/SlasshyOverhere/SlasshyDownloader/releases`
 
 ## What It Does
 
@@ -39,8 +39,8 @@ It focuses on fast local downloads with built-in engine management for `yt-dlp` 
 ### Run
 
 ```bash
-git clone https://github.com/SlasshyOverhere/Ownstash-Downloader.git
-cd Ownstash-Downloader
+git clone https://github.com/SlasshyOverhere/SlasshyDownloader.git
+cd SlasshyDownloader
 npm install
 npm run download-binaries
 npm run tauri dev
@@ -75,7 +75,7 @@ This repo includes a tag-driven GitHub Actions release pipeline (`.github/workfl
 One-time key generation example:
 
 ```bash
-npm run tauri signer generate -- -w ~/.tauri/ownstash.key
+npm run tauri signer generate -- -w ~/.tauri/slasshy.key
 ```
 
 ## Browser Extension (Optional)

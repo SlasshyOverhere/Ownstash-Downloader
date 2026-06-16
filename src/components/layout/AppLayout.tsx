@@ -1,6 +1,7 @@
 import { ReactNode, Suspense } from 'react';
 import { LazyMotion, m, domAnimation, AnimatePresence } from 'framer-motion';
 import { AnimatedSidebar } from './AnimatedSidebar';
+import { TitleBar } from './TitleBar';
 import { pageTransition } from '@/lib/animations';
 import type { PageType } from '@/App';
 
@@ -21,43 +22,46 @@ function LoadingFallback() {
 export function AppLayout({ children, currentPage, onPageChange }: AppLayoutProps) {
     return (
         <LazyMotion features={domAnimation}>
-        <div className="h-screen w-screen overflow-hidden flex bg-background">
+        <div className="h-screen w-screen overflow-hidden flex flex-col bg-background">
             {/* Background layers */}
             <div className="fixed inset-0 pointer-events-none">
-                {/* Base gradient */}
                 <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-primary/5" />
-
-                {/* Static gradient orbs (lighter than continuous pulse animation) */}
                 <div className="absolute size-96 -left-48 -top-48 bg-white/5 rounded-full blur-3xl" />
                 <div className="absolute size-96 -right-48 -bottom-48 bg-white/3 rounded-full blur-3xl" />
                 <div className="absolute size-64 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white/2 rounded-full blur-3xl" />
             </div>
 
-            {/* Sidebar */}
-            <AnimatedSidebar
-                currentPage={currentPage}
-                onPageChange={onPageChange}
-            />
+            {/* Fixed titlebar */}
+            <TitleBar />
 
-            {/* Main content area */}
-            <main className="flex-1 relative overflow-hidden">
-                <div className="absolute inset-0 overflow-y-auto overflow-x-hidden">
-                    <AnimatePresence mode="wait" initial={false}>
-                        <m.div
-                            key={currentPage}
-                            variants={pageTransition}
-                            initial={false}
-                            animate="animate"
-                            exit="exit"
-                            className="min-h-full p-6"
-                        >
-                            <Suspense fallback={<LoadingFallback />}>
-                                {children}
-                            </Suspense>
-                        </m.div>
-                    </AnimatePresence>
-                </div>
-            </main>
+            {/* Content below titlebar */}
+            <div className="flex-1 min-h-0 w-screen flex pt-9 overflow-hidden">
+                {/* Sidebar */}
+                <AnimatedSidebar
+                    currentPage={currentPage}
+                    onPageChange={onPageChange}
+                />
+
+                {/* Main content area */}
+                <main className="flex-1 relative overflow-hidden">
+                    <div className="absolute inset-0 overflow-y-auto overflow-x-hidden">
+                        <AnimatePresence mode="wait" initial={false}>
+                            <m.div
+                                key={currentPage}
+                                variants={pageTransition}
+                                initial={false}
+                                animate="animate"
+                                exit="exit"
+                                className="min-h-full p-6"
+                            >
+                                <Suspense fallback={<LoadingFallback />}>
+                                    {children}
+                                </Suspense>
+                            </m.div>
+                        </AnimatePresence>
+                    </div>
+                </main>
+            </div>
         </div>
         </LazyMotion>
     );

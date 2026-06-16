@@ -79,6 +79,7 @@ export interface DownloadProgress {
     engine_badge?: string;  // "SNDE ACCELERATED", "SNDE SAFE", or "MEDIA ENGINE"
     active_connections?: number;  // Number of active SNDE parallel connections
     quality?: ProgressQuality;
+    error_message?: string;
 }
 
 export interface DownloadRequest {
@@ -95,6 +96,7 @@ export interface DownloadRequest {
     audio_format: string;
     video_format: string;
     use_sponsorblock: boolean;
+    cookies_from_browser?: string;
 }
 
 export interface YtDlpInfo {
@@ -152,6 +154,7 @@ export interface SpotifyDownloadProgress {
     total_tracks?: number;
     completed_tracks?: number;
     speed: string;
+    error_message?: string;
 }
 
 export interface SpotifyDownloadRequest {
@@ -187,6 +190,14 @@ export interface VaultFolderEntry {
     size_bytes: number;     // Size in bytes (0 for directories)
     file_type: string;      // "video", "audio", "image", "file", "directory"
     is_directory: boolean;  // True if this is a directory
+}
+
+export interface SetupProgress {
+    binary: string;      // "yt-dlp", "ffmpeg", "spotdl", "done"
+    phase: string;       // "downloading", "extracting", "complete", "error"
+    progress: number;    // 0-100
+    message: string;
+    error?: string | null;
 }
 
 interface VaultFile {
@@ -350,8 +361,8 @@ export const api = {
     },
 
     // Media Info & Downloading - Rust backend
-    async getMediaInfo(url: string, enableSponsorblock?: boolean): Promise<MediaInfo> {
-        return invoke('get_media_info', { url, enableSponsorblock });
+    async getMediaInfo(url: string, enableSponsorblock?: boolean, cookiesFromBrowser?: string): Promise<MediaInfo> {
+        return invoke('get_media_info', { url, enableSponsorblock, cookiesFromBrowser });
     },
 
     async probeDirectFile(url: string): Promise<DirectFileInfo> {
@@ -393,6 +404,25 @@ export const api = {
 
     async updateSpotDl(): Promise<SpotDlInfo> {
         return invoke('update_spotdl');
+    },
+
+    // Setup - First-launch binary download
+    async checkSetupStatus(): Promise<boolean> {
+        return invoke('check_setup_status');
+    },
+
+    async setupDownloadBinaries(): Promise<void> {
+        return invoke('setup_download_binaries');
+    },
+
+    onSetupProgress(callback: (progress: SetupProgress) => void): Promise<UnlistenFn> {
+        return listen<SetupProgress>('setup-progress', (event) => {
+            callback(event.payload);
+        });
+    },
+
+    async ensureSpotDl(): Promise<SpotDlInfo> {
+        return invoke('ensure_spotdl');
     },
 
     async getSpotifyInfo(url: string): Promise<SpotifyMediaInfo> {

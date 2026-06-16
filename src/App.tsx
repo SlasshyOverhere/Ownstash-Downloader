@@ -10,6 +10,7 @@ import { SettingsPage } from '@/components/pages/SettingsPage';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
 import api, { DownloadProgress, SpotifyDownloadProgress } from '@/services/api';
+import { SetupScreen } from '@/components/SetupScreen';
 
 export type PageType = 'home' | 'downloads' | 'history' | 'settings';
 
@@ -51,6 +52,7 @@ function App() {
     const { loading } = useAuth();
     const [currentPage, setCurrentPage] = useState<PageType>('home');
     const [extensionUrl, setExtensionUrl] = useState<string | null>(null);
+    const [setupComplete, setSetupComplete] = useState<boolean | null>(null); // null = checking
     const hasCheckedStartupUpdateRef = useRef(false);
     const isInstallingAppUpdateRef = useRef(false);
 
@@ -181,7 +183,7 @@ function App() {
                 }, 3000));
 
                 const title = downloadTitles.get(progress.id) || 'Download';
-                api.notifyDownloadFailed(title, 'Download failed').catch(console.error);
+                api.notifyDownloadFailed(title, progress.error_message || 'Download failed').catch(console.error);
                 downloadTitles.delete(progress.id);
             }
         }).then(fn => { unlistenYtdlp = fn; }).catch(console.error);
@@ -216,7 +218,7 @@ function App() {
                 }, 3000));
 
                 const title = downloadTitles.get(progress.id) || 'Spotify Download';
-                api.notifyDownloadFailed(title, 'Download failed').catch(console.error);
+                api.notifyDownloadFailed(title, progress.error_message || 'Download failed').catch(console.error);
                 downloadTitles.delete(progress.id);
             }
         }).then(fn => { unlistenSpotify = fn; }).catch(console.error);
@@ -237,13 +239,32 @@ function App() {
         };
     }, []);
 
+    // Check setup status on mount
+    useEffect(() => {
+        api.checkSetupStatus().then(completed => {
+            setSetupComplete(completed);
+        }).catch(() => {
+            setSetupComplete(false);
+        });
+    }, []);
+
     // Clear extension URL after it's been consumed
     const handleExtensionUrlConsumed = () => {
         setExtensionUrl(null);
     };
 
+    // Show setup screen if first-launch setup not complete
+    if (setupComplete === false) {
+        return (
+            <LazyMotion features={domAnimation}>
+                <SetupScreen onComplete={() => setSetupComplete(true)} />
+                <Toaster theme="dark" position="bottom-right" richColors />
+            </LazyMotion>
+        );
+    }
+
     // Loading state while checking auth
-    if (loading) {
+    if (setupComplete === null || loading) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-black via-neutral-950 to-black">
                 <div className="text-center">

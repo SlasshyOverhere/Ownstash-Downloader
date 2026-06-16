@@ -51,8 +51,8 @@ export interface GoogleUser {
 }
 
 // Storage keys
-const USER_STORAGE_KEY = 'ownstash_user';
-const OAUTH_STATE_KEY = 'ownstash_oauth_state';
+const USER_STORAGE_KEY = 'slasshy_user';
+const OAUTH_STATE_KEY = 'slasshy_oauth_state';
 
 /**
  * Get stored user from localStorage
@@ -339,7 +339,7 @@ export async function initGoogleAuthListener(): Promise<void> {
                 console.log('In browser, redirecting to Tauri app via deep link...');
 
                 const callbackData = hasTokens ? hash : search;
-                const deepLinkUrl = `ownstash://auth/callback${callbackData}`;
+                const deepLinkUrl = `slasshy://auth/callback${callbackData}`;
 
                 // Show redirect page
                 document.open();
@@ -369,7 +369,7 @@ export async function initGoogleAuthListener(): Promise<void> {
     <div class="card">
         <div class="success-icon">✓</div>
         <h1>You're All Set!</h1>
-        <p class="subtitle">Authentication successful.<br>Opening Ownstash Downloader...</p>
+        <p class="subtitle">Authentication successful.<br>Opening SlasshyDownloader...</p>
         <div class="loading"><div class="spinner"></div><span>Launching app...</span></div>
         <a href="${deepLinkUrl}" class="btn">Open App</a>
         <p class="hint">You can close this tab after the app opens</p>
